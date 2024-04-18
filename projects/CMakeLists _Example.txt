@@ -1,0 +1,55 @@
+CMAKE_MINIMUM_REQUIRED(VERSION 3.12)
+
+if( WIN32 )
+elseif( UNIX )
+	#set(CMAKE_CXX_COMPILER "/usr/bin/c++")
+	#set(CMAKE_C_COMPILER "gcc-9")
+	#set(CMAKE_CXX_COMPILER "/usr/bin/g++-9")
+endif()
+
+PROJECT(Terrain
+	VERSION 1.0
+	DESCRIPTION "Procedural terrain generation"
+	LANGUAGES CXX
+	)
+
+MESSAGE(STATUS "Project: " ${PROJECT_NAME})
+
+SET(CMAKE_CXX_STANDARD 17)
+SET(CMAKE_GENERATOR_PLATFORM x64)
+FIND_PACKAGE(Vulkan REQUIRED)
+
+ADD_DEFINITIONS(
+	-std=c++17
+	-O2		# Optimization incompatible with Release mode
+	#-O3
+)
+#ADD_COMPILE_DEFINITIONS( IMGUI_IMPL_OPENGL_LOADER_GLEW=1 )
+#ADD_COMPILE_DEFINITIONS( IMGUI_IMPL_OPENGL_LOADER_GLAD=1 )
+
+# Add cpp files (or anything you want visible on MVS) to create an executable
+ADD_EXECUTABLE(${PROJECT_NAME}
+	src/main.cpp
+)
+
+# Add cpp files (or anything you want visible on MVS) to create a library (static or dynamic)
+SET(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+ADD_LIBRARY(${PROJECT_NAME} STATIC/SHARED
+	src/myLibrary.lib
+)
+
+# Add more cpp files
+TARGET_SOURCES(${PROJECT_NAME} PRIVATE
+	#../../extern/imgui/imgui-1.72b/imgui.cpp
+)
+
+# Add headers (hpp) directories
+TARGET_INCLUDE_DIRECTORIES( ${PROJECT_NAME} PUBLIC
+	C:/VulkanSDK/1.3.211.0/Include
+)
+
+# Add static libraries (.lib, .a) and dynamic libraries (.dll, .so)
+TARGET_LINK_LIBRARIES( ${PROJECT_NAME} 
+		optimized	C:/VulkanSDK/1.3.211.0/Lib/vulkan-1.lib
+		optimized   ${PROJECT_SOURCE_DIR}/../../_BUILD/extern/assimp/bin/Release/assimp-vc143-mt.dll
+)

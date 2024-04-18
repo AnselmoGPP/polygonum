@@ -1,0 +1,45 @@
+----- stb ---------------------------------------
+
+Taken from: https://github.com/nothings/stb
+
+----- glfw ---------------------------------------
+
+In the CMakeLists file, turn the following option OFF in order to get static library: OPTION(BUILD_SHARED_LIBS "Build shared libraries" OFF)
+
+This function only initializes the variable if it is not initialized yet. Otherwise, does nothing (https://stackoverflow.com/questions/35744647/disabling-cmake-option-has-no-effect). That's why you have to build glfw first. 
+
+Another option is to replace that command with: SET(BUILD_SHARED_LIBS OFF)
+
+----- Assimp ---------------------------------------
+
+Requires to compile zlibstatic first (an Assimp dependency), and then Assimp.
+Add both static libraries (zlib & assimp) to your project.
+
+https://stackoverflow.com/questions/33314542/unresolved-external-symbol-in-visual-studio-while-using-assimp-library
+
+https://cmake.org/cmake/help/latest/command/option.html
+
+
+
+----- tinyobjloader ---------------------------------------
+
+Taken from: https://github.com/tinyobjloader/tinyobjloader
+Models: https://sketchfab.com/
+
+----- BulletPhysics ---------------------------------------
+
+Taken from:
+https://github.com/bulletphysics/bullet3
+
+Useful libraries:
+	Bullet3Collision || BulletCollision
+	Bullet3Dynamics || BulletDynamics
+	Bullet3Common
+	LinearMath
+
+Tutorial & docs:
+https://www.kodeco.com/2606-bullet-physics-tutorial-getting-started
+https://github.com/bulletphysics/bullet3/tree/master/docs
+
+
+

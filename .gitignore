@@ -1,3 +1,14 @@
+# Specific
+_BUILD/
+build/
+.cproject
+.project
+*.sln.lnk
+*.lnk
+*.sln
+.vs/
+.html
+
 # Prerequisites
 *.d
 

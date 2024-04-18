@@ -1,0 +1,5 @@
+Bricks texture source:
+opengameart.org/content/seamless-textures-2
+
+Wood texture source:
+a.disquscdn.com/get?url=https%3A%2F%2Flearnopengl.com%2Fimg%2Ftextures%2Fwood.png&key=uxHQtdbSLcF0R7iBF9wA7Q&w=800&h=668

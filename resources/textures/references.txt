@@ -1,0 +1,2 @@
+Test2 texture source:
+commons.wikimedia.org/wiki/File:Normal_map_example_-_Map.png

@@ -1,0 +1,37 @@
+GLFW modification ----------
+
+I modified the glfw library:
+glfw3.h   ->   I modified line 210. Instead of:
+   #include <GL/gl.h>
+I put:
+  #if !defined(GLFW_INCLUDE_VULKAN)	// ans
+   #include <GL/gl.h>
+  #endif				// ans
+
+Importing OBJ from Blender ----------
+
+Join all meshes together (Ctrl + J)
+Shade smooth
+Forward axis: Y (default: -Z)
+Up axis: Z (default: Y)
+Selected only
+
+Smart pointers ----------
+
+std::unique_ptr<Entity> ent = std::make_unique<Entity>();		// This pointer cannot be copied
+
+std::shared_ptr<Entity> ent1 = std::make_shared<Entity>();		// Keeps a counter of pointer; if it is 0, pointer is deleted
+std::shared_ptr<Entity> ent2 = ent1;
+std::weak_ptr<Entity>   ent3 = ent1;					// Copy pointer without incrementing the counter
+
+Influences ----------
+
+Arma III: Realism
+MGS: Tactical action espionage
+Dynasty Warriors: Bases wars & officer orders
+Apache Vs Havoc: Ongoing war
+No Man's sky: Planets
+
+Dot & Cross product ----------
+
+Cross& Dot product : https://www.youtube.com/watch?v=h0NJK4mEIJU

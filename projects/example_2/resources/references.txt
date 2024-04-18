@@ -1,0 +1,5 @@
+Bricks textures source:
+freepbr.com/materials/bricks-mortar/
+
+Skybox texture source:
+learnopengl.com/img/textures/skybox.zip

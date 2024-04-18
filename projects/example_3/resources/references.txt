@@ -1,0 +1,5 @@
+Rock mesh and rock textures source:
+freepbr.com/materials/sharp-rock-model-free/
+
+Skybox texture source:
+ambientCG.com/a/DayEnvironmentHDRI002
