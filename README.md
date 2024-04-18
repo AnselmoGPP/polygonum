@@ -50,8 +50,6 @@
 - _**models:**_ Models for loading in our projects.
 - _**textures:**_ Images used as textures in our projects.
 
-<br>![Vulkan window](https://raw.githubusercontent.com/AnselmoGPP/VulkRend/master/files/window_1.png)
-
 ## How to use
 
 Start by creating a `Renderer` object: Pass a callback of the form `void callback(Renderer& r)` as an argument. This callback will be run each frame. It can be used by the user for updating the Uniform Buffer Objects (model matrices, etc.), loading new models, deleting already loaded models, or modifying the number of renderings for each model. All this actions can be performed inside or outside the callback, but always after the creation of the `Renderer` object.
