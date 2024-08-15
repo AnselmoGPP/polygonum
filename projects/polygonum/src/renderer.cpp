@@ -85,7 +85,7 @@ void LoadingWorker::loadingThread()
 					modelTP.splice(modelTP.cend(), modelsToLoad, modelsToLoad.begin());
 				}
 			}
-
+			
 			// Process modelTP (load data and upload to Vulkan) and move it to models.
 			if (modelTP.size())
 			{
@@ -216,7 +216,6 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), IOmanager& io, UBOinfo glob
 	:
 	e(io),
 	io(io),
-	timer(maxFPS),
 	updateCommandBuffer(false), 
 	userUpdate(graphicsUpdate), 
 	currentFrame(0), 
@@ -255,7 +254,7 @@ void Renderer::createCommandBuffers()
 	#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
 		std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
 	#endif
-
+	
 	commandsCount = 0;
 	VkDeviceSize offsets[] = { 0 };
 
@@ -308,7 +307,7 @@ void Renderer::createCommandBuffers()
 					#ifdef DEBUG_COMMANDBUFFERS
 						std::cout << "         Model: " << it->name << std::endl;
 					#endif
-
+					
 					if (!it->activeInstances) continue;
 
 					vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, it->graphicsPipeline);	// Second parameter: Specifies if the pipeline object is a graphics or compute pipeline.
@@ -331,7 +330,7 @@ void Renderer::createCommandBuffers()
 
 			vkCmdEndRenderPass(commandBuffers[i]);
 		}
-
+		
 		if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS)
 			throw std::runtime_error("Failed to record command buffer!");
 	}
@@ -384,7 +383,6 @@ void Renderer::renderLoop()
 	createSyncObjects();
 	worker.start();
 
-	timer.setMaxFPS(maxFPS);
 	timer.startTimer();
 
 	while (!io.windowShouldClose())
@@ -445,7 +443,7 @@ void Renderer::drawFrame()
 	#if defined(DEBUG_RENDERER) || defined(DEBUG_RENDERLOOP)
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
-
+	
 	// Wait for the frame to be finished (command buffer execution). If VK_TRUE, we wait for all fences; otherwise, we wait for any.
 	vkWaitForFences(e.c.device, 1, &framesInFlight[currentFrame], VK_TRUE, UINT64_MAX);
 
@@ -688,7 +686,7 @@ void Renderer::deleteModel(modelIter model)	// <<< splice an element only knowin
 
 	//size_t rpi = model->renderPassIndex;	// Removed: Crashes when the modelIter points to a model that no longer exists (cleared during cleanup())
 	
-	while (true)	// If model is being processed, continue in loop until until it has been loaded and delete it.
+	while (true)	// If model is being processed, continue in loop until it has been loaded and delete it.
 	{
 		{
 			// Be the only thread touching the lists of models
@@ -852,7 +850,7 @@ void Renderer::updateStates(uint32_t currentImage)
 }
 
 
-void Renderer::createLightingPass(unsigned numLights)
+void Renderer::createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader)
 {
 	std::vector<float> v_quad;	// [4 * 5]
 	std::vector<uint16_t> i_quad;
@@ -861,8 +859,9 @@ void Renderer::createLightingPass(unsigned numLights)
 	VerticesLoader vertexData(vt_32.vertexSize, v_quad.data(), 4, i_quad);
 
 	std::vector<ShaderLoader> usedShaders{ 
-		ShaderLoader("../../../resources/shaders/lightingPass_v.vert"),
-		ShaderLoader("../../../resources/shaders/lightingPass_f.frag") };
+		ShaderLoader(vertShaderPath),
+		ShaderLoader(fragShaderPath, std::vector<ShaderModifier>{ {sm_changeHeader, {fragToolsHeader}} })
+	};
 
 	std::vector<TextureLoader> usedTextures{ };
 
@@ -906,7 +905,7 @@ void Renderer::updateLightingPass(glm::vec3& camPos, Light* lights, unsigned num
 	}
 }
 
-void Renderer::createPostprocessingPass()
+void Renderer::createPostprocessingPass(std::string vertShaderPath, std::string fragShaderPath)
 {
 	std::vector<float> v_quad;	// [4 * 5]
 	std::vector<uint16_t> i_quad;
@@ -914,9 +913,7 @@ void Renderer::createPostprocessingPass()
 
 	VerticesLoader vertexData(vt_32.vertexSize, v_quad.data(), 4, i_quad);
 
-	std::vector<ShaderLoader> usedShaders{ 
-		ShaderLoader("../../../resources/shaders/postprocessing_v.vert"),
-		ShaderLoader("../../../resources/shaders/postprocessing_f.frag") };
+	std::vector<ShaderLoader> usedShaders{ vertShaderPath, fragShaderPath };
 	
 	std::vector<TextureLoader> usedTextures{ };
 
@@ -952,7 +949,16 @@ size_t Renderer::getRendersCount(modelIter model) { return model->activeInstance
 
 size_t Renderer::getFrameCount() { return frameCount; }
 
-size_t Renderer::getModelsCount() { return models[0].size() + models[1].size(); }
+size_t Renderer::getModelsCount()
+{
+	size_t count = 0;
+
+	for (auto& renderPass : models)
+		for (auto& subPass : renderPass)
+			count += subPass.size();
+
+	return count;
+}
 
 size_t Renderer::getCommandsCount() { return commandsCount; }
 

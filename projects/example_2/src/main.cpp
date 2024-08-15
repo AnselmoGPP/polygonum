@@ -46,9 +46,13 @@ int main(int argc, char* argv[])
 	setGlobalVariables(renderer);
 
 	createCube(renderer);							// Geometry pass
-	renderer.createLightingPass(1);					// Lighting pass
+	renderer.createLightingPass( 1,					// Lighting pass
+		std::string("../../../resources/shaders/lightingPass_v.vert"),
+		std::string("../../../resources/shaders/lightingPass_f.frag"));			
 	createSkyBox(renderer);							// Forward pass
-	renderer.createPostprocessingPass();			// Postprocessing pass
+	renderer.createPostprocessingPass(				// Postprocessing pass
+		std::string("../../../resources/shaders/postprocessing_v.vert"),
+		std::string("../../../resources/shaders/postprocessing_f.frag"));
 
 	renderer.renderLoop();							// Start render loop
 

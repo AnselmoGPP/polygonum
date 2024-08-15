@@ -76,6 +76,53 @@ Material::Material(glm::vec3& diffuse, glm::vec3& specular, float shininess)
 	: diffuse(diffuse), specular(specular), shininess(shininess) { }
 
 
+// Light -------------------------------------------------------------
+
+void Light::turnOff() { type = 0; }
+
+void Light::setDirectional(glm::vec3 direction, glm::vec3 ambient, glm::vec3 diffuse, glm::vec3 specular)
+{
+	this->type = 1;
+	this->direction = direction;
+
+	this->ambient = ambient;
+	this->diffuse = diffuse;
+	this->specular = specular;
+}
+
+void Light::setPoint(glm::vec3 position, glm::vec3 ambient, glm::vec3 diffuse, glm::vec3 specular, float constant, float linear, float quadratic)
+{
+	this->type = 2;
+	this->position = position;
+
+	this->ambient = ambient;
+	this->diffuse = diffuse;
+	this->specular = specular;
+
+	this->degree.x = constant;
+	this->degree.y = linear;
+	this->degree.z = quadratic;
+}
+
+void Light::setSpot(glm::vec3 position, glm::vec3 direction, glm::vec3 ambient, glm::vec3 diffuse, glm::vec3 specular, float constant, float linear, float quadratic, float cutOff, float outerCutOff)
+{
+	this->type = 3;
+	this->position = position;
+	this->direction = direction;
+
+	this->ambient = ambient;
+	this->diffuse = diffuse;
+	this->specular = specular;
+
+	this->degree.x = constant;
+	this->degree.y = linear;
+	this->degree.z = quadratic;
+
+	this->cutOff.x = cutOff;
+	this->cutOff.y = outerCutOff;
+}
+
+
 // LightSet -------------------------------------------------------------
 
 LightSet::LightSet(size_t numLights, size_t numActiveLights)

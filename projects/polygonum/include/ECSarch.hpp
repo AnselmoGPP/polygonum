@@ -32,6 +32,7 @@ enum class CT
     modelParams,
     move,
     planet,
+    distros,
     distributor
 };
 
@@ -96,7 +97,7 @@ public:
     void printInfo();
 
     // Entity methods
-    uint32_t addEntity(std::string name, std::vector<Component*>& components);                //!< Add new entity by defining its components.
+    uint32_t addEntity(std::string name, std::vector<Component*> components);                //!< Add new entity by defining its components.
     std::vector<uint32_t> addEntities(std::vector<std::string> names, std::vector<std::vector<Component*>> entities); //!< Add many entities.
     std::vector<uint32_t> getEntitySet(CT type);                            //!< Get set of entities containing component of type X.
     std::string getName(uint32_t entityId);

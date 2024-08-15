@@ -120,7 +120,7 @@ void EntityManager::printInfo()
 		comps = it->second->getAllComponents();
 }
 
-uint32_t EntityManager::addEntity(std::string name, std::vector<Component*>& components)
+uint32_t EntityManager::addEntity(std::string name, std::vector<Component*> components)
 {
 	#ifdef DEBUG_ECS
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;

@@ -115,6 +115,8 @@ public:
 	/// Creates graphic pipeline and descriptor sets. Called for window resizing (by Renderer::recreateSwapChain()).
 	void recreate_Pipeline_Descriptors();
 
+	void setActiveInstancesCount(size_t activeInstancesCount);	//!< Set number of active instances (<= vsUBO.maxUBOcount).
+
 	VkPipelineLayout			 pipelineLayout;		//!< Pipeline layout. Allows to use uniform values in shaders (globals similar to dynamic state variables that can be changed at drawing time to alter the behavior of your shaders without having to recreate them).
 	VkPipeline					 graphicsPipeline;		//!< Opaque handle to a pipeline object.
 
@@ -135,11 +137,8 @@ public:
 
 	ResourcesLoader* resLoader;							//!< Info used for loading resources (vertices, indices, shaders, textures). When resources are loaded, this is set to nullptr.
 	bool fullyConstructed;								//!< Flags if this object has been fully constructed (i.e. has a model loaded into Vulkan).
-	bool inModels;										//!< Flags if this model is going to be rendered (i.e., if it is in Renderer::models)
+	bool inModels;										//!< Flags if this model is ready for rendering (i.e., if it's in Renderer::models)
 	const std::string name;								//!< For debugging purposes.
-
-	/// Set number of active instances (<= vsUBO.maxUBOcount).
-	void setActiveInstancesCount(size_t activeInstancesCount);
 };
 
 #endif

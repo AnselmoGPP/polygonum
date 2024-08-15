@@ -39,7 +39,7 @@ class TimerSet
     size_t frameCounter;                ///< Number of calls made to computeDeltaTime()
 
 public:
-    TimerSet(int maxFPS = 0);           ///< Constructor. maxFPS sets a maximum FPS (0 for setting no maximum FPS)
+    TimerSet(int maxFPS = 30);               ///< Constructor. maxFPS sets a maximum FPS (0 for setting no maximum FPS)
 
     // Chrono methods
     void        startTimer();           ///< Start time counting for the chronometer (startTime)
@@ -49,7 +49,7 @@ public:
 
     // FPS control
     int         getFPS();               ///< Get FPS (updated in computeDeltaTime())
-    void        setMaxFPS(int fps);     ///< Modify the current maximum FPS. Set it to 0 to deactivate FPS control.
+    void        setMaxFPS(int newFPS);  ///< Modify the current maximum FPS. Set it to 0 to deactivate FPS control.
     int         getMaxPossibleFPS();    ///< Get the maximum possible FPS you can get (if we haven't set max FPS, maxPossibleFPS == FPS)
 
     // Frame counting

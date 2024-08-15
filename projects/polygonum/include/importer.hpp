@@ -53,7 +53,8 @@ class ShaderLoader;
 class SLModule;
 	class SLM_fromFile;
 	class SLM_fromBuffer;
-enum shaderModifier;
+enum smFlag;
+class ShaderModifier;
 class ShaderIncluder;
 
 class Texture;
@@ -187,8 +188,8 @@ public:
 	const VkShaderModule shaderModule;
 };
 
-/// Defines some changes that can be done to the shader before compilation.
-enum shaderModifier { 
+/// Shader modifier flags. It defines some changes that can be done to the shader before compilation (preprocessing operations).
+enum smFlag { 
 	sm_albedo, 
 	sm_normal, 
 	sm_specular, 
@@ -204,17 +205,30 @@ enum shaderModifier {
 	sm_distDithering_near,
 	sm_distDithering_far,
 	sm_earlyDepthTest,
-	sm_dryColor
+	sm_dryColor,
+	sm_changeHeader,
+	sm_none
+};
+
+struct ShaderModifier
+{
+	ShaderModifier() : flag(sm_none) { }
+	ShaderModifier(smFlag flag) : flag(flag) { }
+	ShaderModifier(smFlag flag, std::initializer_list<std::string> parameters) : flag(flag), params(parameters) { }
+
+	smFlag flag;
+	std::vector<std::string> params;
 };
 
 class SLModule		/// Shader Loader Module
 {
-	std::vector<shaderModifier> mods;				//!< Modifications to the shader.
+	std::vector<ShaderModifier> mods;				//!< Modifications to the shader.
 	void applyModifications(std::string& shader);	//!< Applies modifications defined by "mods".
 
-	bool findStrAndErase(std::string& text, const std::string& str);									//!< Find string and erase it.
-	bool findStrAndReplace(std::string& text, const std::string& str, const std::string& replacement);	//!< Find string and replace it with another.
-	bool findTwoAndReplaceBetween(std::string& text, const std::string& str1, const std::string& str2, const std::string& replacement);	//!< Find two sub-strings and replace what is in between the beginning of each sub-string.
+	bool findStrAndErase(std::string& text, const std::string& str);										//!< Find string and erase it.
+	bool findStrAndReplace(std::string& text, const std::string& str, const std::string& replacement);		//!< Find string and replace it with another.
+	bool findStrAndReplaceLine(std::string& text, const std::string& str, const std::string& replacement);	//!< Find string and replace from beginning of string to end-of-line.
+	bool findTwoAndReplaceBetween(std::string& text, const std::string& str1, const std::string& str2, const std::string& replacement);	//!< Find two sub-strings and replace what is in between the beginning of string 1 and end of string 2.
 
 protected:
 	std::string id;
@@ -222,7 +236,7 @@ protected:
 	virtual void getRawData(std::string& glslData) = 0;
 
 public:
-	SLModule(const std::string& id, std::vector<shaderModifier>& modifications);
+	SLModule(const std::string& id, std::vector<ShaderModifier>& modifications);
 	virtual ~SLModule() { };
 
 	std::list<Shader>::iterator loadShader(std::list<Shader>& loadedShaders, VulkanEnvironment* e);	//!< Get an iterator to the shader in loadedShaders. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
@@ -236,7 +250,7 @@ class SLM_fromBuffer : public SLModule
 	void getRawData(std::string& glslData) override;
 
 public:
-	SLM_fromBuffer(const std::string& id, const std::string& glslText, std::vector<shaderModifier>& modifications);
+	SLM_fromBuffer(const std::string& id, const std::string& glslText, std::vector<ShaderModifier>& modifications);
 	SLModule* clone() override;
 };
 
@@ -247,7 +261,7 @@ class SLM_fromFile : public SLModule
 	void getRawData(std::string& glslData) override;
 
 public:
-	SLM_fromFile(const std::string& filePath, std::vector<shaderModifier>& modifications);
+	SLM_fromFile(const std::string& filePath, std::vector<ShaderModifier>& modifications);
 	SLModule* clone() override;
 };
 
@@ -257,8 +271,8 @@ class ShaderLoader
 	SLModule* loader;
 
 public:
-	ShaderLoader(const std::string& filePath, std::vector<shaderModifier>& modifications = std::vector<shaderModifier>());						//!< From file
-	ShaderLoader(const std::string& id, const std::string& text, std::vector<shaderModifier>& modifications = std::vector<shaderModifier>());	//!< From buffer
+	ShaderLoader(const std::string& filePath, std::vector<ShaderModifier>& modifications = std::vector<ShaderModifier>());						//!< From file
+	ShaderLoader(const std::string& id, const std::string& text, std::vector<ShaderModifier>& modifications = std::vector<ShaderModifier>());	//!< From buffer
 	ShaderLoader();													//!< Default constructor
 	ShaderLoader(const ShaderLoader& obj);							//!< Copy constructor (necessary because loader can be freed in destructor)
 	~ShaderLoader();

@@ -11,10 +11,10 @@ ModelDataInfo::ModelDataInfo()
 	verticesLoader(nullptr),
 	shadersInfo(nullptr),
 	texturesInfo(nullptr),
-	maxDescriptorsCount_vs(1),
-	maxDescriptorsCount_fs(1),
-	UBOsize_vs(8),
-	UBOsize_fs(8),
+	maxDescriptorsCount_vs(0),
+	maxDescriptorsCount_fs(0),
+	UBOsize_vs(0),
+	UBOsize_fs(0),
 	globalUBO_vs(nullptr),
 	globalUBO_fs(nullptr),
 	transparency(false),
@@ -81,12 +81,12 @@ ModelData& ModelData::fullConstruction(std::list<Shader>& loadedShaders, std::li
 	
 	createDescriptorSetLayout();
 	createGraphicsPipeline();
-
+	
 	vsUBO.createUBObuffers();
 	fsUBO.createUBObuffers();
 	createDescriptorPool();
 	createDescriptorSets();
-
+	
 	//fullyConstructed = true;
 	return *this;
 }

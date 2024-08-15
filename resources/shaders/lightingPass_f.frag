@@ -2,7 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 #pragma shader_stage(fragment)
 
-#include "..\..\..\resources\shaders\fragTools.vert"
+#include "..\..\..\resources\shaders\fragTools.vert"			// modify this path according to your folder system
 
 //layout(early_fragment_tests) in;
 
@@ -37,14 +37,21 @@ void main()
 	//outColor = showSpecularity();   return;
 	//outColor = showRoughness();     return;
 	
-	vec3 fragPos = texture(inputAttachments[0], inUVs).xyz;
-	vec3 albedo = texture(inputAttachments[1], inUVs).xyz;
-	vec3 normal = texture(inputAttachments[2], inUVs, 1).xyz;		//unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);	//unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);
+	vec3 fragPos   = texture(inputAttachments[0], inUVs).xyz;
+	vec3 albedo    = texture(inputAttachments[1], inUVs).xyz;
+	vec3 normal    = texture(inputAttachments[2], inUVs, 1).xyz;		//unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);	//unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);
 	vec4 specRough = texture(inputAttachments[3], inUVs);
 	
-	savePrecalcLightValues(fragPos, ubo.camPos.xyz, ubo.lights);	//ubo.lightPosDir);
+	//savePrecalcLightValues(fragPos, ubo.camPos.xyz, ubo.lights);	//ubo.lightPosDir);
 	//TB3 empty;
 	//savePNT(fragPos, normalize(inNormal), empty);
 	
-	outColor = vec4(getFragColor(albedo, normal, specRough.xyz, specRough.w * 255), 1.0);
+	outColor = getFragColor(
+		albedo, 
+		normal, 
+		specRough.xyz, 
+		specRough.w * 255,
+		ubo.lights, 1,
+		fragPos,
+		ubo.camPos.xyz );	
 }

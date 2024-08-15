@@ -80,14 +80,15 @@ class Renderer
 {
 	// Hardcoded parameters
 	const int MAX_FRAMES_IN_FLIGHT = 2;		//!< How many frames should be processed concurrently.
-	int maxFPS = 120;
 
 	// Main parameters
 	VulkanEnvironment			e;
 	IOmanager&					io;							//!< Input data
 	TimerSet					timer;						//!< Time control
 
-	std::vector<std::vector<std::list<ModelData>>> models;	//!< Sets of fully initialized models (one set per renderpass per subpass).
+	std::vector<
+		std::vector<
+			std::list<ModelData>>> models;					//!< Sets of fully initialized models (one set per renderpass per subpass).
 	std::list<ModelData>		modelsToLoad;				//!< Models waiting for being included in m (partially initialized).
 	std::list<ModelData>		modelsToDelete;				//!< Iterators to the loaded models that have to be deleted from Vulkan.
 
@@ -196,11 +197,11 @@ public:
 	void setInstances(modelIter model, size_t numberOfRenders);
 
 	/// Make a model the last to be drawn within its own layer. Useful for transparent objects.
-	void toLastDraw(modelIter model);
+	void toLastDraw(modelIter model) { /* <<< NOT WORKING */ };
 
-	void createLightingPass(unsigned numLights);
+	void createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader);
 	void updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights);
-	void createPostprocessingPass();
+	void createPostprocessingPass(std::string vertShaderPath, std::string fragShaderPath);
 	void updatePostprocessingPass();
 
 	// Getters

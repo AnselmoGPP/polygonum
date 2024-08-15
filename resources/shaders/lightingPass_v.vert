@@ -2,7 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 #pragma shader_stage(vertex)
 
-#include "..\..\..\resources\shaders\vertexTools.vert"
+//#include "..\..\..\resources\shaders\vertexTools.vert"		// modify this path according to your folder system
 
 // Uniform
 //layout(set = 0, binding = 0) uniform ubobject {

@@ -27,7 +27,9 @@ int main(int argc, char* argv[])
 
 	createTriangle(renderer);				// Forward pass
 	createBackground(renderer);				// Forward pass
-	renderer.createPostprocessingPass();	// Postprocessing pass
+	renderer.createPostprocessingPass(		// Postprocessing pass
+		std::string("../../../resources/shaders/postprocessing_v.vert"),
+		std::string("../../../resources/shaders/postprocessing_f.frag"));
 
 	renderer.renderLoop();					// Start render loop
 

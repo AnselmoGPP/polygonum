@@ -1,66 +1,72 @@
 
 // Index ------------------------------------------------------------------------
-/*
-	Constants;
-		NUMLIGHTS
-		PI
-		E
-		SR05
-	Data structures:
-		Light
-		PreCalcValues
-		TB3
-		uvGradient
-	Graphics:
-		toRGB
-		toSRGB
-		unpackUV
-		unpackUVmirror
-		unpackNormal
-		mixByHeight
-	Save:
-		savePrecalcLightValues
-	Math:
-		getDist
-		getSqrDist
-		getLength
-		getSqrLength
-		getRatio
-		getDirection
-		getAngle
-		getModulus
-		lerp
-		reflectRay
-	Lighting:
-		directionalLightColor
-		PointLightColor
-		SpotLightColor
-		getFragColor
-	Planar texture:
-		getNormal
-		cubemapTex
-		getTex   (example)
-	Triplanar texture:
-		triplanarTexture
-		triplanarNoColor
-		triplanarNormal
-		getGradients
-		triplanarTexture_Sea
-		triplanarNoColor_Sea
-		triplanarNormal_Sea
-	Others:
-		planarNormal
-		getTexScaling
-		getLowResDist
-		applyParabolicFog
-		rand
-		applyOrderedDithering
-*/
+
+//	Constants;
+//		NUMLIGHTS
+//		PI
+//		PI2
+//		PI05
+//      E
+//      SR05
+//      GAMMA
+//	Data structures:
+//		Light
+//		PreCalcValues
+//		TB3
+//		uvGradient
+//	Graphics:
+//		toRGB
+//		toSRGB
+//		unpackUV
+//		unpackUVmirror
+//		unpackNormal
+//		mixByHeight
+//	Save:
+//		savePrecalcLightValues
+//	Math:
+//		getDist
+//		getSqrDist
+//		getLength
+//		getSqrLength
+//		getRatio
+//		getDirection
+//		getAngle
+//		getModulus
+//		lerp
+//		reflectRay
+//	Lighting:
+//		directionalLightColor
+//		PointLightColor
+//		SpotLightColor
+//		getFragColor
+//	Planar texture:
+//		getNormal
+//		cubemapTex
+//		getTex   (example)
+//	Triplanar texture:
+//		triplanarTexture
+//		triplanarNoColor
+//		triplanarNormal
+//		getGradients
+//		triplanarTexture_Sea
+//		triplanarNoColor_Sea
+//		triplanarNormal_Sea
+//	Postprocessing:
+		vec3 getInversion(vec3 fragColor);
+		vec3 getGreyScale(vec3 fragColor);
+		//vec3 applyKernel(float kernel[9], sampler2D sampler, vec2 uv);
+//	Others:
+//		planarNormal
+//		getTexScaling
+//		getLowResDist
+//		applyParabolicFog
+//		rand
+//		applyOrderedDithering
 
 
 // Constants ------------------------------------------------------------------------
 
-#define NUMLIGHTS 1
+#define NUMLIGHTS 3
 #define PI 3.141592653589793238462
 #define PI2 6.283185307179586476924
 #define PI05 1.570796326794896619231
@@ -408,64 +414,124 @@ void modifySavedSunLight(vec3 fragPos)
 // Lightning functions ------------------------------------------------------------------------
 
 // Directional light (sun)
-vec3 directionalLightColor(int i, vec3 albedo, vec3 normal, vec3 specularity, float roughness)
+vec3 directionalLightColor(vec3 albedo, vec3 normal, vec3 specularity, float roughness, Light light, vec3 fragDir)
 {
+	vec3 halfwayDir = normalize(-light.direction + fragDir);
+	
 	// ----- Ambient lighting -----
-	vec3 ambient = light[i].ambient * albedo;
-	if(dot(light[i].direction, normal) > 0) return ambient;			// If light comes from below the tangent plane
+	vec3 ambient  = light.ambient * albedo;
+	if(dot(light.direction, normal) > 0) return ambient;			// If light comes from below the tangent plane
 	
 	// ----- Diffuse lighting -----
-	float diff    = max(dot(normal, -light[i].direction), 0.f);
-	vec3 diffuse = light[i].diffuse * albedo * diff;
+	float diff    = max(dot(normal, -light.direction), 0.f);
+	vec3 diffuse  = light.diffuse * albedo * diff;
 	
 	// ----- Specular lighting -----
-	float spec		= pow(max(dot(normal, pre.halfwayDir[i]), 0.0), roughness * 4);
-	vec3 specular	= light[i].specular * specularity * spec;
+	float spec    = pow(max(dot(normal, halfwayDir), 0.0), roughness * 4);
+	vec3 specular = light.specular * specularity * spec;
 	
 	// ----- Result -----
 	return vec3(ambient + diffuse + specular);
 }
 
 // Point light (bulb)
-vec3 PointLightColor(int i, vec3 albedo, vec3 normal, vec3 specularity, float roughness)
+vec3 PointLightColor(vec3 albedo, vec3 normal, vec3 specularity, float roughness, Light light, vec3 fragDir, vec3 fragPos)
 {
+	float distFragLight = length(light.position - fragPos);
+	vec3  lightDirFrag  = normalize(fragPos - light.position);
+	vec3  halfwayDir    = normalize(-lightDirFrag + fragDir);
+	float attenuation   = 1.0 / (light.degree[0] + light.degree[1] * distFragLight + light.degree[2] * distFragLight * distFragLight);
+	
     // ----- Ambient lighting -----
-    vec3 ambient = light[i].ambient * albedo * pre.attenuation[i];
-	if(dot(pre.lightDirFrag[i], normal) > 0) return ambient;				// If light comes from below the tangent plane
+    vec3 ambient  = light.ambient * albedo * attenuation;
+	if(dot(lightDirFrag, normal) > 0) return ambient;				// If light comes from below the tangent plane
 
     // ----- Diffuse lighting -----
-    float diff   = max(dot(normal, -pre.lightDirFrag[i]), 0.f);
-    vec3 diffuse = light[i].diffuse * albedo * diff * pre.attenuation[i];
+    float diff    = max(dot(normal, -lightDirFrag), 0.f);
+    vec3 diffuse  = light.diffuse * albedo * diff * attenuation;
 	
     // ----- Specular lighting -----
-	float spec        = pow(max(dot(normal, pre.halfwayDir[i]), 0.0), roughness * 4);
-	vec3 specular     = light[i].specular * specularity * spec * pre.attenuation[i];
+	float spec    = pow(max(dot(normal, halfwayDir), 0.0), roughness * 4);
+	vec3 specular = light.specular * specularity * spec * attenuation;
 	
     // ----- Result -----
     return vec3(ambient + diffuse + specular);	
 }
 
 // Spot light (spotlight)
-vec3 SpotLightColor(int i, vec3 albedo, vec3 normal, vec3 specularity, float roughness)
+vec3 SpotLightColor(vec3 albedo, vec3 normal, vec3 specularity, float roughness, Light light, vec3 fragDir, vec3 fragPos)
 {
+	float distFragLight	= length(light.position - fragPos);
+	vec3  lightDirFrag  = normalize(fragPos - light.position);
+	vec3  halfwayDir    = normalize(-lightDirFrag + fragDir);
+	float attenuation   = 1.0 / (light.degree[0] + light.degree[1] * distFragLight + light.degree[2] * distFragLight * distFragLight);
+	float theta		    = dot(lightDirFrag, light.direction);		// The closer to 1, the more direct the light gets to fragment.
+	float epsilon	    = light.cutOff[0] - light.cutOff[1];		// Cutoff range
+	float intensity     = clamp((theta - light.cutOff[1]) / epsilon, 0.0, 1.0);
+		
     // ----- Ambient lighting -----
-    vec3 ambient = light[i].ambient * albedo * pre.attenuation[i];
-	if(dot(pre.lightDirFrag[i], normal) > 0) return ambient;				// If light comes from below the tangent plane
+    vec3 ambient  = light.ambient * albedo * attenuation;
+	if(dot(lightDirFrag, normal) > 0) return ambient;				// If light comes from below the tangent plane
 
     // ----- Diffuse lighting -----
-	float diff      = max(dot(normal, -pre.lightDirFrag[i]), 0.f);
-    vec3 diffuse    = light[i].diffuse * albedo * diff * pre.attenuation[i] * pre.intensity[i];
+	float diff    = max(dot(normal, -lightDirFrag), 0.f);
+    vec3 diffuse  = light.diffuse * albedo * diff * attenuation * intensity;
 
     // ----- Specular lighting -----
-	float spec        = pow(max(dot(normal, pre.halfwayDir[i]), 0.0), roughness * 4);
-	vec3 specular     = light[i].specular * specularity * spec * pre.attenuation[i] * pre.intensity[i];
+	float spec    = pow(max(dot(normal, halfwayDir), 0.0), roughness * 4);
+	vec3 specular = light.specular * specularity * spec * attenuation * intensity;
 	
     // ----- Result -----
     return vec3(ambient + diffuse + specular);
 }
 
 // Apply the lights to a fragment
-vec3 getFragColor(vec3 albedo, vec3 normal, vec3 specularity, float roughness)
+vec4 getFragColor(vec3 albedo, vec3 normal, vec3 specularity, float roughness, Light inLight[NUMLIGHTS], int numUsedLights, vec3 fragPos, vec3 camPos)
+{
+	//albedo      = applyLinearFog(albedo, vec3(.1,.1,.1), 100, 500);
+	//specularity = applyLinearFog(specularity, vec3(0,0,0), 100, 500);
+	//roughness   = applyLinearFog(roughness, 0, 100, 500);
+	
+	int numLights = min(numUsedLights, NUMLIGHTS);
+	vec3 fragDir   = normalize(camPos - fragPos);
+		
+	vec4 result = vec4(0,0,0,1);
+
+	for(int i = 0; i < numLights; i++)		// for each light source
+	{
+		if(inLight[i].type < 0.1) continue;
+		else if(inLight[i].type < 1.1) result.xyz += directionalLightColor(albedo, normal, specularity, roughness, light[i], fragDir);
+		else if(inLight[i].type < 2.1) result.xyz += PointLightColor      (albedo, normal, specularity, roughness, light[i], fragDir, fragPos);
+		else if(inLight[i].type < 3.1) result.xyz += SpotLightColor       (albedo, normal, specularity, roughness, light[i], fragDir, fragPos);
+	}
+	
+	return result;
+	/*
+	for(int i = 0; i < numLights; i++)		// for each light source
+	{
+		switch(light[i].type)
+		{
+		case 1:
+			result.xyz += vec3(0,1,0);//directionalLightColor	(albedo, normal, specularity, roughness, light[i], fragDir);
+			break;
+		case 2:
+			result.xyz += vec3(1,0,0);//PointLightColor		(albedo, normal, specularity, roughness, light[i], fragDir, fragPos);
+			break;
+		case 3:
+			result.xyz += vec3(0,0,1);//SpotLightColor		(albedo, normal, specularity, roughness, light[i], fragDir, fragPos);
+			break;
+		default:
+			break;
+		}
+	}
+	
+	return result;
+	*/
+}
+
+// Apply the lights to a fragment
+/*
+vec3 getFragColor_Original(vec3 albedo, vec3 normal, vec3 specularity, float roughness)
 {
 	//albedo      = applyLinearFog(albedo, vec3(.1,.1,.1), 100, 500);
 	//specularity = applyLinearFog(specularity, vec3(0,0,0), 100, 500);
@@ -493,6 +559,7 @@ vec3 getFragColor(vec3 albedo, vec3 normal, vec3 specularity, float roughness)
 	
 	return result;
 }
+*/
 
 // Get axis towards a direction vector is closer.
 vec3 getMajorAxis(vec3 dir)
@@ -628,6 +695,7 @@ vec4 cubemapTex(vec3 pos, sampler2D front, sampler2D back, sampler2D up, sampler
 }
 
 // (EXAMPLE) Get fragment color given 4 texture maps (albedo, normal, specular, roughness).
+/*
 vec3 getTex(sampler2D albedo, sampler2D normal, sampler2D specular, sampler2D roughness, float scale, vec2 UV)
 {
 	return getFragColor(
@@ -636,7 +704,7 @@ vec3 getTex(sampler2D albedo, sampler2D normal, sampler2D specular, sampler2D ro
 				texture(specular, unpackUV(UV, scale)).rgb, 
 				texture(roughness, unpackUV(UV, scale)).r * 255 );
 }
-
+*/
 
 // Triplanar functions ------------------------------------------------------------------------
 
@@ -865,6 +933,7 @@ vec3 triplanarNormal_Sea(sampler2D tex, float texFactor, float speed, float t, v
 }
 
 // (EXAMPLE) Get triplanar fragment color given 4 texture maps (albedo, normal, specular, roughness).
+/*
 vec3 getTriTex(sampler2D albedo, sampler2D normal, sampler2D specular, sampler2D roughness, float scale, vec2 UV, vec3 fragPos, vec3 inNormal, TB3 tb3)
 {
 	return getFragColor(
@@ -873,6 +942,50 @@ vec3 getTriTex(sampler2D albedo, sampler2D normal, sampler2D specular, sampler2D
 				triplanarNoColor(specular, scale, fragPos, inNormal).rgb,
 				triplanarNoColor(roughness, scale, fragPos, inNormal).r * 255 );
 }
+*/
+
+
+vec3 getInversion(vec3 fragColor) { return vec3(1.f - fragColor); }
+
+vec3 getGreyScale(vec3 fragColor) 
+{ 
+	float greyColor = 0.2126 * fragColor.r + 0.7152 * fragColor.g + 0.0722 * fragColor.b;
+	return vec3(greyColor, greyColor, greyColor); 
+}
+
+// Kernels:
+const float sharpen[9] = { -1, -1, -1, -1,  9, -1, -1, -1, -1 };
+const float blur[9] = { 1./16, 2./16, 1./16, 2./16, 4./16, 2./16, 1./16, 2./16, 1./16 };
+const float edgeDetection[9] = { 1, 1, 1, 1,-8, 1, 1, 1, 1 };
+
+const float offset = 1.f / 1500.f;
+const vec2 kernelOffsets[9] = vec2[](
+	vec2(-offset,  offset), 	// top-left
+	vec2( 0.f,     offset), 	// top-center
+	vec2( offset,  offset), 	// top-right
+	vec2(-offset,  0.f   ), 	// center-left
+	vec2( 0.f,     0.f   ), 	// center-center
+	vec2( offset,  0.f   ), 	// center-right
+	vec2(-offset, -offset), 	// bottom-left
+	vec2( 0.f,    -offset), 	// bottom-center
+	vec2( offset, -offset) 		// bottom-right
+);
+
+vec3 applyKernel(float kernel[9], sampler2D texSampler, vec2 uv)
+{
+	// Use examples:  applyKernel(sharpen);  applyKernel(blur);  applyKernel(edgeDetection);
+	
+	vec3 colors[9];
+	for(int i = 0; i < 9; i++)
+		colors[i] = vec3(texture(texSampler, uv + kernelOffsets[i]).rgb);
+	
+	vec3 finalColor = vec3(0.f);
+	for(int i = 0; i < 9; i++) 
+		finalColor += colors[i] * kernel[i];
+	
+	return finalColor;
+}
+
 
 // Get gradients
 uvGradient getGradients(vec2 uvs)

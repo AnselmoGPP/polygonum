@@ -29,7 +29,7 @@ void ResourcesLoader::loadResources(VertexData& destVertexData, std::vector<shad
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
-
+	
 	vertices.loadVertices(destVertexData, this, e);
 	
 	{
@@ -39,7 +39,6 @@ void ResourcesLoader::loadResources(VertexData& destVertexData, std::vector<shad
 		for (unsigned i = 0; i < shaders.size(); i++)
 		{
 			shaderIter iter = shaders[i].loadShader(loadedShaders , *e);
-
 			iter->counter++;
 			destShaders.push_back(iter);
 		}
@@ -399,14 +398,18 @@ Shader::~Shader()
 	vkDestroyShaderModule(e.c.device, shaderModule, nullptr); 
 }
 
-SLModule::SLModule(const std::string& id, std::vector<shaderModifier>& modifications) 
+SLModule::SLModule(const std::string& id, std::vector<ShaderModifier>& modifications)
 	: id(id), mods(modifications)
 {
 	if (mods.size())	// if there're modifiers, name has to change. Otherwise, it's possible that 2 different shaders have same name when the original shader is the same.
 	{
-		this->id += "_";
-		for(shaderModifier mod : mods)
-			this->id += std::to_string((int)mod);
+		for (ShaderModifier mod : mods)
+		{
+			this->id += "_" + std::to_string((int)mod.flag);
+			
+			for(const std::string& str : mod.params)
+				this->id += "_" + str;
+		}
 	}
 };
 
@@ -415,15 +418,15 @@ std::list<Shader>::iterator SLModule::loadShader(std::list<Shader>& loadedShader
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << ": " << this->id << std::endl;
 	#endif
-
+	
 	// Look for it in loadedShaders
 	for (auto i = loadedShaders.begin(); i != loadedShaders.end(); i++)
 		if (i->id == id) return i;
-
+	
 	// Load shader (if not loaded yet)
 	std::string glslData;
 	getRawData(glslData);
-
+	
 	// Make some changes to the shader string.
 	if (mods.size()) applyModifications(glslData);
 
@@ -432,32 +435,32 @@ std::list<Shader>::iterator SLModule::loadShader(std::list<Shader>& loadedShader
 	options.SetIncluder(std::make_unique<ShaderIncluder>());
 	options.SetGenerateDebugInfo();
 	//if (optimize) options.SetOptimizationLevel(shaderc_optimization_level_performance);	// This option makes shaderc::CompileGlslToSpv fail when Assimp::Importer is present in code, even if an Importer object is not created (odd) (Importer is in DataFromFile2::loadVertex).
-
+	
 	shaderc::Compiler compiler;
-
+	
 	shaderc::PreprocessedSourceCompilationResult preProcessed = compiler.PreprocessGlsl(glslData.data(), glslData.size(), shaderc_glsl_infer_from_source, id.c_str(), options);
 	if (preProcessed.GetCompilationStatus() != shaderc_compilation_status_success)
 		std::cerr << "Shader module preprocessing failed - " << preProcessed.GetErrorMessage() << std::endl;
-
+	
 	std::string ppData(preProcessed.begin());
 	shaderc::SpvCompilationResult module = compiler.CompileGlslToSpv(ppData.data(), ppData.size(), shaderc_glsl_infer_from_source, id.c_str(), options);
 
 	if (module.GetCompilationStatus() != shaderc_compilation_status_success)
 		std::cerr << "Shader module compilation failed - " << module.GetErrorMessage() << std::endl;
-
+	
 	std::vector<uint32_t> spirv = { module.cbegin(), module.cend() };
-
+	
 	//Create shader module:
 
 	VkShaderModuleCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 	createInfo.codeSize = spirv.size() * sizeof(uint32_t);
 	createInfo.pCode = reinterpret_cast<const uint32_t*>(spirv.data());	// The default allocator from std::vector ensures that the data satisfies the alignment requirements of `uint32_t`.
-
+	
 	VkShaderModule shaderModule;
 	if (vkCreateShaderModule(e->c.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create shader module!");
-
+	
 	// Create and save shader object
 	loadedShaders.emplace(loadedShaders.end(), *e, id, shaderModule);	//loadedShaders.push_back(Shader(e, id, shaderModule));
 	return (--loadedShaders.end());
@@ -465,12 +468,12 @@ std::list<Shader>::iterator SLModule::loadShader(std::list<Shader>& loadedShader
 
 void SLModule::applyModifications(std::string& shader)
 {
-	int count = 0, i;
+	int count = 0;
 	bool found;
 	
-	for (shaderModifier mod : mods)
+	for (const ShaderModifier& mod : mods)
 	{
-		switch (mod)
+		switch (mod.flag)
 		{
 		case sm_albedo:					// (FS) Sampler used
 			found = findTwoAndReplaceBetween(shader, "vec4 albedo", ";",
@@ -494,7 +497,7 @@ void SLModule::applyModifications(std::string& shader)
 			found = findTwoAndReplaceBetween(shader, "vec3 normal", ";",
 				"vec3 normal = planarNormal(texSampler[" + std::to_string(count) + "], inUVs, inTB, inNormal, 1)");
 			if (found) count++;
-			for (i = 0; i < 3; i++) if (!findStrAndErase(shader, "//normal: ")) break;
+			for (int i = 0; i < 3; i++) if (!findStrAndErase(shader, "//normal: ")) break;
 			findStrAndReplace(shader, "layout(location = 4) flat", "layout(location = 5) flat");
 			std::cout << shader << std::endl;
 			std::cout << "---------------" << std::endl;
@@ -555,6 +558,11 @@ void SLModule::applyModifications(std::string& shader)
 			findStrAndErase(shader, "//dryColor: ");
 			break;
 
+		case sm_changeHeader:				// Change header (#include header_path)
+			findStrAndReplaceLine(shader, "#include", "#include \"" + mod.params[0] + '\"');
+			break;
+
+		case sm_none:
 		default:
 			break;
 		}
@@ -592,26 +600,39 @@ bool SLModule::findStrAndReplace(std::string& text, const std::string& str, cons
 	return true;
 }
 
-SLM_fromBuffer::SLM_fromBuffer(const std::string& id, const std::string& glslText, std::vector<shaderModifier>& modifications)
+bool SLModule::findStrAndReplaceLine(std::string& text, const std::string& str, const std::string& replacement)
+{
+	size_t pos = text.find(str, 0);
+	if (pos == text.npos) return false;
+
+	size_t eol = text.find('\n', pos) - 1;
+	if (eol == text.npos) return false;
+	eol++;	// <<< why is this needed? Otherwise, something in the text is messed up (#line)
+
+	text.replace(text.begin() + pos, text.begin() + eol, replacement);
+	return true;
+}
+
+SLM_fromBuffer::SLM_fromBuffer(const std::string& id, const std::string& glslText, std::vector<ShaderModifier>& modifications)
 	: SLModule(id, modifications), data(glslText) { }
 
 SLModule* SLM_fromBuffer::clone() { return new SLM_fromBuffer(*this); }
 
 void SLM_fromBuffer::getRawData(std::string& glslData) { glslData = data; }
 
-SLM_fromFile::SLM_fromFile(const std::string& filePath, std::vector<shaderModifier>& modifications)
+SLM_fromFile::SLM_fromFile(const std::string& filePath, std::vector<ShaderModifier>& modifications)
 	: SLModule(filePath, modifications), filePath(filePath) { };
 
 SLModule* SLM_fromFile::clone() { return new SLM_fromFile(*this); }
 
 void SLM_fromFile::getRawData(std::string& glslData) { readFile(filePath.c_str(), glslData); }
 
-ShaderLoader::ShaderLoader(const std::string& filePath, std::vector<shaderModifier>& modifications)
+ShaderLoader::ShaderLoader(const std::string& filePath, std::vector<ShaderModifier>& modifications)
 {
 	loader = new SLM_fromFile(filePath, modifications);
 }
 
-ShaderLoader::ShaderLoader(const std::string& id, const std::string& text, std::vector<shaderModifier>& modifications)
+ShaderLoader::ShaderLoader(const std::string& id, const std::string& text, std::vector<ShaderModifier>& modifications)
 {
 	loader = new SLM_fromBuffer(id, text, modifications);
 }
@@ -671,7 +692,7 @@ std::list<Texture>::iterator TLModule::loadTexture(std::list<Texture>& loadedTex
 	#endif
 	
 	this->e = e;
-
+	
 	// Look for it in loadedShaders
 	for (auto i = loadedTextures.begin(); i != loadedTextures.end(); i++)
 		if (i->id == id) return i;

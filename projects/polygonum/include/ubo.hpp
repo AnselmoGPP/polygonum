@@ -58,6 +58,11 @@ extern Sizes size;
 
 struct Light
 {
+	void turnOff();
+	void setDirectional(glm::vec3 direction, glm::vec3 ambient, glm::vec3 diffuse, glm::vec3 specular);
+	void setPoint(glm::vec3 position, glm::vec3 ambient, glm::vec3 diffuse, glm::vec3 specular, float constant, float linear, float quadratic);
+	void setSpot(glm::vec3 position, glm::vec3 direction, glm::vec3 ambient, glm::vec3 diffuse, glm::vec3 specular, float constant, float linear, float quadratic, float cutOff, float outerCutOff);
+
 	alignas(16) int type;				//!< 0: no light, 1: directional, 2: point, 3: spot
 
 	alignas(16) glm::vec3 position;

@@ -10,8 +10,8 @@
 void sleep(int milliseconds) { std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds)); }
 
 
-TimerSet::TimerSet(int maximumFPS)
-    : currentTime(std::chrono::system_clock::duration::zero()), maxFPS(maximumFPS), time(0), deltaTime(0), FPS(0), frameCounter(0)
+TimerSet::TimerSet(int maxFPS)
+    : currentTime(std::chrono::system_clock::duration::zero()), maxFPS(maxFPS), time(0), deltaTime(0), FPS(0), frameCounter(0)
 {
     startTimer();
 }

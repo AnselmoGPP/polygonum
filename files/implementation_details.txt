@@ -35,3 +35,7 @@ No Man's sky: Planets
 Dot & Cross product ----------
 
 Cross& Dot product : https://www.youtube.com/watch?v=h0NJK4mEIJU
+
+Arguments passed by reference ----------
+
+The C++ standard permits by-value function arguments to be destroyed either within the scope of the function, or in the calling scope (!).
