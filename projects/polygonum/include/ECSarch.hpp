@@ -1,8 +1,8 @@
 #ifndef ECSARCH_HPP
 #define ECSARCH_HPP
 
-#include <map>
-//#include <list>
+#include <unordered_map>
+#include <typeindex>
 #include <string>
 #include <vector>
 #include <memory>
@@ -18,48 +18,30 @@ class EntityManager;
 class MainEntityFactory;
 
 
-// Definitions ----------
-
-// Component type (CT). Used for identifying the type of component.
-enum class CT
-{
-    engine,
-    input,
-    camera,
-    lights,
-    sky,
-    model,
-    modelParams,
-    move,
-    planet,
-    distros,
-    distributor
-};
+// Class definitions ----------
 
 /// It stores state data (fields) and have no behavior (no methods).
 struct Component
 {
-    Component(CT type);
+    Component();
     virtual ~Component();
 
-    const CT type;
+    std::type_index typeIndex;
 };
 
 /// An ID associated with a set of components.
 class Entity
 {
-    std::vector<std::shared_ptr<Component>> components;
+    std::unordered_map<std::type_index, std::unique_ptr<Component>> components;
 
 public:
-    Entity(uint32_t id, std::string name, std::vector<Component*>& components);
+    Entity(std::string name);
     ~Entity();
 
-    void addComponent(Component* component);
-    const std::vector<std::shared_ptr<Component>>& getComponents();
-    Component* getSingleComponent(CT type);
-    std::vector<Component*> getAllComponents();
+    template<typename T> void addComp(T* component);
+    template<typename T> T* getComp();
+    void printInfo();
 
-    const uint32_t id;
     const Entity* resourceHandle;
     const std::string name;
 };
@@ -69,10 +51,11 @@ public:
 class System
 {
 public:
-    System(EntityManager* entityManager = nullptr) : em(entityManager) { };
+    System(EntityManager* entityManager = nullptr);
     virtual ~System();
 
     EntityManager* em;
+    std::type_index typeIndex;
 
     virtual void update(float timeStep) = 0;
 };
@@ -81,13 +64,11 @@ public:
 /// Acts as a "database", where you look up entities and get their list of components.
 class EntityManager
 {
-    //std::vector<Component> m_componentPool;
     uint32_t getNewId();
     uint32_t lowestUnassignedId = 1;
 
-    std::map<uint32_t, Entity*> entities;
-    std::vector<System*> systems;
-    //std::vector<std::shared_ptr<Component>> sComponents;     // singleton components. Type shared_ptr prevents singleton components to be deleted during entity destruction.
+    std::unordered_map<uint32_t, std::unique_ptr<Entity>> entities;
+    std::vector<std::unique_ptr<System>> systems;
 
 public:
     EntityManager();
@@ -96,23 +77,17 @@ public:
     void update(float timeStep);
     void printInfo();
 
-    // Entity methods
-    uint32_t addEntity(std::string name, std::vector<Component*> components);                //!< Add new entity by defining its components.
-    std::vector<uint32_t> addEntities(std::vector<std::string> names, std::vector<std::vector<Component*>> entities); //!< Add many entities.
-    std::vector<uint32_t> getEntitySet(CT type);                            //!< Get set of entities containing component of type X.
+    uint32_t addEntity(Entity* entity);                                     //!< Add new entity by defining its components.
+    template<typename T> void addComp(uint32_t entityId, T* component);
+    template<typename T> void addSystem(T* system);                         //!< Add new system
+
+    template<typename T> std::vector<uint32_t> getEntities();               //!< Get set of entities containing component of type X.
+    template<typename T> T* getComp(uint32_t entityId);
     std::string getName(uint32_t entityId);
 
-    // Component methods
-    Component* getSComponent(CT type);                      //!< Get the first component found of type X in the whole set of entities. Useful for singleton components.
-    Component* getComponent(CT type, uint32_t entityId);    //!< Get the first component found of type X in a given entity.
-    std::vector<Component*> getComponents(CT type);
-
-    // System methods
-    void addSystem(System* system);                                     //!< Add new system
-
-    // Others
     void removeEntity(uint32_t entityId);
-    void addComponentToEntity(uint32_t entityId, Component* component);
+
+    uint32_t singletonId;   // Id of the entity containing all the singleton components (implementation dependent)
 };
 
 
@@ -128,5 +103,59 @@ public:
     //Entity* createAIPlayer();
     //Entity* createBasicMonster();
 };
+
+
+// Templates definitions ----------
+
+template<typename T>
+void Entity::addComp(T* component)
+{
+    components[std::type_index(typeid(T))] = std::unique_ptr<T>(component);
+}
+
+template<typename T>
+T* Entity::getComp()
+{
+    auto it = components.find(std::type_index(typeid(T)));
+    return it != components.end() ? static_cast<T*>(it->second.get()) : nullptr;
+}
+
+template<typename T>
+void EntityManager::addSystem(T* system)
+{
+    #ifdef DEBUG_ECS
+        std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+    #endif
+
+    system->em = this;
+    system->typeIndex = typeid(T);
+    systems.push_back(std::unique_ptr<T>(system));
+}
+
+template<typename T>
+std::vector<uint32_t> EntityManager::getEntities()
+{
+    std::vector<uint32_t> result;
+
+    for (auto& it : entities)
+        if (getComp<T>(it.first))
+            result.push_back(it.first);
+
+    return result;
+}
+
+template<typename T>
+void EntityManager::addComp(uint32_t entityId, T* component)
+{
+    entities[entityId]->addComp(component);
+}
+
+template<typename T>
+T* EntityManager::getComp(uint32_t entityId)
+{
+    auto it = entities.find(entityId);
+    return it != entities.end() ? entities[entityId]->getComp<T>() : nullptr;
+}
+
 
 #endif
