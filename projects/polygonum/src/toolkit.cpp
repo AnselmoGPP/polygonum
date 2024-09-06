@@ -10,6 +10,8 @@
 double pi = 3.141592653589793238462;
 double e  = 2.718281828459045235360;
 
+void printArgs() { std::cout << std::endl; }
+
 float getDist(const glm::vec3& a, const glm::vec3& b)
 {
 	glm::vec3 vec = a - b;
@@ -71,9 +73,9 @@ glm::mat4 getViewMatrix(glm::vec3& camPos, glm::vec3& front, glm::vec3& camUp)
 	return glm::lookAt(camPos, camPos + front, camUp);
 }
 
-glm::mat4 getProjMatrix(float fov, float aspectRatio, float nearViewPlane, float farViewPlane)
+glm::mat4 getProjMatrix(float fovy, float aspectRatio, float nearViewPlane, float farViewPlane)
 {
-	glm::mat4 proj = glm::perspective(fov, aspectRatio, nearViewPlane, farViewPlane);
+	glm::mat4 proj = glm::perspective(fovy, aspectRatio, nearViewPlane, farViewPlane);
 	proj[1][1] *= -1;       // GLM returns the Y clip coordinate inverted.
 	return proj;
 }

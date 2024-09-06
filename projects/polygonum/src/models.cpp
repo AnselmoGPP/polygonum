@@ -710,18 +710,19 @@ void ModelData::deleteLoader()
 	}
 }
 
-void ModelData::setActiveInstancesCount(size_t activeInstancesCount)
+bool ModelData::setActiveInstancesCount(size_t activeInstancesCount)
 {
 	#ifdef DEBUG_MODELS
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
 	#endif
 	
+	if (activeInstancesCount == activeInstances) return false;
+
 	if (vsUBO.setNumActiveDescriptors(activeInstancesCount) == false)
-		std::cout << "The number of rendered instances (" << name << ") cannot be higher than " << vsUBO.maxNumDescriptors << std::endl;
+		std::cerr << "The number of rendered instances (" << name << ") cannot be higher than " << vsUBO.maxNumDescriptors << std::endl;
 
 	this->activeInstances = vsUBO.numActiveDescriptors;
-	return;
-
+	return true;
 	{
 		//vsUBO.resizeUBO(activeInstancesCount);
 

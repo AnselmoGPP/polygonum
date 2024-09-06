@@ -699,17 +699,18 @@ void Renderer::deleteModel(modelIter model)	// <<< splice an element only knowin
 				for (unsigned sp = 0; sp < models[rp].size(); sp++)
 					for (auto it = models[rp][sp].begin(); it != models[rp][sp].end(); it++)
 						if (&*it == &*model)	// https://stackoverflow.com/questions/6302706/check-whether-iterator-belongs-to-a-list
-						{						
+						{
 							model->inModels = false;
 							modelsToDelete.splice(modelsToDelete.cend(), models[rp][sp], model);
 							updateCommandBuffer = true;
 							return;
 						}
-
+			
 			// Look in Renderer::modelsToLoad
 			for (auto it = modelsToLoad.begin(); it != modelsToLoad.end(); it++)
 				if (&*it == &*model)
 				{
+					PRINT("load");
 					model->inModels = false;
 					modelsToDelete.splice(modelsToDelete.cend(), modelsToLoad, model);
 					return;
@@ -731,12 +732,10 @@ void Renderer::setInstances(modelIter model, size_t numberOfRenders)
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
 	
-	if (numberOfRenders != model->activeInstances)
-	{
-		model->setActiveInstancesCount(numberOfRenders);
-
-		updateCommandBuffer = true;		//We are flagging commandBuffer for update assuming that our model is in list "model"
-	}
+	// CHECK FOR EXISTENCE: std::find() or check delete modelIter (677)
+	//if(exists(model))
+	if(model->setActiveInstancesCount(numberOfRenders))
+		updateCommandBuffer = true;		// We flag commandBuffer for update assuming that our model is in list "model"
 }
 
 void Renderer::updateStates(uint32_t currentImage)

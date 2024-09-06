@@ -202,8 +202,8 @@ enum smFlag {
 	sm_waving_strong,
 	sm_displace, 
 	sm_reduceNightLight,
-	sm_distDithering_near,
-	sm_distDithering_far,
+	sm_distDithering_near,   // apply dithering to distant objects
+	sm_distDithering_far,   // apply dithering to distant objects
 	sm_earlyDepthTest,
 	sm_dryColor,
 	sm_changeHeader,

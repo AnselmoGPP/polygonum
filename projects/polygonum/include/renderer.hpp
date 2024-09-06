@@ -86,6 +86,8 @@ class Renderer
 	IOmanager&					io;							//!< Input data
 	TimerSet					timer;						//!< Time control
 
+	// stdvec2(std::unordered_map<T, ModelData>) models;		//!< std::unordered_map uses a hash table. Complexity for lookup, insertion, and deletion: O(1) (average) - O(n) (worst-case)
+	//stdvec2(std::list<ModelData>) models;
 	std::vector<
 		std::vector<
 			std::list<ModelData>>> models;					//!< Sets of fully initialized models (one set per renderpass per subpass).

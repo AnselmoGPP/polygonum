@@ -78,10 +78,12 @@ public:
     void printInfo();
 
     uint32_t addEntity(Entity* entity);                                     //!< Add new entity by defining its components.
+    std::vector<uint32_t> addEntities(std::vector<Entity*> entities);       //!< Add many new entities
     template<typename T> void addComp(uint32_t entityId, T* component);
     template<typename T> void addSystem(T* system);                         //!< Add new system
 
     template<typename T> std::vector<uint32_t> getEntities();               //!< Get set of entities containing component of type X.
+    template<typename T, typename Q> std::vector<uint32_t> getEntities();   //!< Get set of entities containing component of type X and type Y.
     template<typename T> T* getComp(uint32_t entityId);
     std::string getName(uint32_t entityId);
 
@@ -139,6 +141,18 @@ std::vector<uint32_t> EntityManager::getEntities()
 
     for (auto& it : entities)
         if (getComp<T>(it.first))
+            result.push_back(it.first);
+
+    return result;
+}
+
+template<typename T, typename Q>
+std::vector<uint32_t> EntityManager::getEntities()
+{
+    std::vector<uint32_t> result;
+
+    for (auto& it : entities)
+        if (getComp<T>(it.first) && getComp<Q>(it.first))
             result.push_back(it.first);
 
     return result;

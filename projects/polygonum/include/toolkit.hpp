@@ -13,6 +13,38 @@
 #include <glm/gtc/matrix_transform.hpp>		// Generate transformations matrices with glm::rotate (model), glm::lookAt (view), glm::perspective (projection).
 //#include <glm/gtx/hash.hpp>
 
+
+// Type wrappers -----------------------------------------------------------------
+
+#define stdvec1(T) std::vector<T>
+#define stdvec2(T) std::vector<std::vector<T>>
+#define stdvec3(T) std::vector<std::vector<std::vector<T>>>
+
+// Print data -----------------------------------------------------------------
+
+/// Print a variable number of arguments.
+#define PRINT(...) printArgs(__VA_ARGS__)
+
+/// Print file name, line, and function.
+#define FILE_LINE_FUNC \
+    std::cerr << __FILE__ << ", " << __LINE__ << ", " << __func__ << "()" << std::endl;
+
+/// Helper: Print a single argument
+template<typename T>
+void printSingle(const T& t) { std::cout << t; }
+
+/// Helper: Recursive function for printing many arguments
+template<typename T, typename... Args>
+void printArgs(const T& first, const Args&... args)
+{
+    printSingle(first);
+    printArgs(args...);
+}
+
+/// Helper: Base case to stop recursion
+void printArgs();
+
+
 // MVP Matrix -----------------------------------------------------------------
 
 /// Get a basic Model Matrix
@@ -28,7 +60,7 @@ glm::mat4 getModelMatrixForNormals(const glm::mat4& modelMatrix);
 glm::mat4 getViewMatrix(glm::vec3& camPos, glm::vec3& front, glm::vec3& camUp);
 
 // Projection matrix
-glm::mat4 getProjMatrix(float fov, float aspectRatio, float nearViewPlane, float farViewPlane);
+glm::mat4 getProjMatrix(float fovy, float aspectRatio, float nearViewPlane, float farViewPlane);
 
 /// Get a mat3 from a mat4
 template<typename T>

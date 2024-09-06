@@ -102,6 +102,20 @@ uint32_t EntityManager::addEntity(Entity* entity)
 	return newId;
 }
 
+std::vector<uint32_t> EntityManager::addEntities(std::vector<Entity*> entities)
+{
+	#ifdef DEBUG_ECS
+		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+	#endif
+
+	std::vector<uint32_t> newIds;
+
+	for (auto& entity : entities)
+		newIds.push_back(addEntity(entity));
+
+	return newIds;
+}
+
 void EntityManager::removeEntity(uint32_t entityId)
 {
 	#ifdef DEBUG_ECS
