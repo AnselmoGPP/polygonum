@@ -56,7 +56,7 @@ float IOmanager::getAspectRatio()
 
 void IOmanager::setWindowShouldClose(bool b) { return glfwSetWindowShouldClose(window, b); }
 
-bool IOmanager::windowShouldClose() { return glfwWindowShouldClose(window); }
+bool IOmanager::getWindowShouldClose() { return glfwWindowShouldClose(window); }
 
 void IOmanager::destroy()
 {

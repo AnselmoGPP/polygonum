@@ -20,8 +20,6 @@
 
 #define LINE_WIDTH 1.0f
 
-class ModelData;
-typedef std::list<ModelData>::iterator modelIter;
 
 struct ModelDataInfo
 {
@@ -51,16 +49,16 @@ struct ModelDataInfo
 	@class ModelData
 	@brief Stores the data directly related to a graphic object. 
 	
-	Manages vertex, indices, UBOs, textures (pointers), etc.
+	Manages vertices, indices, UBOs, textures (pointers), etc.
 */
 class ModelData
 {
 	VulkanEnvironment* e;
-	const VkPrimitiveTopology primitiveTopology;	    //!< Primitive topology (VK_PRIMITIVE_TOPOLOGY_ ... POINT_LIST, LINE_LIST, LINE_STRIP, TRIANGLE_LIST, TRIANGLE_STRIP). Used when creating the graphics pipeline.
+	VkPrimitiveTopology primitiveTopology;		//!< Primitive topology (VK_PRIMITIVE_TOPOLOGY_ ... POINT_LIST, LINE_LIST, LINE_STRIP, TRIANGLE_LIST, TRIANGLE_STRIP). Used when creating the graphics pipeline.
 	VertexType vertexType;
-	std::vector<shaderIter> shaders;		//!< Vertex shader (0), Fragment shader (1)
-	bool hasTransparencies;					//!< Flags if textures contain transparencies (alpha channel)
-	VkCullModeFlagBits cullMode;			//!< VK_CULL_MODE_BACK_BIT, VK_CULL_MODE_NONE, ...
+	std::vector<shaderIter> shaders;			//!< Vertex shader (0), Fragment shader (1)
+	bool hasTransparencies;						//!< Flags if textures contain transparencies (alpha channel)
+	VkCullModeFlagBits cullMode;				//!< VK_CULL_MODE_BACK_BIT, VK_CULL_MODE_NONE, ...
 	UBO* globalUBO_vs;
 	UBO* globalUBO_fs;
 
@@ -102,9 +100,10 @@ class ModelData
 	void deleteLoader();
 
 public:
-	/// Construct an object for rendering
-	ModelData(VulkanEnvironment& environment, ModelDataInfo& modelInfo);
+	ModelData(VulkanEnvironment* environment = nullptr, ModelDataInfo& modelInfo = ModelDataInfo());   //!< Construct an object for rendering
 	virtual ~ModelData();
+	ModelData(ModelData&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
+	ModelData& ModelData::operator=(ModelData&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
 
 	/// Creates graphic pipeline and descriptor sets, and loads data for creating buffers (vertex, indices, textures). Useful in a second thread
 	ModelData& fullConstruction(std::list<Shader>& shadersList, std::list<Texture>& texturesList, std::mutex& mutResources);
@@ -130,15 +129,15 @@ public:
 	VkDescriptorPool			 descriptorPool;		//!< Opaque handle to a descriptor pool object.
 	std::vector<VkDescriptorSet> descriptorSets;		//!< List. Opaque handle to a descriptor set object. One for each swap chain image.
 
-	const uint32_t				 renderPassIndex;		//!< Index of the renderPass used (0 for rendering geometry, 1 for post processing)
-	const uint32_t				 subpassIndex;
+	uint32_t					 renderPassIndex;		//!< Index of the renderPass used (0 for rendering geometry, 1 for post processing)
+	uint32_t					 subpassIndex;
 	size_t						 layer;					//!< Layer where this model will be drawn (Painter's algorithm).
 	size_t						 activeInstances;		//!< Number of renderings (<= vsDynUBO.dynBlocksCount). Can be set with setRenderCount.
 
-	ResourcesLoader* resLoader;							//!< Info used for loading resources (vertices, indices, shaders, textures). When resources are loaded, this is set to nullptr.
-	bool fullyConstructed;								//!< Flags if this object has been fully constructed (i.e. has a model loaded into Vulkan).
-	bool inModels;										//!< Flags if this model is ready for rendering (i.e., if it's in Renderer::models)
-	const std::string name;								//!< For debugging purposes.
+	ResourcesLoader*			 resLoader;				//!< Info used for loading resources (vertices, indices, shaders, textures). When resources are loaded, this is set to nullptr.
+	bool						 fullyConstructed;		//!< Object fully constructed (i.e. model loaded into Vulkan).
+	bool						 ready;					//!< Object ready for rendering (i.e., it's fully constructed and in Renderer::models)
+	std::string					 name;					//!< For debugging purposes.
 };
 
 #endif

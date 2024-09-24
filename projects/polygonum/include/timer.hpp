@@ -6,58 +6,37 @@
 #include <string>
 
 
+class Timer;
+
 void sleep(int milliseconds);
 
+void waitForFPS(Timer& timer, int maxFPS);
+
 /**
-*   Object used for getting the time between events.Two ways :
+*   Class for getting delta time and counting. Useful for getting frame's delta time and counting frames.
 *       <ul>
-*           <li>get_delta_time(): Get the time increment (deltaTime) between two consecutive calls to this function.</li>
-*           <li>start() & end(): Get the time increment (deltaTime) between a call to start() and end(). <<<<<<<<<<<<<<<<<<<<<<</li>
+*           <li>Delta time: Delta time between the last 2 consecutive calls to updateTime.</li>
+*           <li>Total delta time: Delta time between startTime and the last call to updateTime.</li>
 *       </ul>
-*/    
-class timer
+*/
+class Timer
 {
-    // Get date and time (all in numbers)
-
-    // Get date and time (months and week days are strings)
-};
-
-// Class used in the render loop (OpenGL, Vulkan, etc.) for different time-related purposes (frame counting, delta time, current time, fps...)
-class TimerSet
-{
-    std::chrono::high_resolution_clock::time_point startTime;       ///< From origin of time
-    std::chrono::high_resolution_clock::time_point prevTime;        ///< From origin of time
-    std::chrono::high_resolution_clock::time_point currentTime;     ///< From origin of time
-
-    long double deltaTime;              ///< From prevTime
-    long double time;                   ///< From startTime() call
-
-    int FPS;                            ///< FPS computed in computeDeltaTime()
-    int maxFPS;                         ///< Maximum allowed FPS. A sleep is activated in computeDeltaTime() if FPS is too high.
-    int maxPossibleFPS;                 ///< Maximum possible FPS you can get without setting a maxFPS (i.e. if maxFPS were equal to 0)
-
-    size_t frameCounter;                ///< Number of calls made to computeDeltaTime()
+    std::chrono::high_resolution_clock::time_point startTime;   //!< Time at startTimer call
+    std::chrono::high_resolution_clock::time_point currentTime;   //!< Time at last updateTime call
+    std::chrono::high_resolution_clock::time_point prevTime;   //!< Time at second last updateTime call
+    long double deltaTime;   //!< Delta time between two consecutive calls to updateTime.
+    long double totalDeltaTime;   //!< Delta time between startTimer and updateTime.
 
 public:
-    TimerSet(int maxFPS = 30);               ///< Constructor. maxFPS sets a maximum FPS (0 for setting no maximum FPS)
+    Timer();   //!< Starts chronometer (calls startTimer())
 
-    // Chrono methods
-    void        startTimer();           ///< Start time counting for the chronometer (startTime)
-    void        computeDeltaTime();     ///< Compute frame's duration (time between two calls to this) and other time values
-    long double getDeltaTime();         ///< Returns time (seconds) increment between frames (deltaTime)
-    long double getTime();              ///< Returns time (seconds) since startTime when computeDeltaTime() was called
+    void startTimer();   //!< Restart chronometer (startTime)
+    void updateTime();   //!< Update time parameters with respect to currentTime.
+    void reUpdateTime();   //!< Re-update time parameters as if updateTime was not called before.
 
-    // FPS control
-    int         getFPS();               ///< Get FPS (updated in computeDeltaTime())
-    void        setMaxFPS(int newFPS);  ///< Modify the current maximum FPS. Set it to 0 to deactivate FPS control.
-    int         getMaxPossibleFPS();    ///< Get the maximum possible FPS you can get (if we haven't set max FPS, maxPossibleFPS == FPS)
-
-    // Frame counting
-    size_t      getFrameCounter();      ///< Get number of calls made to computeDeltaTime()
-
-    // Bonus methods (less used)
-    long double getTimeNow();           ///< Returns time (seconds) since startTime, at the moment of calling GetTimeNow()
-    std::string getDate();              ///< Get a string with date and time (example: Mon Jan 31 02:28:35 2022)
+    long double getDeltaTime() const;
+    long double getTotalDeltaTime() const;
+    std::string getDate();   //!< Get a string with current date and time (example: Mon Jan 31 02:28:35 2022)
 };
 
 #endif

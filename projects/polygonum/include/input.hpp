@@ -28,7 +28,7 @@ public:
 	void getFramebufferSize(int* width, int* height);
 	float getAspectRatio();
 	void setWindowShouldClose(bool b);
-	bool windowShouldClose();
+	bool getWindowShouldClose();
 	void destroy();
 
 	// Input (keys, mouse)

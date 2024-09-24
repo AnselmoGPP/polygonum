@@ -166,8 +166,10 @@ public:
 	UBO(VulkanEnvironment* e, UBOinfo uboInfo);			//!< Constructor. Parameters: maxUBOcount (max. number of UBOs), uboType (defines what a single UBO contains), minUBOffsetAlignment (alignment for each UBO required by the GPU).
 	UBO();
 	~UBO() = default;
+	UBO(UBO&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
+	UBO& operator=(UBO&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
 
-	const size_t				maxNumDescriptors;		//!< Max. possible number of descriptors. This has to be fixed because it's fixed in the shader.
+	size_t						maxNumDescriptors;		//!< Max. possible number of descriptors. This has to be fixed because it's fixed in the shader.
 	size_t						numActiveDescriptors;	//!< Number of descriptors used (must be <= maxDescriptors). 
 	VkDeviceSize				descriptorSize;			//!< Size (bytes) of each aligned descriptor (example: 4) (at least, minUBOffsetAlignment)
 	size_t						totalBytes;				//!< Size (bytes) of the set of UBOs (example: 12)

@@ -128,8 +128,8 @@ class VulkanCore
 public:
 	VulkanCore(IOmanager& io);
 
-	const bool add_MSAA = false;			//!< Shader MSAA (MultiSample AntiAliasing). 
-	const bool add_SS   = false;			//!< Sample shading. This can solve some problems from shader MSAA (example: only smoothens out edges of geometry but not the interior filling) (https://www.khronos.org/registry/vulkan/specs/1.0/html/vkspec.html#primsrast-sampleshading).
+	const bool add_MSAA = false;					//!< Shader MSAA (MultiSample AntiAliasing). 
+	const bool add_SS   = false;					//!< Sample shading. This can solve some problems from shader MSAA (example: only smoothens out edges of geometry but not the interior filling) (https://www.khronos.org/registry/vulkan/specs/1.0/html/vkspec.html#primsrast-sampleshading).
 
 	VkInstance					instance;			//!< Opaque handle to an instance object. There is no global state in Vulkan and all per-application state is stored here.
 	VkDebugUtilsMessengerEXT	debugMessenger;		//!< Opaque handle to a debug messenger object (the debug callback is part of it).
@@ -200,10 +200,10 @@ public:
 
 	VkRenderPass renderPass;
 	std::vector<Subpass> subpasses;	
-	std::vector<std::vector<VkImageView*>> attachments;			//!< One set of attachments per swapchain image.
-	std::vector<VkFramebuffer> framebuffers;					//!< One per swap chain image. List. Opaque handle to a framebuffer object (set of attachments, including the final image to render). Access: swapChainFramebuffers[numSwapChainImages][attachment]. First attachment: main color. Second attachment: post-processing
-	std::vector<VkRenderPassBeginInfo> renderPassInfos;			//!< One per swap chain image.
-	std::vector<VkClearValue> clearValues;						//!< One per attachment.
+	std::vector<std::vector<VkImageView*>> attachments;		//!< One set of attachments per swapchain image.
+	std::vector<VkFramebuffer> framebuffers;				//!< One per swap chain image. List. Opaque handle to a framebuffer object (set of attachments, including the final image to render). Access: swapChainFramebuffers[numSwapChainImages][attachment]. First attachment: main color. Second attachment: post-processing
+	std::vector<VkRenderPassBeginInfo> renderPassInfos;		//!< One per swap chain image.
+	std::vector<VkClearValue> clearValues;					//!< One per attachment.
 };
 
 /**

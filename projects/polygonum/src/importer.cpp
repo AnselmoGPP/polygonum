@@ -361,8 +361,10 @@ VerticesLoader::VerticesLoader(size_t vertexSize, const void* verticesData, size
 
 VerticesLoader::VerticesLoader(const VerticesLoader& obj)
 {
-	if (obj.loader) loader = obj.loader->clone();
-	else loader = nullptr;
+	if (obj.loader)
+		loader = obj.loader->clone();
+	else
+		loader = nullptr;
 }
 
 VerticesLoader::~VerticesLoader() 

@@ -16,15 +16,14 @@
 
 // LoadingWorker ---------------------------------------------------------------------
 
-LoadingWorker::LoadingWorker(int waitTime, std::vector<std::vector<std::list<ModelData>>>& models, std::list<ModelData>& modelsToLoad, std::list<ModelData>& modelsToDelete, std::list<Texture>& textures, std::list<Shader>& shaders, bool& updateCommandBuffer)
-	: models(models), modelsToLoad(modelsToLoad), modelsToDelete(modelsToDelete), textures(textures), shaders(shaders), updateCommandBuffer(updateCommandBuffer), waitTime(waitTime), runThread(false) { }
+LoadingWorker::LoadingWorker(int waitTime, std::unordered_map<key64, ModelData>& models, std::list<Texture>& textures, std::list<Shader>& shaders, bool& updateCommandBuffer)
+	: models(models),textures(textures), shaders(shaders), updateCommandBuffer(updateCommandBuffer), waitTime(waitTime), runThread(false) { }
 
 LoadingWorker::~LoadingWorker() 
 { 
 	#ifdef DEBUG_WORKER
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
-	//if (modelTP.size()) modelTP.clear();
 }
 
 void LoadingWorker::start() 
@@ -43,10 +42,32 @@ void LoadingWorker::stop()
 	if (thread_loadModels.joinable()) thread_loadModels.join();
 }
 
-bool LoadingWorker::isBeingProcessed(modelIter model)
+void LoadingWorker::newTask(key64 key, Task task)
 {
-	if (modelTP.size() && modelTP.begin() == model) return true;
-	else return false;
+	tasks.push(std::pair(key, task));
+}
+
+void LoadingWorker::extractModel(key64 key)
+{
+	const std::lock_guard<std::mutex> lock(mutModels);
+	
+	models[key].ready = false;
+
+	auto node = models.extract(key);   // auto = std::unordered_map<key64, ModelData>::node_type
+	if (node.empty() == false)
+		modelTP.insert(std::move(node));
+}
+
+void LoadingWorker::returnModel(key64 key)
+{
+	const std::lock_guard<std::mutex> lock(mutModels);
+
+	auto node = modelTP.extract(key);   // auto = std::unordered_map<key64, ModelData>::node_type
+	if (node.empty() == false)
+		models.insert(std::move(node));
+
+	if(models[key].fullyConstructed)
+		models[key].ready = true;
 }
 
 void LoadingWorker::loadingThread()
@@ -56,6 +77,48 @@ void LoadingWorker::loadingThread()
 		std::cout << "- Loading thread ID: " << std::this_thread::get_id() << std::endl;
 	#endif
 
+	key64 key;
+	Task task;
+
+	while (runThread)
+	{
+		#ifdef DEBUG_WORKER
+			std::cout << "- New iteration -----" << std::endl;
+		#endif
+
+		if (tasks.size())
+		{
+			key = tasks.front().first;
+			task = tasks.front().second;
+			tasks.pop();
+
+			switch (task)
+			{
+			case construct:
+				//extractModel(key);
+				//modelTP.begin()->second.fullConstruction(shaders, textures, mutResources);
+				//returnModel(key);
+				//updateCommandBuffer = true;
+				models[key].fullConstruction(shaders, textures, mutResources);
+				models[key].ready = true;
+				updateCommandBuffer = true;
+				break;
+
+			case delet:
+				extractModel(key);
+				modelTP.clear();
+				updateCommandBuffer = true;
+				break;
+
+			default:
+				break;
+			}
+		}
+		else sleep(waitTime);
+	}
+
+	// ---------------------------------
+/*
 	std::list<ModelData>::iterator mIter;
 	std::list<Shader   >::iterator sIter, sIter2;
 	std::list<Texture  >::iterator tIter, tIter2;
@@ -64,74 +127,6 @@ void LoadingWorker::loadingThread()
 
 	while (runThread)
 	{
-		// LOAD MODELS
-		#ifdef DEBUG_WORKER
-			std::cout << "- New iteration -----" << std::endl;
-			std::cout << "   - Load models (" << modelsToLoad.size() << ')' << std::endl;
-		#endif
-
-		while (modelsToLoad.size())
-		{
-			// Move model from modelsToLoad to modelTP.
-			{
-				const std::lock_guard<std::mutex> lock(mutLoad);
-
-				if (modelsToLoad.begin() != modelsToLoad.end())
-				{
-					#ifdef DEBUG_WORKER
-						std::cout << "      - " << modelsToLoad.begin()->name << std::endl;
-					#endif
-					
-					modelTP.splice(modelTP.cend(), modelsToLoad, modelsToLoad.begin());
-				}
-			}
-			
-			// Process modelTP (load data and upload to Vulkan) and move it to models.
-			if (modelTP.size())
-			{
-				mIter = modelTP.begin();
-				mIter->fullConstruction(shaders, textures, mutResources);
-				mIter->fullyConstructed = true;
-				mIter->inModels = true;
-				rp = mIter->renderPassIndex;
-				sp = mIter->subpassIndex;
-
-				const std::lock_guard<std::mutex> lock(mutModels);
-
-				models[rp][sp].splice(models[rp][sp].cend(), modelTP, mIter);
-				updateCommandBuffer = true;
-			}
-		}
-		
-		// DELETE MODELS
-		#ifdef DEBUG_WORKER
-			std::cout << "   - Delete models (" << modelsToDelete.size() << ')' << std::endl;
-		#endif
-
-		while (modelsToDelete.size())
-		{
-			// Move model from modelsToDelete to modelTP.
-			{
-				const std::lock_guard<std::mutex> lock(mutDelete);
-				
-				if (modelsToDelete.begin() != modelsToDelete.end())
-				{
-					#ifdef DEBUG_WORKER
-						std::cout << "      - " << modelsToDelete.begin()->name << std::endl;
-					#endif
-
-					modelTP.splice(modelTP.cend(), modelsToDelete, modelsToDelete.begin());
-				}
-			}
-			
-			// Process modelTP (delete model).
-			if (modelTP.size())
-			{
-				modelTP.erase(modelTP.begin());
-				modelsDeleted = true;
-			}
-		}
-		
 		// DELETE UNUSED RESOURCES <<< This should be done in main thread, not in loading thread because it could be redundant in an scenario of multiple loading threads.
 		#ifdef DEBUG_WORKER
 			std::cout << "   - Delete resources (" << shaders.size() << ", " << textures.size() << ')' << std::endl;
@@ -178,7 +173,7 @@ void LoadingWorker::loadingThread()
 		
 		std::this_thread::sleep_for(std::chrono::milliseconds(waitTime));
 	}
-
+*/
 	#ifdef DEBUG_WORKER
 		std::cout << "- " << typeid(*this).name() << "::" << __func__ << " (end)" << std::endl;
 	#endif
@@ -212,18 +207,19 @@ void ShaderIncluder::ReleaseInclude(shaderc_include_result* data)
 
 // Renderer ---------------------------------------------------------------------
 
-Renderer::Renderer(void(*graphicsUpdate)(Renderer&), IOmanager& io, UBOinfo globalUBO_vs, UBOinfo globalUBO_fs)
-	:
+Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOinfo globalUBO_vs, UBOinfo globalUBO_fs)
+	: io(width, height),
 	e(io),
-	io(io),
 	updateCommandBuffer(false), 
 	userUpdate(graphicsUpdate), 
 	currentFrame(0), 
 	commandsCount(0),
 	frameCount(0),
+	maxFPS(30),
 	globalUBO_vs(&e, globalUBO_vs),
 	globalUBO_fs(&e, globalUBO_fs),
-	worker(500, models, modelsToLoad, modelsToDelete, textures, shaders, updateCommandBuffer)
+	worker(500, models, textures, shaders, updateCommandBuffer),
+	newKey(0)
 { 
 	#ifdef DEBUG_RENDERER
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -231,10 +227,10 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), IOmanager& io, UBOinfo glob
 		std::cout << "   Hardware concurrency: " << (unsigned int)std::thread::hardware_concurrency << std::endl;
 	#endif
 
-	// Prepare "models" list
-	models.resize(e.rp->renderPasses.size());
-	for (size_t rp = 0; rp < models.size(); rp++)
-		models[rp].resize(e.rp->renderPasses[rp].subpasses.size());
+	// Resize list "keys"
+	keys.resize(e.rp->renderPasses.size());
+	for (size_t rp = 0; rp < keys.size(); rp++)
+		keys[rp].resize(e.rp->renderPasses[rp].subpasses.size());
 
 	// Create UBOs
 	if (this->globalUBO_vs.totalBytes) this->globalUBO_vs.createUBObuffers();
@@ -266,13 +262,15 @@ void Renderer::createCommandBuffers()
 	allocInfo.commandPool = e.commandPool;
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;		// VK_COMMAND_BUFFER_LEVEL_ ... PRIMARY (can be submitted to a queue for execution, but cannot be called from other command buffers), SECONDARY (cannot be submitted directly, but can be called from primary command buffers - useful for reusing common operations from primary command buffers).
 	allocInfo.commandBufferCount = (uint32_t)commandBuffers.size();		// Number of buffers to allocate.
-
+	
 	//const std::lock_guard<std::mutex> lock(e.mutCommandPool);	// already called before calling createCommandBuffers() 
 
 	if (vkAllocateCommandBuffers(e.c.device, &allocInfo, commandBuffers.data()) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate command buffers!");
 
 	// Start command buffer recording (one per swapChainImage)
+	ModelData* model;
+
 	for (size_t i = 0; i < commandBuffers.size(); i++)		// for each SWAPCHAIN IMAGE
 	{
 		#ifdef DEBUG_COMMANDBUFFERS
@@ -288,7 +286,7 @@ void Renderer::createCommandBuffers()
 		if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS)		// If a command buffer was already recorded once, this call resets it. It's not possible to append commands to a buffer at a later time.
 			throw std::runtime_error("Failed to begin recording command buffer!");
 
-		for (size_t rp = 0; rp < models.size(); rp++)		// for each RENDER PASS (color pass, post-processing...)
+		for (size_t rp = 0; rp < keys.size(); rp++)		// for each RENDER PASS (color pass, post-processing...)
 		{
 			#ifdef DEBUG_COMMANDBUFFERS
 				std::cout << "   Render pass " << rp << std::endl;
@@ -297,32 +295,33 @@ void Renderer::createCommandBuffers()
 			vkCmdBeginRenderPass(commandBuffers[i], &e.rp->renderPasses[rp].renderPassInfos[i], VK_SUBPASS_CONTENTS_INLINE);	// Start RENDER PASS. VK_SUBPASS_CONTENTS_INLINE (the render pass commands will be embedded in the primary command buffer itself and no secondary command buffers will be executed), VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS (the render pass commands will be executed from secondary command buffers).
 			//vkCmdNextSubpass(commandBuffers[i], VK_SUBPASS_CONTENTS_INLINE);						// Start SUBPASS
 			
-			for (size_t sp = 0; sp < models[rp].size(); sp++)		// for each SUB-PASS
+			for (size_t sp = 0; sp < keys[rp].size(); sp++)		// for each SUB-PASS
 			{
 				if(sp > 0) vkCmdNextSubpass(commandBuffers[i], VK_SUBPASS_CONTENTS_INLINE);			// Start SUBPASS
 				//clearDepthBuffer(commandBuffers[i]);		// Already done in createRenderPass() (loadOp). Previously used for implementing layers (Painter's algorithm).
 
-				for (modelIter it = models[rp][sp].begin(); it != models[rp][sp].end(); it++)		// for each MODEL
+				for (key64 key : keys[rp][sp])		// for each MODEL
 				{
 					#ifdef DEBUG_COMMANDBUFFERS
 						std::cout << "         Model: " << it->name << std::endl;
 					#endif
 					
-					if (!it->activeInstances) continue;
+					model = &models[key];
+					if (model->activeInstances == 0) continue;
 
-					vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, it->graphicsPipeline);	// Second parameter: Specifies if the pipeline object is a graphics or compute pipeline.
-					vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &it->vert.vertexBuffer, offsets);
+					vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->graphicsPipeline);	// Second parameter: Specifies if the pipeline object is a graphics or compute pipeline.
+					vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &model->vert.vertexBuffer, offsets);
 
-					if (it->vert.indexCount)		// has indices (it doesn't if data represents points)
-						vkCmdBindIndexBuffer(commandBuffers[i], it->vert.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+					if (model->vert.indexCount)		// has indices (it doesn't if data represents points)
+						vkCmdBindIndexBuffer(commandBuffers[i], model->vert.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-					if (it->descriptorSets.size())	// has descriptor set (UBOs, textures, input attachments)
-						vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, it->pipelineLayout, 0, 1, &it->descriptorSets[i], 0, 0);
+					if (model->descriptorSets.size())	// has descriptor set (UBOs, textures, input attachments)
+						vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->pipelineLayout, 0, 1, &model->descriptorSets[i], 0, 0);
 					
-					if (it->vert.indexCount)		// has indices
-						vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(it->vert.indexCount), it->activeInstances, 0, 0, 0);
+					if (model->vert.indexCount)		// has indices
+						vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(model->vert.indexCount), model->activeInstances, 0, 0, 0);
 					else
-						vkCmdDraw(commandBuffers[i], it->vert.vertexCount, it->activeInstances, 0, 0);
+						vkCmdDraw(commandBuffers[i], model->vert.vertexCount, model->activeInstances, 0, 0);
 
 					commandsCount++;
 				}
@@ -385,7 +384,7 @@ void Renderer::renderLoop()
 
 	timer.startTimer();
 
-	while (!io.windowShouldClose())
+	while (!io.getWindowShouldClose())
 	{
 		#ifdef DEBUG_RENDERLOOP
 			std::cout << "Render loop 1/2 ----------" << std::endl;
@@ -555,10 +554,9 @@ void Renderer::recreateSwapChain()
 	//    - Each model
 	const std::lock_guard<std::mutex> lock(worker.mutModels);
 
-	for (uint32_t rp = 0; rp < models.size(); rp++)
-		for (uint32_t sp = 0; sp < models[rp].size(); sp++)
-			for (modelIter it = models[rp][sp].begin(); it != models[rp][sp].end(); it++)
-				it->recreate_Pipeline_Descriptors();
+
+	for (auto it = models.begin(); it != models.end(); it++)
+				it->second.recreate_Pipeline_Descriptors();
 
 	//    - Renderer
 	const std::lock_guard<std::mutex> lock2(e.mutCommandPool);
@@ -585,10 +583,8 @@ void Renderer::cleanupSwapChain()
 	{
 		const std::lock_guard<std::mutex> lock(worker.mutModels);
 
-		for (uint32_t rp = 0; rp < models.size(); rp++)
-			for (uint32_t sp = 0; sp < models[rp].size(); sp++)
-				for (modelIter it = models[rp][sp].begin(); it != models[rp][sp].end(); it++)
-					it->cleanup_Pipeline_Descriptors();
+		for(auto it = models.begin(); it != models.end(); it++)
+			it->second.cleanup_Pipeline_Descriptors();
 	}
 
 	// Environment
@@ -608,6 +604,26 @@ void Renderer::clearDepthBuffer(VkCommandBuffer commandBuffer)
 	rectangleToClear.layerCount = 1;
 
 	vkCmdClearAttachments(commandBuffer, 1, &attachmentToClear, 1, &rectangleToClear);
+}
+
+void Renderer::distributeKeys()
+{
+	for (auto& rp : keys)
+		for (auto& sp : rp)
+			sp.clear();
+
+	for (auto it = models.begin(); it != models.end(); it++)
+		if(it->second.activeInstances && it->second.ready)
+			keys[it->second.renderPassIndex][it->second.subpassIndex].push_back(it->first);
+}
+
+key64 Renderer::getNewKey()
+{
+	do
+	{
+		if (models.find(++newKey) == models.end())
+			return newKey;
+	} while (true);
 }
 
 void Renderer::cleanup()
@@ -641,8 +657,6 @@ void Renderer::cleanup()
 	//for (size_t i = 0; i < models.size(); i++) 
 	//	models[i].clear();
 	models.clear();
-	modelsToLoad.clear();
-	modelsToDelete.clear();
 	textures.clear();
 	shaders.clear();
 
@@ -657,85 +671,62 @@ void Renderer::cleanup()
 	#endif
 }
 
-modelIter Renderer::newModel(ModelDataInfo& modelInfo)
+key64 Renderer::newModel(ModelDataInfo& modelInfo)
 {
 	#ifdef DEBUG_RENDERER
 		std::cout << typeid(*this).name() << "::" << __func__ << ": " << modelInfo.name << std::endl;
 	#endif
 
-	if (modelInfo.renderPassIndex < models.size() && modelInfo.subpassIndex < models[modelInfo.renderPassIndex].size())
+	if (modelInfo.renderPassIndex < keys.size() && modelInfo.subpassIndex < keys[modelInfo.renderPassIndex].size())
 	{
-		const std::lock_guard<std::mutex> lock(worker.mutLoad);
+		std::pair<std::unordered_map<key64, ModelData>::iterator, bool> result = 
+			models.emplace(std::make_pair(getNewKey(), ModelData(&e, modelInfo)));   // Save model object into model list
+		
+		worker.newTask(result.first->first, construct);   // Schedule task: Construct model
 
-		return modelsToLoad.emplace(modelsToLoad.cend(), e, modelInfo);
+		return result.first->first;
 	}
 	
 	std::cout << "The renderpass/subpass specified for this model (" << modelInfo.name << ": " << modelInfo.renderPassIndex << '/' << modelInfo.subpassIndex << ") doesn't fit the render pipeline" << std::endl;
-	return modelsToLoad.end();
+	return 0;
 }
 
-void Renderer::deleteModel(modelIter model)	// <<< splice an element only knowing the iterator (no need to check lists)?
+void Renderer::deleteModel(key64 key)	// <<< splice an element only knowing the iterator (no need to check lists)?
 {
 	#ifdef DEBUG_RENDERER
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
 	
-	// If the model was not found on modelsToDelete, look in modelsToLoad
-	// Problem: What if the model is being loaded, or was loaded after the delete order?
-	// Solution: Wait for any model to delete in ModelsToLoad to be loaded. Then, delete. (this doesn't solve second problem).
-
-	//size_t rpi = model->renderPassIndex;	// Removed: Crashes when the modelIter points to a model that no longer exists (cleared during cleanup())
-	
-	while (true)	// If model is being processed, continue in loop until it has been loaded and delete it.
-	{
-		{
-			// Be the only thread touching the lists of models
-			const std::lock_guard<std::mutex> lock_1(worker.mutModels);
-			const std::lock_guard<std::mutex> lock_3(worker.mutLoad);
-			const std::lock_guard<std::mutex> lock_2(worker.mutDelete);
-			
-			// Look in Renderer::models
-			for(unsigned rp = 0; rp < models.size(); rp++)
-				for (unsigned sp = 0; sp < models[rp].size(); sp++)
-					for (auto it = models[rp][sp].begin(); it != models[rp][sp].end(); it++)
-						if (&*it == &*model)	// https://stackoverflow.com/questions/6302706/check-whether-iterator-belongs-to-a-list
-						{
-							model->inModels = false;
-							modelsToDelete.splice(modelsToDelete.cend(), models[rp][sp], model);
-							updateCommandBuffer = true;
-							return;
-						}
-			
-			// Look in Renderer::modelsToLoad
-			for (auto it = modelsToLoad.begin(); it != modelsToLoad.end(); it++)
-				if (&*it == &*model)
-				{
-					PRINT("load");
-					model->inModels = false;
-					modelsToDelete.splice(modelsToDelete.cend(), modelsToLoad, model);
-					return;
-				}
-
-			// If model is not being processed, exit loop
-			if (!worker.isBeingProcessed(model)) break;
-		}
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(3));
-	}
-
-	std::cout << "Model to delete not found" << std::endl;
+	worker.newTask(key, delet);
 }
 
-void Renderer::setInstances(modelIter model, size_t numberOfRenders)
+ModelData* Renderer::getModel(key64 key)
+{
+	if (models.find(key) != models.end())
+		return &models[key];
+	else
+		return nullptr;
+}
+
+void Renderer::setInstances(key64 key, size_t numberOfRenders)
 {
 	#ifdef DEBUG_RENDERER
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
 	
-	// CHECK FOR EXISTENCE: std::find() or check delete modelIter (677)
-	//if(exists(model))
-	if(model->setActiveInstancesCount(numberOfRenders))
-		updateCommandBuffer = true;		// We flag commandBuffer for update assuming that our model is in list "model"
+	const std::lock_guard<std::mutex> lock(worker.mutModels);
+
+	if(models.find(key) != models.end())
+		if(models[key].setActiveInstancesCount(numberOfRenders))
+			updateCommandBuffer = true;		// We flag commandBuffer for update assuming that our model is in list "model"
+}
+
+void Renderer::setMaxFPS(int maxFPS)
+{
+	if (maxFPS > 0)
+		this->maxFPS = maxFPS;
+	else
+		this->maxFPS = 0;
 }
 
 void Renderer::updateStates(uint32_t currentImage)
@@ -750,12 +741,13 @@ void Renderer::updateStates(uint32_t currentImage)
 		std::cout << "userUpdate()" << std::endl;
 	#endif
 	
-	timer.computeDeltaTime();
+	timer.updateTime();
+	waitForFPS(timer, maxFPS);
 
 	userUpdate(*this);		// Update model matrices and other things (user defined)
 
 	// - MOVE MODELS
-
+	/*
 	#ifdef DEBUG_RENDERLOOP
 		std::cout << "Move models" << std::endl;
 	#endif
@@ -771,13 +763,14 @@ void Renderer::updateStates(uint32_t currentImage)
 			{
 				rp = lastModelsToDraw[0]->renderPassIndex;
 				sp = lastModelsToDraw[0]->subpassIndex;
-				models[rp][sp].splice(models[rp][sp].end(), models[rp][sp], lastModelsToDraw[0]);
+				models.splice(models[rp][sp].end(), models[rp][sp], lastModelsToDraw[0]);
 			}
 			lastModelsToDraw.erase(lastModelsToDraw.begin());
 
 			// <<< updateCommandBuffer = true;
 		}
 	}
+	*/
 
 	// - COPY DATA FROM UBOS TO GPU MEMORY
 
@@ -790,8 +783,13 @@ void Renderer::updateStates(uint32_t currentImage)
 	
 	const std::lock_guard<std::mutex> lock(worker.mutModels);
 
-	void* data;
+	distributeKeys();
 
+	void* data;
+	size_t activeBytes;
+	ModelData* model;
+
+	// Global UBOs
 	if (globalUBO_vs.totalBytes)
 	{
 		vkMapMemory(e.c.device, globalUBO_vs.uboMemories[currentImage], 0, globalUBO_vs.totalBytes, 0, &data);
@@ -806,28 +804,28 @@ void Renderer::updateStates(uint32_t currentImage)
 		vkUnmapMemory(e.c.device, globalUBO_fs.uboMemories[currentImage]);
 	}
 
-	size_t activeBytes;
+	// Local UBOs
+	for(auto it = models.begin(); it != models.end(); it++)
+		if(it->second.ready)
+		{
+			model = &it->second;
 
-	for (rp = 0; rp < models.size(); rp++)
-		for (sp = 0; sp < models[rp].size(); sp++)
-			for (modelIter it = models[rp][sp].begin(); it != models[rp][sp].end(); it++)
+			activeBytes = model->vsUBO.numActiveDescriptors * model->vsUBO.descriptorSize;
+			if (activeBytes)
 			{
-				activeBytes = it->vsUBO.numActiveDescriptors * it->vsUBO.descriptorSize;
-				if (activeBytes)
-				{
-					vkMapMemory(e.c.device, it->vsUBO.uboMemories[currentImage], 0, activeBytes, 0, &data);	// Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
-					memcpy(data, it->vsUBO.ubo.data(), activeBytes);										// Copy some data in that memory. Copies a number of bytes (sizeof(ubo)) from a source (ubo) to a destination (data).
-					vkUnmapMemory(e.c.device, it->vsUBO.uboMemories[currentImage]);							// "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
-				}
-
-				activeBytes = it->fsUBO.numActiveDescriptors * it->fsUBO.descriptorSize;
-				if (activeBytes)
-				{
-					vkMapMemory(e.c.device, it->fsUBO.uboMemories[currentImage], 0, activeBytes, 0, &data);
-					memcpy(data, it->fsUBO.ubo.data(), activeBytes);
-					vkUnmapMemory(e.c.device, it->fsUBO.uboMemories[currentImage]);
-				}
+				vkMapMemory(e.c.device, model->vsUBO.uboMemories[currentImage], 0, activeBytes, 0, &data);	// Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
+				memcpy(data, model->vsUBO.ubo.data(), activeBytes);											// Copy some data in that memory. Copies a number of bytes (sizeof(ubo)) from a source (ubo) to a destination (data).
+				vkUnmapMemory(e.c.device, model->vsUBO.uboMemories[currentImage]);							// "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
 			}
+
+			activeBytes = model->fsUBO.numActiveDescriptors * model->fsUBO.descriptorSize;
+			if (activeBytes)
+			{
+				vkMapMemory(e.c.device, model->fsUBO.uboMemories[currentImage], 0, activeBytes, 0, &data);
+				memcpy(data, model->fsUBO.ubo.data(), activeBytes);
+				vkUnmapMemory(e.c.device, model->fsUBO.uboMemories[currentImage]);
+			}
+		}
 
 	// - UPDATE COMMAND BUFFER
 	#ifdef DEBUG_RENDERLOOP
@@ -887,6 +885,8 @@ void Renderer::createLightingPass(unsigned numLights, std::string vertShaderPath
 
 void Renderer::updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights)
 {
+	if (models.find(lightingPass) == models.end()) return;
+
 	uint8_t* dest;
 
 	//for (int i = 0; i < lightingPass->vsUBO.numActiveDescriptors; i++)
@@ -895,9 +895,9 @@ void Renderer::updateLightingPass(glm::vec3& camPos, Light* lights, unsigned num
 	//	//...
 	//}
 
-	for (int i = 0; i < lightingPass->fsUBO.numActiveDescriptors; i++)
+	for (int i = 0; i < models[lightingPass].fsUBO.numActiveDescriptors; i++)
 	{
-		dest = lightingPass->fsUBO.getDescriptorPtr(i);
+		dest = models[lightingPass].fsUBO.getDescriptorPtr(i);
 		memcpy(dest, &camPos, size.vec4);
 		dest += size.vec4;
 		memcpy(dest, lights, numLights * sizeof(Light));
@@ -939,29 +939,26 @@ void Renderer::createPostprocessingPass(std::string vertShaderPath, std::string 
 
 void Renderer::updatePostprocessingPass()
 {
-	
+	// No code necessary here
 }
 
-TimerSet& Renderer::getTimer() { return timer; }
+Timer& Renderer::getTimer() { return timer; }
 
-size_t Renderer::getRendersCount(modelIter model) { return model->activeInstances; }
+size_t Renderer::getRendersCount(key64 key)
+{
+	if (models.find(key) != models.end())
+		return models[key].activeInstances;
+	else
+		return 0;
+}
 
 size_t Renderer::getFrameCount() { return frameCount; }
 
-size_t Renderer::getModelsCount()
-{
-	size_t count = 0;
+size_t Renderer::getFPS() { return std::round(1 / timer.getDeltaTime()); }
 
-	for (auto& renderPass : models)
-		for (auto& subPass : renderPass)
-			count += subPass.size();
-
-	return count;
-}
+size_t Renderer::getModelsCount() { return models.size(); }
 
 size_t Renderer::getCommandsCount() { return commandsCount; }
-
-size_t Renderer::loadedModels() { return models[0].size() + models[1].size(); }
 
 size_t Renderer::loadedShaders() { return shaders.size(); }
 

@@ -14,12 +14,6 @@
 //#include <glm/gtx/hash.hpp>
 
 
-// Type wrappers -----------------------------------------------------------------
-
-#define stdvec1(T) std::vector<T>
-#define stdvec2(T) std::vector<std::vector<T>>
-#define stdvec3(T) std::vector<std::vector<std::vector<T>>>
-
 // Print data -----------------------------------------------------------------
 
 /// Print a variable number of arguments.

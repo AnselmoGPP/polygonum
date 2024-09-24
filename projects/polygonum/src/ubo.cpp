@@ -24,6 +24,46 @@ UBO::UBO()
 	: maxNumDescriptors(0), numActiveDescriptors(0), descriptorSize(0), totalBytes(0), ubo(0), uboBuffers(0), uboMemories(0) 
 { };
 
+UBO::UBO(UBO&& other) noexcept
+	: e(other.e),
+	maxNumDescriptors(other.maxNumDescriptors),
+	numActiveDescriptors(other.numActiveDescriptors),
+	descriptorSize(other.descriptorSize),
+	totalBytes(other.totalBytes)
+{
+	ubo = std::move(other.ubo);
+	uboBuffers = std::move(other.uboBuffers);
+	uboMemories = std::move(other.uboMemories);
+}
+
+UBO& UBO::operator=(UBO&& other) noexcept
+{
+	if (this != &other)
+	{
+		// Transfer resources ownership
+		e = other.e;
+		maxNumDescriptors = other.maxNumDescriptors;
+		numActiveDescriptors = other.numActiveDescriptors;
+		descriptorSize = other.descriptorSize;
+		totalBytes = other.totalBytes;
+
+		ubo = std::move(other.ubo);
+		uboBuffers = std::move(other.uboBuffers);
+		uboMemories = std::move(other.uboMemories);
+
+		// Leave other in valid state
+		other.maxNumDescriptors = 0;
+		other.numActiveDescriptors = 0;
+		other.descriptorSize = 0;
+		other.totalBytes = 0;
+
+		other.ubo.clear();
+		other.uboBuffers.clear();
+		other.uboMemories.clear();
+	}
+	return *this;
+}
+
 uint8_t* UBO::getDescriptorPtr(size_t descriptorIndex) { return ubo.data() + descriptorIndex * descriptorSize; }
 
 bool UBO::setNumActiveDescriptors(size_t count)

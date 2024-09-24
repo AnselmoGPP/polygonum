@@ -24,8 +24,8 @@ ModelDataInfo::ModelDataInfo()
 { }
 
 
-ModelData::ModelData(VulkanEnvironment& environment, ModelDataInfo& modelInfo)
-	: e(&environment),
+ModelData::ModelData(VulkanEnvironment* environment, ModelDataInfo& modelInfo)
+	: e(environment),
 	name(modelInfo.name),
 	primitiveTopology(modelInfo.topology),
 	vertexType(modelInfo.vertexType),
@@ -39,7 +39,7 @@ ModelData::ModelData(VulkanEnvironment& environment, ModelDataInfo& modelInfo)
 	subpassIndex(modelInfo.subpassIndex),
 	activeInstances(modelInfo.activeInstances),
 	fullyConstructed(false),
-	inModels(false)
+	ready(false)
 {
 	#ifdef DEBUG_MODELS
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
@@ -68,6 +68,106 @@ ModelData::~ModelData()
 		textures[i]->counter--;
 }
 
+ModelData::ModelData(ModelData&& other) noexcept
+	: e(other.e),
+	primitiveTopology(other.primitiveTopology),
+	hasTransparencies(other.hasTransparencies),
+	cullMode(other.cullMode),
+	globalUBO_vs(other.globalUBO_vs),
+	globalUBO_fs(other.globalUBO_fs),
+	pipelineLayout(other.pipelineLayout),
+	graphicsPipeline(other.graphicsPipeline),
+	descriptorSetLayout(other.descriptorSetLayout),
+	descriptorPool(other.descriptorPool),
+	renderPassIndex(other.renderPassIndex),
+	subpassIndex(other.subpassIndex),
+	layer(other.layer),
+	activeInstances(other.activeInstances),
+	resLoader(other.resLoader),
+	fullyConstructed(other.fullyConstructed),
+	ready(other.ready),
+	name(other.name)
+{
+	vertexType = std::move(other.vertexType);
+	shaders = std::move(other.shaders);
+	textures = std::move(other.textures);
+	vert = std::move(other.vert);
+	vsUBO = std::move(other.vsUBO);
+	fsUBO = std::move(other.fsUBO);
+	descriptorSets = std::move(other.descriptorSets);
+
+	other.e = nullptr;
+	other.globalUBO_vs = nullptr;
+	other.globalUBO_fs = nullptr;
+	other.resLoader = nullptr;
+}
+
+ModelData& ModelData::operator=(ModelData&& other) noexcept
+{
+	if (this != &other)
+	{
+		// Free existing resources
+		deleteLoader();
+
+		// Transfer resources ownership
+		e = other.e;
+		primitiveTopology = other.primitiveTopology;
+		hasTransparencies = other.hasTransparencies;
+		cullMode = other.cullMode;
+		globalUBO_vs = other.globalUBO_vs;
+		globalUBO_fs = other.globalUBO_fs;
+		pipelineLayout = other.pipelineLayout;
+		graphicsPipeline = other.graphicsPipeline;
+		descriptorSetLayout = other.descriptorSetLayout;
+		descriptorPool = other.descriptorPool;
+		renderPassIndex = other.renderPassIndex;
+		subpassIndex = other.subpassIndex;
+		layer = other.layer;
+		activeInstances = other.activeInstances;
+		resLoader = other.resLoader;
+		fullyConstructed = other.fullyConstructed;
+		ready = other.ready;
+
+		vertexType = std::move(other.vertexType);
+		shaders = std::move(other.shaders);
+		textures = std::move(other.textures);
+		vert = std::move(other.vert);
+		vsUBO = std::move(other.vsUBO);
+		fsUBO = std::move(other.fsUBO);
+		descriptorSets = std::move(other.descriptorSets);
+		name = std::move(other.name);
+
+		// Leave other in valid state
+		other.e = nullptr;
+		other.primitiveTopology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+		other.hasTransparencies = false;
+		other.cullMode = VK_CULL_MODE_FLAG_BITS_MAX_ENUM;
+		other.globalUBO_vs = nullptr;
+		other.globalUBO_fs = nullptr;
+		other.pipelineLayout = other.pipelineLayout;
+		other.graphicsPipeline = other.graphicsPipeline;
+		other.descriptorSetLayout = other.descriptorSetLayout;
+		other.descriptorPool = other.descriptorPool;
+		other.renderPassIndex = 0;
+		other.subpassIndex = 0;
+		other.layer = 0;
+		other.activeInstances = 0;
+		other.resLoader = nullptr;
+		other.fullyConstructed = false;
+		other.ready = false;
+		other.name = "";
+		
+		other.vertexType = VertexType();
+		other.shaders.clear();
+		other.textures.clear();
+		other.vert = VertexData();
+		other.vsUBO = UBO();
+		other.fsUBO = UBO();
+		other.descriptorSets.clear();
+	}
+	return *this;
+}
+
 ModelData& ModelData::fullConstruction(std::list<Shader>& loadedShaders, std::list<Texture>& loadedTextures, std::mutex& mutResources)
 {
 	#ifdef DEBUG_MODELS
@@ -87,7 +187,7 @@ ModelData& ModelData::fullConstruction(std::list<Shader>& loadedShaders, std::li
 	createDescriptorPool();
 	createDescriptorSets();
 	
-	//fullyConstructed = true;
+	fullyConstructed = true;
 	return *this;
 }
 

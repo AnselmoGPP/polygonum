@@ -2,14 +2,16 @@
 
 <br>![Khronos Vulkan logo](https://raw.githubusercontent.com/AnselmoGPP/VulkRend/master/files/Vulkan_logo.png)
 
-**Polygonum** is a graphics engine, as C++ library, that makes it much easier to render computer graphics with [Vulkan®](https://www.khronos.org/vulkan/).
+**Polygonum** is a low-level graphics engine (as a C++ library), that makes it much easier to render computer graphics with [Vulkan®](https://www.khronos.org/vulkan/).
+
 
 ## Table of Contents
 + [Installation](#installation)
-+ [How to use](#how-to-use)
++ [Architecture](#architecture)
     + [General system](#general-system)
     + [Second thread](#second-thread)
 + [Links](#links)
+
 
 ## Installation
 
@@ -49,6 +51,264 @@
 - _**files:**_ Scripts and images.
 - _**models:**_ Models for loading in our projects.
 - _**textures:**_ Images used as textures in our projects.
+
+
+## Architecture
+
+### Overview
+
+- `VulkanEnvironment`
+  - `VulkanCore`
+  - `IOmanager`
+  - `SwapChain`
+  - `RenderPipeline`
+    - `Image`
+    - `RenderPass`
+	  - `Subpass`
+
+- `Renderer`
+  - `VulkanEnvironment`
+  - `IOmanager`
+  - `ModelData`
+  - `Texture`
+  - `Shader`
+  - `LoadingWorker`
+  - `UBO`
+  - `TimerSet`
+
+
+### VulkanCore
+
+It contains the most basic Vulkan elements necessary for rendering: Vulkan instance (`VkInstance`), surface (`VkSurfaceKHR`), physical device, (`VkPhysicalDevice`), virtual device (`VkDevice`), queues (`VkQueue`), etc.
+
+### VulkanEnvironment
+
+It contains elements necessary for a particular way of rendering and I/O management: `VulkanCore`, command pool (`VkCommandPool`), render pipeline (`RenderPipeline`), swap chain (`SwapChain`), I/O manager (`IOmanager`).
+
+### IOmanager
+
+It's an I/O manager for input (controls) and output (window) operations. It provides:
+
+- `GLFWwindow`: Provides all functionality to this class.
+- Input methods (`getKey`, `getMouseButton`, `getCursorPos`, `setInputMode`, `pollEvents`, `waitEvents`).
+- Input callbacks (`getYscrollOffset`, `framebufferResizeCallback`, `mouseScroll_callback`).
+- Window methods (`createWindowSurface`, `getFramebufferSize`, `getAspectRatio`, `setWindowShouldClose`, `getWindowShouldClose`, `destroy`).
+
+This class also serves as `windowUserPointer` (pointer accessible from callbacks). Each window has a `windowUserPointer`, which can be used for any purpose, and GLFW will not modify it throughout the life-time of the window.
+
+### SwapChain
+
+It contains data relative to the swap chain:
+
+- `VkSwapchainKHR`
+- Set of `VkImage` and `VkImageView`.
+- Their format (`VkFormat`) and extent (`VkExtent2D`).
+
+### RenderPipeline
+
+It contains a set of `RenderPass` objects. It's a PVF (Pure Virtual Function) that must be configured via overriding (i.e., by creating a subclass that overrides its virtual methods):
+
+- `createRenderPass()`: Create all the `RenderPass` objects. This is done by describing all the attachments (via `VkAttachmentDescription` and `VkAttachmentReference`) for each subpass. 
+- `createImageResources()`: Create all the attachments used (`Image` objects). They can be members of the subclass.
+- `destroyAttachments()`: Destroy all attachments (`Image` objects).
+
+This class lets you create your own render pipeline such as:
+
+- Forward shading
+- Forward shading + post-processing
+- Deferred shading (lighting pass + geometry pass)
+- Deferred shading + forward shading + post-processing
+- etc.
+
+### Image
+
+Image used as attachment in a render pass. One per render pass. It contains:
+
+- `VkImage`
+- `VkDeviceMemory`
+- `VkImageView`: References a part of the image to be used (subset of its pixels). Required for being able to access it.
+- `VkSampler`: Images are accessed through image views rather than directly.
+
+### RenderPass
+
+It contains data relative to a render pass:
+
+- `VkRenderPass`
+- Set of `Subpass` objects.
+- Pointers to attachments (`VkImageView*`) of each subpass.
+- Framebuffer (`VkFramebuffer`) (i.e., set of attachments, including final image) of each subpass.
+- etc.
+
+### Subpass
+
+It contains basic subpass data:
+
+- Pointers to input attachments (input images) (`Image*`).
+- Number of color attachments (output images).
+
+### Renderer
+
+It manages the graphics engine and serves as its interface. Calling `renderLoop` we start the render loop:
+
+1. `createCommandBuffers`
+2. Run worker in parallel (for adding and deleting models)
+3. Start render loop:
+  1. `IOmanager::pollEvents`: Check for events
+  2. `drawFrame`: Render a frame
+    1. Take a swap-chain image and use it as attachment in the framebuffer
+    2. `update states`
+      1. User updates models data via callback
+	  2. Pass updated UBOs to the GPU
+      3. Update command buffers, if necessary
+    3. Execute command buffers
+    4. Return the image to the swap chain for presentation
+  3. Repeat
+4. Worker terminates
+5. `vkDeviceWaitIdle`: Wait for `VkDevice` to finish operations (drawing and presentation).
+6. `cleanup`
+
+Main contents:
+
+- Variables:
+
+  - `VulkanEnvironment`
+  - `IOmanager`
+  - `Timer`
+  - Models (`ModelData`)
+  - Textures (`Texture`)
+  - Shaders (`Shader`)
+  - `LoadingWorker`
+  - Command buffers (`VkCommandBuffer`)
+  - Semaphores and fences (`VkSemaphore`, `VkFence`)
+  - Global VS and FS UBOs (`UBO`) (max. number of VS UBOs == max. number of active instances)
+  
+- Methods
+
+  - `renderLoop`: Create command buffer and start render loop.
+  - `newModel`, `deleteModel`, `getModel`, `setInstances`
+  - `setMaxFPS`
+  
+  - `getIO`: Get `IOmanager` object.
+  - `getTimer`: Get `Timer` object.
+  - `getRendersCount`: Number of active instances of a certain model.
+  - `getFrameCount`: Number of a certain frame.
+  - `getFPS`: Number of Frames Per Second.
+  - `getModelsCount`: Number of models in `Renderer::models`.
+  - `loadedShaders`: Number of shaders in `Renderer::shaders`.
+  - `loadedTextures`: Number of textures in `Renderer::textures`.
+  - `getCommandsCount`: Number of drawing commands sent to the command buffer.
+  - `getMaxMemoryAllocationCount`: Max. number of valid memory objects.
+  - `getMemAllocObjects`: Number of memory allocated objects (must be <= `maxMemoryAllocationCount`)
+  
+  - `drawFrame`: Wait for command buffer execution, acquire a not-in-use image from swap chain (`vkAcquireNextImageKHR`), update models data, execute command buffer with that image as attachment in the framebuffer (`vkQueueSubmit`), and return the image to the swap chain for presentation (`vkQueuePresentKHR`). If framebuffer is resized, we recreate the swap-chain. Each operation depends on the previous one finishing, so we synchronize swap chain events.
+  - `updateStates`: Model data is updated (by user via callback), updated UBOs are passed to GPU, and command buffers are updated (if necessary). 
+  - `userUpdate`: Callback for user updates (`void(*userUpdate) (Renderer& rend);`). Mainly used for updating UBOs and adding/removing models.
+  - `createCommandBuffers`: Create one command buffer per swap-chain image.
+    - `vkAllocateCommandBuffers`
+	- `vkBeginCommandBuffer`/`vkEndCommandBuffer`
+	- `vkCmdBeginRenderPass`/`vkCmdEndRenderPass`/`vkCmdNextSubpass`
+	- `vkCmdBindPipeline`, `vkCmdBindVertexBuffers`, `vkCmdBindIndexBuffer`, `vkCmdBindDescriptorSets`
+	- `vkCmdDraw`/`vkCmdDrawIndexed` 
+  - `cleanup`: Method called after render loop terminates.
+    - `vkQueueWaitIdle`
+	- `vkFreeCommandBuffers`
+	- `vkDestroySemaphore`/`vkDestroyFence`
+	- Clear models, textures, shaders
+	- Destroy global UBOs
+    - `VulkanEnvironment::cleanup`
+	  - `vkDestroyCommandPool`
+	  - Destroy render pipeline
+	  - Destroy swap-chain
+	  - `VulkanCore::destroy`
+	    - `vkDestroyDevice`
+		- `DestroyDebugUtilsMessengerEXT`
+		- `vkDestroySurfaceKHR`
+		- `vkDestroyInstance`
+		- `IOmanager::destroy`
+  - `recreateSwapChain`: The window surface may change, making swap chain no longer compatible with it (example: window resizing). We catch this event, when acquiring/submitting an image from/to the swap chain, and recreate the swap chain. Used in `drawFrame` if `vkAcquireNextImageKHR` (acquire swap-chain image) or `vkQueuePresentKHR` (return image to swap-chain for presentation) output an error.
+	- `Renderer::cleanupSwapChain`
+	  - `vkFreeCommandBuffers`
+      - `ModelData::cleanup_Pipeline_Descriptors` (`vkDestroyPipeline`, `vkDestroyPipelineLayout`, `UBO::destroyUBOs`, `vkDestroyDescriptorPool`)
+	  - `VulkanEnvironment::cleanup_RenderPipeline_SwapChain` (`RenderPipeline::destroy`, `SwapChain::destroy`)
+    - `VulkanEnvironment::recreate_RenderPipeline_SwapChain` (`createSwapChain`, `createSwapChainImageViews`, `RenderPipeline::createRenderPipeline`)
+	- `ModelData::recreate_Pipeline_Descriptors` (`createGraphicsPipeline`, `createUBObuffers`, `createDescriptorPool`, `createDescriptorSets`)
+	- `Renderer::createCommandBuffers`
+
+
+
+void createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader);
+void updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights);
+void createPostprocessingPass(std::string vertShaderPath, std::string fragShaderPath);
+void updatePostprocessingPass();
+
+
+
+
+### ModelData
+
+### Texture
+
+### Shader
+
+### LoadingWorker
+
+### UBO
+
+### TimerSet
+
+It manages time. Methods:
+
+- `startTimer`: Start chronometer.
+- `updateTime`: Update time parameters (deltaTime and totalDeltaTime).
+- `reUpdateTime`: Re-update time parameters as if updateTime was not called before.
+
+- `getDeltaTime`: Get updated deltaTime.
+- `getTotalDeltaTime`: Get updated totalDeltaTime.
+- `getDate`: Get string with current date and time (example: Mon Jan 31 02:28:35 2022).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+- Chrono methods
+  - `startTimer`: Start time counting for the chronometer
+  - `computeDeltaTime`: Get time (seconds) passed since last time you called this method.
+  - `getDeltaTime`: <<< Returns time (seconds) increment between frames (deltaTime)
+  - `getTime`: <<< Get time (seconds) since startTime when computeDeltaTime() was called
+
+- FPS control
+  - `getFPS`: Get FPS (updated in computeDeltaTime())
+  - `setMaxFPS`: Modify the current maximum FPS. Set it to 0 to deactivate FPS control.
+  - `getMaxPossibleFPS`: Get the maximum possible FPS you can get (if we haven't set max FPS, maxPossibleFPS == FPS)
+
+    // Frame counting
+    size_t      getFrameCounter();      ///< Get number of calls made to computeDeltaTime()
+
+    // Bonus methods (less used)
+    long double getTimeNow();           ///< Returns time (seconds) since startTime, at the moment of calling GetTimeNow()
+    std::string getDate();              ///< Get a string with date and time (example: Mon Jan 31 02:28:35 2022)
+
+
+
+
+
+
+
+
+
+
+
 
 ## How to use
 

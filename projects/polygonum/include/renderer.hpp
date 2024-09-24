@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <map>
+#include <queue>
 #include <thread>
 #include <mutex>
 #include <optional>					// std::optional<uint32_t> (Wrapper that contains no value until you assign something to it. Contains member has_value())
@@ -21,6 +22,17 @@ enum primitiveTopology;
 
 // Definitions ----------
 
+using key64 = uint64_t;
+template<typename T>
+using vec = std::vector<T>;
+template<typename T>
+using vec2 = std::vector<std::vector<T>>;
+template<typename T>
+using vec3 = std::vector<std::vector<std::vector<T>>>;
+template<typename T1, typename T2>
+using vecpair = std::vector<std::pair<T1, T2>>;
+
+
 /// Used for the user to specify what primitive type represents the vertex data. 
 enum primitiveTopology {
 	point		= VK_PRIMITIVE_TOPOLOGY_POINT_LIST,
@@ -28,21 +40,26 @@ enum primitiveTopology {
 	triangle	= VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
 };
 
+enum Task{ none, construct, delet };
 
 /// Reponsible for the loading thread and its processes.
 class LoadingWorker
 {
-	std::vector<std::vector<std::list<ModelData>>>& models;
-	std::list<ModelData>&	modelsToLoad;
-	std::list<ModelData>&	modelsToDelete;
-	std::list<Texture>&		textures;
-	std::list<Shader>&		shaders;
+	std::queue<std::pair<key64, Task>> tasks;   //!< FIFO queue
+	std::unordered_map<key64, ModelData> modelTP;   //!< Model To Process: A model is moved here temporarily for processing. After processing, it's tranferred to its final destination.
+
+	std::unordered_map<key64, ModelData>& models;
+	std::list<Texture>& textures;
+	std::list<Shader>& shaders;
+	//std::unordered_map<std::string, Texture>& textures;
+	//std::unordered_map<std::string, Shader>& shaders;
+
+
 	bool&					updateCommandBuffer;
 
 	int						waitTime;				//!< Time (milliseconds) the loading-thread wait till next check.
 	bool					runThread;				//!< Signals whether the secondary thread (loadingThread) should be running.
 	std::thread				thread_loadModels;		//!< Thread for loading new models. Initiated in the constructor. Finished if glfwWindowShouldClose
-	std::list<ModelData>	modelTP;				//!< Model To Process: A model is moved here temporarily for processing. After processing, it's tranferred to its final destination.
 
 	/**
 		@brief Load and delete models (including their shaders and textures)
@@ -54,19 +71,25 @@ class LoadingWorker
 		</ul>
 	*/
 	void loadingThread();
+	void extractModel(key64 key);   //!< Extract model from "models" to "modelTP"
+	void returnModel(key64 key);   //!< Extract model from "modelTP" to "models"
 
 public:
-	LoadingWorker(int waitTime, std::vector<std::vector<std::list<ModelData>>>& models, std::list<ModelData>& modelsToLoad, std::list<ModelData>& modelsToDelete, std::list<Texture>& textures, std::list<Shader>& shaders, bool& updateCommandBuffer);
+	LoadingWorker(int waitTime, std::unordered_map<key64, ModelData>& models, std::list<Texture>& textures, std::list<Shader>& shaders, bool& updateCommandBuffer);
 	~LoadingWorker();
 
-	std::mutex mutModels;		//!< for Renderer::models
+	std::mutex mutModels;   //!< for Renderer::models
+	std::mutex mutTasks;   //!< for LoadingWorker::tasks
+
+	std::mutex mutModelTP;
+
 	std::mutex mutLoad;			//!< for Renderer::modelsToLoad
 	std::mutex mutDelete;		//!< for Renderer::modelsToDelete
 	std::mutex mutResources;	//!< for Renderer::shaders & Renderer::textures
 
 	void start();
 	void stop();
-	bool isBeingProcessed(modelIter model);
+	void newTask(key64 key, Task task);
 };
 
 
@@ -82,25 +105,23 @@ class Renderer
 	const int MAX_FRAMES_IN_FLIGHT = 2;		//!< How many frames should be processed concurrently.
 
 	// Main parameters
+	IOmanager					io;
 	VulkanEnvironment			e;
-	IOmanager&					io;							//!< Input data
-	TimerSet					timer;						//!< Time control
+	//TimerSet					timer;
+	Timer						timer;
 
-	// stdvec2(std::unordered_map<T, ModelData>) models;		//!< std::unordered_map uses a hash table. Complexity for lookup, insertion, and deletion: O(1) (average) - O(n) (worst-case)
-	//stdvec2(std::list<ModelData>) models;
-	std::vector<
-		std::vector<
-			std::list<ModelData>>> models;					//!< Sets of fully initialized models (one set per renderpass per subpass).
-	std::list<ModelData>		modelsToLoad;				//!< Models waiting for being included in m (partially initialized).
-	std::list<ModelData>		modelsToDelete;				//!< Iterators to the loaded models that have to be deleted from Vulkan.
+	std::unordered_map<key64, ModelData> models;   //!< All models (constructed or not). std::unordered_map uses a hash table. Complexity for lookup, insertion, and deletion: O(1) (average) - O(n) (worst-case)
+	vec3<key64> keys;   //!< All keys of all models, distributed per renderpass ad subpass.
 
+	//std::unordered_map<std::string, Texture> textures;   //!< Set of textures
+	//std::unordered_map<std::string, Shader> shaders;   //!< Set of shaders
 	std::list<Texture>			textures;					//!< Set of textures
 	std::list<Shader>			shaders;					//!< Set of shaders
 
 	LoadingWorker				worker;
 
 	//const size_t				numLayers;					//!< Number of layers (Painter's algorithm)
-	std::vector<modelIter>		lastModelsToDraw;			//!< Models that must be moved to the last position in "models" in order to make them be drawn the last.
+	//std::vector<modelIter>	lastModelsToDraw;			//!< Models that must be moved to the last position in "models" in order to make them be drawn the last.
 
 	// Member variables:
 	std::vector<VkCommandBuffer> commandBuffers;			//!< <<< List. Opaque handle to command buffer object. One for each swap chain framebuffer.
@@ -110,14 +131,15 @@ class Renderer
 	std::vector<VkSemaphore>	renderFinishedSemaphores;	//!< Signals that rendering has finished (CB has been executed) and presentation can happen. Each frame has a semaphore for concurrent processing. Allows multiple frames to be in-flight while still bounding the amount of work that piles up. One for each possible frame in flight.
 	std::vector<VkFence>		framesInFlight;				//!< Similar to semaphores, but fences actually wait in our own code. Used to perform CPU-GPU synchronization. One per frame in flight.
 	std::vector<VkFence>		imagesInFlight;				//!< Maps frames in flight by their fences. Tracks for each swap chain image if a frame in flight is currently using it. One per swap chain image.
-	VkFence lastFence;										//!< Signals that the last command buffer submitted finished execution.
+	VkFence						lastFence;					//!< Signals that the last command buffer submitted finished execution.
 
 	size_t						currentFrame;				//!< Frame to process next (0 or 1).
 	size_t						commandsCount;				//!< Number of drawing commands sent to the command buffer. For debugging purposes.
 	size_t						frameCount;					//!< Number of frames rendered
+	int							maxFPS;						//!< Maximum FPS (= 30 by default).
 
-	modelIter					lightingPass;				//!< Optional (createLighting())
-	modelIter					postprocessingPass;			//!< Optional (createPostprocessing())
+	key64						lightingPass;				//!< Optional (createLighting())
+	key64						postprocessingPass;			//!< Optional (createPostprocessing())
 
 	// Main methods:
 
@@ -176,13 +198,17 @@ class Renderer
 	/// Used in recreateSwapChain()
 	void cleanupSwapChain();	
 
-	/// Used for clearing depth buffer between sets of draw commands in order to apply Painter's algorithm.
+	/// [Not used] Used for clearing depth buffer between sets of draw commands in order to apply Painter's algorithm.
 	void clearDepthBuffer(VkCommandBuffer commandBuffer);
+
+	void distributeKeys();
+	key64 getNewKey();
+	key64 newKey;
 
 public:
 	// LOOK what if firstModel.size() == 0
 	/// Constructor. Requires a callback for updating model matrix, adding models, deleting models, etc.
-	Renderer(void(*graphicsUpdate)(Renderer&), IOmanager& io, UBOinfo globalUBO_vs = UBOinfo(), UBOinfo globalUBO_fs = UBOinfo());
+	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOinfo globalUBO_vs = UBOinfo(), UBOinfo globalUBO_fs = UBOinfo());
 	~Renderer();
 	
 	UBO globalUBO_vs;	//!< Max. number of active instances
@@ -191,15 +217,19 @@ public:
 	void renderLoop();	//!< Create command buffer and start render loop.
 
 	/// Create (partially) a new model in the list modelsToLoad. Used for rendering a model.
-	modelIter newModel(ModelDataInfo& modelInfo);
+	key64 newModel(ModelDataInfo& modelInfo);
 
 	/// Move model from list models (or modelsToLoad) to list modelsToDelete. If the model is being fully constructed (by the worker), it waits until it finishes. Note: When the app closes, it destroys Renderer. Thus, don't use this method at app-closing (like in an object destructor): if Renderer is destroyed first, the app may crash.
-	void deleteModel(modelIter model);
+	void deleteModel(key64 key);
 
-	void setInstances(modelIter model, size_t numberOfRenders);
+	ModelData* getModel(key64 key);
+
+	void setInstances(key64 key, size_t numberOfRenders);
+
+	void setMaxFPS(int maxFPS);
 
 	/// Make a model the last to be drawn within its own layer. Useful for transparent objects.
-	void toLastDraw(modelIter model) { /* <<< NOT WORKING */ };
+	//void toLastDraw(modelIter model) { /* <<< NOT WORKING */ };
 
 	void createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader);
 	void updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights);
@@ -207,12 +237,12 @@ public:
 	void updatePostprocessingPass();
 
 	// Getters
-	TimerSet&	getTimer();		//!< Returns the timer object (provides access to time data).
-	size_t		getRendersCount(modelIter model);
+	Timer&		getTimer();		//!< Returns the timer object (provides access to time data).
+	size_t		getRendersCount(key64 key);
 	size_t		getFrameCount();
+	size_t		getFPS();
 	size_t		getModelsCount();
 	size_t		getCommandsCount();
-	size_t		loadedModels();		//!< Returns number of models in Renderer:models
 	size_t		loadedShaders();	//!< Returns number of shaders in Renderer:shaders
 	size_t		loadedTextures();	//!< Returns number of textures in Renderer:textures
 	IOmanager&  getIO();			//!< Get access to the IO manager

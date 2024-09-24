@@ -37,6 +37,14 @@ void readFile(const char* filename, std::string& destination);
 
 /// Copy a C-style string in destination from source. Used in ModelData and Texture. Memory is allocated in "destination", remember to delete it when no needed anymore. 
 void copyCString(const char*& destination, const char* source);
+/*
+template <typename k, typename e>
+void transfer(std::unordered_map<k, e>& source, std::unordered_map<k, e>& dest, k key)
+{
+    std::unordered_map<k, e>::node_type node = source.extract(k);
 
-
+    if (node.empty() == false)
+        dest.insert(std::move(node));
+};
+*/
 #endif
