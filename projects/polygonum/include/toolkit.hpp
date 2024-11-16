@@ -5,13 +5,7 @@
 #include <list>
 
 //#include "vertex.hpp"
-
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE			// GLM uses OpenGL depth range [-1.0, 1.0]. This macro forces GLM to use Vulkan range [0.0, 1.0].
-//#define GLM_ENABLE_EXPERIMENTAL			// Required for using std::hash functions for the GLM types (since gtx folder contains experimental extensions)
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>		// Generate transformations matrices with glm::rotate (model), glm::lookAt (view), glm::perspective (projection).
-//#include <glm/gtx/hash.hpp>
+#include "commons.hpp"
 
 
 // Print data -----------------------------------------------------------------
@@ -163,9 +157,12 @@ float getSqrDist(const glm::vec3& a, const glm::vec3& b);
 
 glm::vec3 reflect(const glm::vec3& lightRay, const glm::vec3& normal);
 
-// Linear interpolation. Position between A and B located at ratio t [0,1]
+// Linear interpolation. Position between A and B located at ratio t [0,1]. Example: 3-4-5-6-7-8; Pos. at ratio 0.6 = 3 + (8 - 3) * 0.6 = 6
 float lerp(float a, float b, float t);
 glm::vec3 lerp(glm::vec3 a, glm::vec3 b, float t);
+
+// Ratio. Ratio between A and B at position C. Example: 3-4-5-6-7-8; Ratio at 6 = (6-3)/(8-3) = 0.6
+float ratio(float a, float b, float c);
 
 /// Uses linear interpolation to get an aproximation of a base raised to a float exponent
 float powLinInterp(float base, float exponent);

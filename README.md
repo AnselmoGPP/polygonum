@@ -8,49 +8,23 @@
 ## Table of Contents
 + [Installation](#installation)
 + [Architecture](#architecture)
-    + [General system](#general-system)
-    + [Second thread](#second-thread)
+    + [Overview](#overview)
+    + [VulkanCore](#vulkancore)
+    + [VulkanEnvironment](#vulkanenvironment)
+    + [IOmanager](#iomanager)
+    + [SwapChain](#swapchain)
+    + [RenderPipeline](#renderpipeline)
+    + [Image](#image)
+    + [RenderPass](#renderpass)
+    + [Subpass](#subpass)
+    + [Renderer](#renderer)
+    + [ModelData](#modeldata)
+    + [Texture](#texture)
+    + [Shader](#shader)
+    + [LoadingWorker](#loadingworker)
+    + [UBO](#ubo)
+    + [TimerSet](#timerset)
 + [Links](#links)
-
-
-## Installation
-
-<h4>Polygonum offers multiple functionalities:</h4>
-
-- Render any primitive: Points, Lines, Triangles
-- 2D and 3D rendering
-- Load models (raw data or OBJ files)
-- Load textures to pool (any model can use any texture from the pool)
-- Define Vertex and Fragment shaders
-- Multiple renderings of the same object in the scene (modifiable at any time)
-- Load/delete models at any time
-- Load/delete textures at any time
-- Parallel thread for loading/deleting models and textures (avoids bottlenecks at the render loop)
-- Camera system (navigate through the scene)
-- Input system
-- Multiple layers (Painter's algorithm)
-- Define content of the vertex UBO and the fragment UBO
-- Allows transparencies (alpha channel)
-
-**Disclaimer: The following content is outdated, but it will updated soon. This is a work in progress.**
-
-<h4>Main project content:</h4>
-
-- _**projects:**_ Contains Polygonum and some example projects.
-  - _**Renderer:**_ Polygonum headers and source files.
-  - _**shaders**_ Shaders used (vertex & fragment).
-    - **environment:** Creates and configures the core Vulkan environment.
-    - **renderer:** Uses the Vulkan environment for rendering the models provided by the user.
-    - **models:** The user loads his models to Polygonum through the ModelData class.
-    - **input:** Manages user input (keyboard, mouse...) and delivers it to Polygonum.
-    - **camera:** Camera system.
-    - **timer:** Time data.
-    - **data:** Bonus functions (model matrix computation...).
-    - **main:** Examples of how to use Polygonum.
-- _**extern:**_ Dependencies (GLFW, GLM, stb_image, tinyobjloader...).
-- _**files:**_ Scripts and images.
-- _**models:**_ Models for loading in our projects.
-- _**textures:**_ Images used as textures in our projects.
 
 
 ## Architecture
@@ -307,7 +281,44 @@ It manages time. Methods:
 
 
 
+## Installation
 
+<h4>Polygonum offers multiple functionalities:</h4>
+
+- Render any primitive: Points, Lines, Triangles
+- 2D and 3D rendering
+- Load models (raw data or OBJ files)
+- Load textures to pool (any model can use any texture from the pool)
+- Define Vertex and Fragment shaders
+- Multiple renderings of the same object in the scene (modifiable at any time)
+- Load/delete models at any time
+- Load/delete textures at any time
+- Parallel thread for loading/deleting models and textures (avoids bottlenecks at the render loop)
+- Camera system (navigate through the scene)
+- Input system
+- Multiple layers (Painter's algorithm)
+- Define content of the vertex UBO and the fragment UBO
+- Allows transparencies (alpha channel)
+
+**Disclaimer: The following content is outdated, but it will updated soon. This is a work in progress.**
+
+<h4>Main project content:</h4>
+
+- _**projects:**_ Contains Polygonum and some example projects.
+  - _**Renderer:**_ Polygonum headers and source files.
+  - _**shaders**_ Shaders used (vertex & fragment).
+    - **environment:** Creates and configures the core Vulkan environment.
+    - **renderer:** Uses the Vulkan environment for rendering the models provided by the user.
+    - **models:** The user loads his models to Polygonum through the ModelData class.
+    - **input:** Manages user input (keyboard, mouse...) and delivers it to Polygonum.
+    - **camera:** Camera system.
+    - **timer:** Time data.
+    - **data:** Bonus functions (model matrix computation...).
+    - **main:** Examples of how to use Polygonum.
+- _**extern:**_ Dependencies (GLFW, GLM, stb_image, tinyobjloader...).
+- _**files:**_ Scripts and images.
+- _**models:**_ Models for loading in our projects.
+- _**textures:**_ Images used as textures in our projects.
 
 
 ## How to use

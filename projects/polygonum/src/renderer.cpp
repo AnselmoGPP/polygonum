@@ -307,7 +307,7 @@ void Renderer::createCommandBuffers()
 					#endif
 					
 					model = &models[key];
-					if (model->activeInstances == 0) continue;
+					if (model->getActiveInstancesCount() == 0) continue;
 
 					vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->graphicsPipeline);	// Second parameter: Specifies if the pipeline object is a graphics or compute pipeline.
 					vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &model->vert.vertexBuffer, offsets);
@@ -319,9 +319,9 @@ void Renderer::createCommandBuffers()
 						vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->pipelineLayout, 0, 1, &model->descriptorSets[i], 0, 0);
 					
 					if (model->vert.indexCount)		// has indices
-						vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(model->vert.indexCount), model->activeInstances, 0, 0, 0);
+						vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(model->vert.indexCount), model->getActiveInstancesCount(), 0, 0, 0);
 					else
-						vkCmdDraw(commandBuffers[i], model->vert.vertexCount, model->activeInstances, 0, 0);
+						vkCmdDraw(commandBuffers[i], model->vert.vertexCount, model->getActiveInstancesCount(), 0, 0);
 
 					commandsCount++;
 				}
@@ -613,7 +613,7 @@ void Renderer::distributeKeys()
 			sp.clear();
 
 	for (auto it = models.begin(); it != models.end(); it++)
-		if(it->second.activeInstances && it->second.ready)
+		if(it->second.getActiveInstancesCount() && it->second.ready)
 			keys[it->second.renderPassIndex][it->second.subpassIndex].push_back(it->first);
 }
 
@@ -719,6 +719,20 @@ void Renderer::setInstances(key64 key, size_t numberOfRenders)
 	if(models.find(key) != models.end())
 		if(models[key].setActiveInstancesCount(numberOfRenders))
 			updateCommandBuffer = true;		// We flag commandBuffer for update assuming that our model is in list "model"
+}
+
+void Renderer::setInstances(std::vector<key64>& keys, size_t numberOfRenders)
+{
+	#ifdef DEBUG_RENDERER
+		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+	#endif
+
+	const std::lock_guard<std::mutex> lock(worker.mutModels);
+
+	for(key64 key : keys)
+		if (models.find(key) != models.end())
+			if (models[key].setActiveInstancesCount(numberOfRenders))
+				updateCommandBuffer = true;		// We flag commandBuffer for update assuming that our model is in list "model"
 }
 
 void Renderer::setMaxFPS(int maxFPS)
@@ -947,7 +961,7 @@ Timer& Renderer::getTimer() { return timer; }
 size_t Renderer::getRendersCount(key64 key)
 {
 	if (models.find(key) != models.end())
-		return models[key].activeInstances;
+		return models[key].getActiveInstancesCount();
 	else
 		return 0;
 }

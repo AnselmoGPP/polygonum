@@ -4,8 +4,6 @@
 #include <list>
 //#include <unordered_map>			// For storing unique vertices from the model
 
-#include <glm/glm.hpp>
-
 //#define TINYOBJLOADER_IMPLEMENTATION	// Import OBJ models
 //#include "tiny_obj_loader.h"
 
@@ -20,6 +18,7 @@
 
 #include "environment.hpp"
 #include "vertex.hpp"
+#include "commons.hpp"
 
 
 /*
@@ -200,8 +199,7 @@ enum smFlag {
 	sm_verticalNormals,
 	sm_waving_weak,
 	sm_waving_strong,
-	sm_displace, 
-	sm_reduceNightLight,
+	sm_displace,
 	sm_distDithering_near,   // apply dithering to distant objects
 	sm_distDithering_far,   // apply dithering to distant objects
 	sm_earlyDepthTest,

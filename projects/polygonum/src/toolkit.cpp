@@ -34,6 +34,11 @@ float lerp(float a, float b, float t) { return a + (b - a) * t; }
 
 glm::vec3 lerp(glm::vec3 a, glm::vec3 b, float t) { return a + (b - a) * t; }
 
+float ratio(float a, float b, float c)
+{
+	return (c - a) / (b - a);
+}
+
 float powLinInterp(float base, float exponent)
 {
 	float down = std::floor(exponent);

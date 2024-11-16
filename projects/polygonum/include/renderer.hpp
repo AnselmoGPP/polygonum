@@ -225,6 +225,7 @@ public:
 	ModelData* getModel(key64 key);
 
 	void setInstances(key64 key, size_t numberOfRenders);
+	void setInstances(std::vector<key64>& keys, size_t numberOfRenders);
 
 	void setMaxFPS(int maxFPS);
 

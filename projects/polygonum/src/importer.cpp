@@ -6,7 +6,6 @@
 #include "stb_image.h"
 
 #include "importer.hpp"
-#include "commons.hpp"
 
 
 const VertexType vt_3   ({ 3 * sizeof(float) }, { VK_FORMAT_R32G32B32_SFLOAT });
@@ -536,10 +535,6 @@ void SLModule::applyModifications(std::string& shader)
 
 		case sm_displace:					// (VS) Move vertex aside a bit (0.2 meter towards x-axis)
 			findStrAndErase(shader, "//displace: ");
-			break;
-
-		case sm_reduceNightLight:			// (FS) Reduce sunlight at night
-			findStrAndErase(shader, "//reduceNightLight: ");
 			break;
 
 		case sm_distDithering_near:			// (FS) Apply dithering to distant fragments

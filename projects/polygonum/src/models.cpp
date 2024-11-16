@@ -810,6 +810,8 @@ void ModelData::deleteLoader()
 	}
 }
 
+size_t ModelData::getActiveInstancesCount() { return activeInstances; }
+
 bool ModelData::setActiveInstancesCount(size_t activeInstancesCount)
 {
 	#ifdef DEBUG_MODELS

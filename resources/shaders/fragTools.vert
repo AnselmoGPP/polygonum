@@ -400,16 +400,6 @@ void savePrecalcLightValues(vec3 fragPos, vec3 camPos, Light inLight[NUMLIGHTS])
 	}
 }
 
-// (For planets) Reduce sunlight intensity (diffuse & specular) if sunlight source is below the object.
-void modifySavedSunLight(vec3 fragPos)
-{
-	float ratio = getRatio(dot(normalize(light[0].direction), normalize(fragPos)), 0.3, -0.8);
-
-	//light[0].ambient  *= ratio;
-	light[0].diffuse  *= ratio;
-	light[0].specular *= ratio;
-}
-
 
 // Lightning functions ------------------------------------------------------------------------
 

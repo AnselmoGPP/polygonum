@@ -7,16 +7,10 @@
 #include <fstream>
 #include <string>
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE			// GLM uses OpenGL depth range [-1.0, 1.0]. This macro forces GLM to use Vulkan range [0.0, 1.0].
-#define GLM_ENABLE_EXPERIMENTAL				// Required for using std::hash functions for the GLM types (since gtx folder contains experimental extensions)
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>		// Generate transformations matrices with glm::rotate (model), glm::lookAt (view), glm::perspective (projection).
-#include <glm/gtx/hash.hpp>
-
 #include "vertex.hpp"
 #include "ubo.hpp"
 #include "importer.hpp"
+#include "commons.hpp"
 
 #define LINE_WIDTH 1.0f
 
@@ -61,6 +55,7 @@ class ModelData
 	VkCullModeFlagBits cullMode;				//!< VK_CULL_MODE_BACK_BIT, VK_CULL_MODE_NONE, ...
 	UBO* globalUBO_vs;
 	UBO* globalUBO_fs;
+	size_t activeInstances;		//!< Number of renderings (<= vsDynUBO.dynBlocksCount). Can be set with setRenderCount.
 
 	// Main methods:
 
@@ -114,6 +109,7 @@ public:
 	/// Creates graphic pipeline and descriptor sets. Called for window resizing (by Renderer::recreateSwapChain()).
 	void recreate_Pipeline_Descriptors();
 
+	size_t getActiveInstancesCount();
 	bool setActiveInstancesCount(size_t activeInstancesCount);	//!< Set number of active instances (<= vsUBO.maxUBOcount).
 
 	VkPipelineLayout			 pipelineLayout;		//!< Pipeline layout. Allows to use uniform values in shaders (globals similar to dynamic state variables that can be changed at drawing time to alter the behavior of your shaders without having to recreate them).
@@ -132,7 +128,6 @@ public:
 	uint32_t					 renderPassIndex;		//!< Index of the renderPass used (0 for rendering geometry, 1 for post processing)
 	uint32_t					 subpassIndex;
 	size_t						 layer;					//!< Layer where this model will be drawn (Painter's algorithm).
-	size_t						 activeInstances;		//!< Number of renderings (<= vsDynUBO.dynBlocksCount). Can be set with setRenderCount.
 
 	ResourcesLoader*			 resLoader;				//!< Info used for loading resources (vertices, indices, shaders, textures). When resources are loaded, this is set to nullptr.
 	bool						 fullyConstructed;		//!< Object fully constructed (i.e. model loaded into Vulkan).

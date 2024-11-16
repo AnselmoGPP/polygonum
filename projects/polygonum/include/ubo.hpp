@@ -3,13 +3,7 @@
 
 #include <array>
 
-#define GLM_FORCE_RADIANS
-#define GLM_FORCE_DEPTH_ZERO_TO_ONE			// GLM uses OpenGL depth range [-1.0, 1.0]. This macro forces GLM to use Vulkan range [0.0, 1.0].
-#define GLM_ENABLE_EXPERIMENTAL				// Required for using std::hash functions for the GLM types (since gtx folder contains experimental extensions)
-#include <glm/glm.hpp>
-//#include <glm/gtc/matrix_transform.hpp>	// Generate transformations matrices with glm::rotate (model), glm::lookAt (view), glm::perspective (projection).
-//#include <glm/gtx/hash.hpp>
-
+#include "commons.hpp"
 #include "environment.hpp"
 
 
@@ -148,13 +142,12 @@ struct UBOinfo
 
 /**
 *	@struct UBO
-*	@brief Structure used for storing a set of UBOs in the same structure (many UBOs can be used for rendering the same model many times).
+*	@brief Structure used for storing a set of subUBOs in a single UBO (useful for rendering many instances of the same model).
 *	
-*	Usual attributes of a single UBO: Model, View, Projection, ModelForNormals, Lights
-*	We may create a set of dynamic UBOs (dynBlocksCount), each one containing a number of different attributes (5 max), each one containing 0 or more attributes of their type (numEachAttrib).
-*	If count == 0, the buffer created will have size == range (instead of totalBytes, which is == 0). If range == 0, no buffer is created.
+*	Usual attributes of a subUBO: Model, View, Projection, ModelForNormals, Lights.
 *	Alignments: minUBOffsetAlignment (For each dynamic UBO. Affects range), UniformAlignment (For each uniform. Affects 
 *	Model matrix for Normals: Normals are passed to fragment shader in world coordinates, so they have to be multiplied by the model matrix (MM) first (this MM should not include the translation part, so we just take the upper-left 3x3 part). However, non-uniform scaling can distort normals, so we have to create a specific MM especially tailored for normal vectors: mat3(transpose(inverse(model))) * aNormal.
+*   A descriptor set (set) contains different descriptors (bindings). Each descriptor ...
 *	Terms: UBO (set of dynUBOs), dynUBO (set of uniforms), uniform/attribute (variables stored in a dynUBO).
 */
 struct UBO
