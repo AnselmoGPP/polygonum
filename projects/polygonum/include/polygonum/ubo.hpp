@@ -1,10 +1,7 @@
 #ifndef UBO_HPP
 #define UBO_HPP
 
-#include <array>
-
-#include "commons.hpp"
-#include "environment.hpp"
+#include "polygonum/environment.hpp"
 
 
 // Prototypes ----------
@@ -48,7 +45,7 @@ struct Sizes
 	//size_t lightSize;
 };
 
-extern Sizes size;
+extern Sizes sizes;
 
 struct Light
 {

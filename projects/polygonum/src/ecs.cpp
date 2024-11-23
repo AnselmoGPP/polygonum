@@ -1,8 +1,7 @@
-
 #include <iostream>
 
-#include "ECSarch.hpp"
-#include "commons.hpp"
+#include "polygonum/ecs.hpp"
+#include "polygonum/commons.hpp"
 
 
 Component::Component()

@@ -1,8 +1,8 @@
-
 #include <fstream>
 #include <iostream>
 
-#include "commons.hpp"
+#include "polygonum/commons.hpp"
+
 
 //std::vector< std::function<glm::mat4(float)> > room_MM{ /*room1_MM, room2_MM, room3_MM, room4_MM*/ };
 

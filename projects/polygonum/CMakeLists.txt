@@ -40,20 +40,20 @@ ADD_LIBRARY(${PROJECT_NAME} STATIC
 	src/toolkit.cpp
 	src/physics.cpp
 	src/commons.cpp
-	src/ECSarch.cpp
+	src/ecs.cpp
 
-	include/environment.hpp
-	include/renderer.hpp
-	include/models.hpp
-	include/vertex.hpp
-	include/importer.hpp
-	include/ubo.hpp
-	include/input.hpp
-	include/timer.hpp
-	include/toolkit.hpp
-	include/physics.hpp
-	include/commons.hpp
-	include/ECSarch.hpp
+	include/polygonum/environment.hpp
+	include/polygonum/renderer.hpp
+	include/polygonum/models.hpp
+	include/polygonum/vertex.hpp
+	include/polygonum/importer.hpp
+	include/polygonum/ubo.hpp
+	include/polygonum/input.hpp
+	include/polygonum/timer.hpp
+	include/polygonum/toolkit.hpp
+	include/polygonum/physics.hpp
+	include/polygonum/commons.hpp
+	include/polygonum/ecs.hpp
 )
 
 TARGET_INCLUDE_DIRECTORIES( ${PROJECT_NAME} PUBLIC

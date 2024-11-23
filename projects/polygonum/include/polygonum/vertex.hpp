@@ -1,13 +1,8 @@
 #ifndef VERTEX_HPP
 #define VERTEX_HPP
 
-#include <array>
+#include "polygonum/commons.hpp"
 
-#include <vulkan/vulkan.h>			// From LunarG SDK. Used for off-screen rendering
-//#define GLFW_INCLUDE_VULKAN		// Makes GLFW load the Vulkan header with it
-#include "GLFW/glfw3.h"
-
-#include "commons.hpp"
 
 /*
 	Content:

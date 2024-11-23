@@ -1,10 +1,9 @@
 #include <stdexcept>
-
-#include "glm/gtc/type_ptr.hpp"
-
-#include "input.hpp"
-
 #include <iostream>
+
+#include "polygonum/input.hpp"
+
+
 IOmanager::IOmanager(int width, int height)
 {
 	initWindow(width, height);

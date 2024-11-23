@@ -1,11 +1,10 @@
 #ifndef COMMONS_HPP
 #define COMMONS_HPP
 
-#include <list>
+#include "vulkan/vulkan.h"   // From LunarG SDK. Can be used for off-screen rendering
 
-//#include <vulkan/vulkan.h>		// From LunarG SDK. Used for off-screen rendering
-//define GLFW_INCLUDE_VULKAN		// Makes GLFW load the Vulkan header with it
-//#include "GLFW/glfw3.h"
+#define GLFW_INCLUDE_VULKAN   // Makes GLFW load the Vulkan header with it
+#include "GLFW/glfw3.h"
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE   // GLM uses OpenGL depth range [-1.0, 1.0]. This macro forces GLM to use Vulkan range [0.0, 1.0].
@@ -16,12 +15,22 @@
 #include <glm/gtx/compatibility.hpp>
 #include <glm/gtx/hash.hpp>
 
-#include "environment.hpp"
+//#define STB_IMAGE_IMPLEMENTATION   // Import textures
+//#include "stb_image.h"
+
+#include "assimp/Importer.hpp"   // Import models (vertices)
+#include "assimp/scene.h"
+#include "assimp/postprocess.h"
+
+#include "shaderc/shaderc.hpp"   // Compile shaders (GLSL code to SPIR-V)
+
+//#include "btBulletDynamicsCommon.h"
+
 
 // Debugging macros ----------
 
-//#define DEBUG_ENV_INFO			// Basic info
-//#define DEBUG_ENV_CORE			// Standards: NDEBUG, _DEBUG
+//#define DEBUG_ENV_INFO   // Basic info
+//#define DEBUG_ENV_CORE   // Standards: NDEBUG, _DEBUG
 
 //#define DEBUG_RENDERER
 //#define DEBUG_COMMANDBUFFERS
@@ -46,6 +55,7 @@ void readFile(const char* filename, std::string& destination);
 
 /// Copy a C-style string in destination from source. Used in ModelData and Texture. Memory is allocated in "destination", remember to delete it when no needed anymore. 
 void copyCString(const char*& destination, const char* source);
+
 /*
 template <typename k, typename e>
 void transfer(std::unordered_map<k, e>& source, std::unordered_map<k, e>& dest, k key)

@@ -1,7 +1,8 @@
-
 #include <iostream>
+#include <array>
 
-#include "vertex.hpp"
+#include "polygonum/vertex.hpp"
+
 
 //VertexType -----------------------------------------------------------------
 

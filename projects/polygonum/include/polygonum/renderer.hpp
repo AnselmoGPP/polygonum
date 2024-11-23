@@ -1,16 +1,14 @@
 #ifndef RENDERER_HPP
 #define RENDERER_HPP
 
-#include <vector>
-#include <map>
 #include <queue>
-#include <thread>
-#include <mutex>
-#include <optional>					// std::optional<uint32_t> (Wrapper that contains no value until you assign something to it. Contains member has_value())
+//#include <optional>			// std::optional<uint32_t> (Wrapper that contains no value until you assign something to it. Contains member has_value())
+//#include <cstdlib>			// EXIT_SUCCESS, EXIT_FAILURE
+//#include <cstdint>			// UINT32_MAX
+//#include <algorithm>			// std::min / std::max
 
-#include "models.hpp"
-#include "input.hpp"
-#include "timer.hpp"
+#include "polygonum/models.hpp"
+#include "polygonum/timer.hpp"
 
 
 // Prototypes ----------

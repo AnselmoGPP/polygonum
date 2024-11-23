@@ -1,5 +1,5 @@
-#include "renderer.hpp"
-#include "toolkit.hpp"
+#include "polygonum/renderer.hpp"
+#include "polygonum/toolkit.hpp"
 
 
 int main(int argc, char* argv[])

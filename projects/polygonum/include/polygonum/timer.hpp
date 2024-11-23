@@ -1,8 +1,6 @@
 #ifndef TIMER_HPP
 #define TIMER_HPP
 
-#include <chrono>
-#include <thread>
 #include <string>
 
 

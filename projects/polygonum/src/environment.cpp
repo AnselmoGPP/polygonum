@@ -1,14 +1,9 @@
-
-#include <stdexcept>
 #include <iostream>
-//#include <memory>				// std::unique_ptr, std::shared_ptr (used instead of RAII)
-#include <map>					// std::multimap<key, value>
-#include <set>					// std::set<uint32_t>
-#include <array>
-//#include <cstring>			// strcmp()
+#include <map>				// std::multimap<key, value>
+#include <set>				// std::set<uint32_t>
+//#include <memory>			// std::unique_ptr, std::shared_ptr (used instead of RAII)
 
-#include "environment.hpp"
-#include "commons.hpp"
+#include "polygonum/environment.hpp"
 
 
 bool QueueFamilyIndices::isComplete()

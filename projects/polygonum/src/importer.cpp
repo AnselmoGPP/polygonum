@@ -1,11 +1,10 @@
-
 #include <iostream>
-#include <algorithm>
 
 #define STB_IMAGE_IMPLEMENTATION		// Import textures
 #include "stb_image.h"
 
-#include "importer.hpp"
+#include "polygonum/importer.hpp"
+#include "polygonum/models.hpp"
 
 
 const VertexType vt_3   ({ 3 * sizeof(float) }, { VK_FORMAT_R32G32B32_SFLOAT });
@@ -20,8 +19,8 @@ std::vector<uint16_t> noIndices;
 
 // RESOURCES --------------------------------------------------------
 
-ResourcesLoader::ResourcesLoader(VerticesLoader& verticesLoader, std::vector<ShaderLoader>& shadersInfo, std::vector<TextureLoader>& texturesInfo, VulkanEnvironment* e)
-	: vertices(verticesLoader), shaders(shadersInfo), textures(texturesInfo), e(e) { }
+ResourcesLoader::ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader>& shadersInfo, std::vector<TextureLoader>& texturesInfo, VulkanEnvironment* e)
+	: vertices(VertexesLoader), shaders(shadersInfo), textures(texturesInfo), e(e) { }
 
 void ResourcesLoader::loadResources(VertexData& destVertexData, std::vector<shaderIter>& destShaders, std::list<Shader>& loadedShaders, std::vector<texIter>& destTextures, std::list<Texture>& loadedTextures, std::mutex& mutResources)
 {
@@ -29,7 +28,7 @@ void ResourcesLoader::loadResources(VertexData& destVertexData, std::vector<shad
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
 	
-	vertices.loadVertices(destVertexData, this, e);
+	vertices->loadVertices(destVertexData, this, e);
 	
 	{
 		const std::lock_guard<std::mutex> lock(mutResources);
@@ -55,24 +54,28 @@ void ResourcesLoader::loadResources(VertexData& destVertexData, std::vector<shad
 
 // VERTICES --------------------------------------------------------
 
-VLModule::VLModule(size_t vertexSize) : vertexSize(vertexSize) { }
+VertexesLoader::VertexesLoader(size_t vertexSize, std::initializer_list<VerticesModifier*> modifiers)
+	: vertexSize(vertexSize), modifiers(modifiers) { }
 
-void VLModule::loadVertices(VertexData& result, ResourcesLoader* resources, VulkanEnvironment* e)
+VertexesLoader::~VertexesLoader() { }
+
+void VertexesLoader::loadVertices(VertexData& result, ResourcesLoader* resources, VulkanEnvironment* e)
 {
 	VertexSet rawVertices;
 	std::vector<uint16_t> rawIndices;
 	
 	getRawData(rawVertices, rawIndices, *resources);		// Get the raw data
+
 	createBuffers(result, rawVertices, rawIndices, e);		// Upload data to Vulkan
 }
 
-void VLModule::createBuffers(VertexData& result, const VertexSet& rawVertices, const std::vector<uint16_t>& rawIndices, VulkanEnvironment* e)
+void VertexesLoader::createBuffers(VertexData& result, const VertexSet& rawVertices, const std::vector<uint16_t>& rawIndices, VulkanEnvironment* e)
 {
 	createVertexBuffer(rawVertices, result, e);
 	createIndexBuffer(rawIndices, result, e);
 }
 
-void VLModule::createVertexBuffer(const VertexSet& rawVertices, VertexData& result, VulkanEnvironment* e)
+void VertexesLoader::createVertexBuffer(const VertexSet& rawVertices, VertexData& result, VulkanEnvironment* e)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -128,7 +131,7 @@ void VLModule::createVertexBuffer(const VertexSet& rawVertices, VertexData& resu
 	e->c.memAllocObjects--;
 }
 
-void VLModule::createIndexBuffer(const std::vector<uint16_t>& rawIndices, VertexData& result, VulkanEnvironment* e)
+void VertexesLoader::createIndexBuffer(const std::vector<uint16_t>& rawIndices, VertexData& result, VulkanEnvironment* e)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -180,7 +183,7 @@ void VLModule::createIndexBuffer(const std::vector<uint16_t>& rawIndices, Vertex
 
 	Memory transfer operations are executed using command buffers (like drawing commands), so we allocate a temporary command buffer. You may wish to create a separate command pool for these kinds of short-lived buffers, because the implementation could apply memory allocation optimizations. You should use the VK_COMMAND_POOL_CREATE_TRANSIENT_BIT flag during command pool generation in that case.
 */
-void VLModule::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size, VulkanEnvironment* e)
+void VertexesLoader::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size, VulkanEnvironment* e)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -201,7 +204,7 @@ void VLModule::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize s
 	e->endSingleTimeCommands(commandBuffer);
 }
 
-glm::vec3 VLModule::getVertexTangent(const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3, const glm::vec2 uv1, const glm::vec2 uv2, const glm::vec2 uv3)
+glm::vec3 VertexesLoader::getVertexTangent(const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3, const glm::vec2 uv1, const glm::vec2 uv2, const glm::vec2 uv3)
 {
 	glm::vec3 edge1 = v2 - v1;
 	glm::vec3 edge2 = v3 - v1;
@@ -219,27 +222,37 @@ glm::vec3 VLModule::getVertexTangent(const glm::vec3& v1, const glm::vec3& v2, c
 	return glm::normalize((uvDiff2 * edge1 - uvDiff1 * edge2) / denominator);
 }
 
-VLM_fromBuffer::VLM_fromBuffer(const void* verticesData, size_t vertexSize, size_t vertexCount, const std::vector<uint16_t>& indices)
-	: VLModule(vertexSize)
+VL_fromBuffer::VL_fromBuffer(const void* verticesData, size_t vertexSize, size_t vertexCount, const std::vector<uint16_t>& indices, std::initializer_list<VerticesModifier*> modifiers)
+	: VertexesLoader(vertexSize, modifiers)
 {
 	rawVertices.reset(vertexSize, vertexCount, verticesData);
 	rawIndices = indices;
 }
 
-VLModule* VLM_fromBuffer::clone() { return new VLM_fromBuffer(*this); }
+VL_fromBuffer* VL_fromBuffer::factory(const void* verticesData, size_t vertexSize, size_t vertexCount, const std::vector<uint16_t>& indices, std::initializer_list<VerticesModifier*> modifiers)
+{
+	return new VL_fromBuffer(verticesData, vertexSize, vertexCount, indices, modifiers);
+}
 
-void VLM_fromBuffer::getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources)
+VertexesLoader* VL_fromBuffer::clone() { return new VL_fromBuffer(*this); }
+
+void VL_fromBuffer::getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources)
 {
 	destVertices = rawVertices;
 	destIndices = rawIndices;
 }
 
-VLM_fromFile::VLM_fromFile(std::string& filePath)
-	: VLModule((3+3+2) * sizeof(float)), path(filePath), vertices(nullptr), indices(nullptr), resources(nullptr) { }
+VL_fromFile::VL_fromFile(std::string filePath, std::initializer_list<VerticesModifier*> modifiers)
+	: VertexesLoader((3+3+2) * sizeof(float), modifiers), path(filePath), vertices(nullptr), indices(nullptr), resources(nullptr) { }
 
-VLModule* VLM_fromFile::clone() { return new VLM_fromFile(*this); }
+VL_fromFile* VL_fromFile::factory(std::string filePath, std::initializer_list<VerticesModifier*> modifiers)
+{
+	return new VL_fromFile(filePath, modifiers);
+}
 
-void VLM_fromFile::getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources)
+VertexesLoader* VL_fromFile::clone() { return new VL_fromFile(*this); }
+
+void VL_fromFile::getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources)
 {
 	this->vertices = &destVertices;
 	this->indices = &destIndices;
@@ -260,7 +273,7 @@ void VLM_fromFile::getRawData(VertexSet& destVertices, std::vector<uint16_t>& de
 	processNode(scene, scene->mRootNode);	// recursive
 }
 
-void VLM_fromFile::processNode(const aiScene* scene, aiNode* node)
+void VL_fromFile::processNode(const aiScene* scene, aiNode* node)
 {
 	// Process all node's meshes
 	//aiMesh* mesh;
@@ -278,7 +291,7 @@ void VLM_fromFile::processNode(const aiScene* scene, aiNode* node)
 		processNode(scene, node->mChildren[i]);
 }
 
-void VLM_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*> &meshes)
+void VL_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*> &meshes)
 {
 	//<<< destVertices->reserve(destVertices->size() + mesh->mNumVertices);
 	float* vertex = new float[vertexSize / sizeof(float)];			// [3 + 3 + 2]  (pos, normal, UV)
@@ -344,44 +357,51 @@ void VLM_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*> &mes
 }
 
 
-VerticesLoader::VerticesLoader() : loader(nullptr) { }
+VerticesModifier::VerticesModifier(glm::vec3 params)
+	: params(params) { }
 
-VerticesLoader::VerticesLoader(std::string& filePath)
-	: loader(nullptr)
-{ 
-	loader = new VLM_fromFile(filePath);
-}
+VerticesModifier::~VerticesModifier() { }
 
-VerticesLoader::VerticesLoader(size_t vertexSize, const void* verticesData, size_t vertexCount, std::vector<uint16_t>& indices)
-	: loader(nullptr)
-{ 
-	loader = new VLM_fromBuffer(verticesData, vertexSize, vertexCount, indices);
-}
+//void VerticesModifier::modify(VertexSet& rawVertices) { }
 
-VerticesLoader::VerticesLoader(const VerticesLoader& obj)
+VerticesModifier_Scale::VerticesModifier_Scale(glm::vec3 scale)
+	: VerticesModifier(scale) { }
+
+void VerticesModifier_Scale::modify(VertexSet& rawVertices)
 {
-	if (obj.loader)
-		loader = obj.loader->clone();
-	else
-		loader = nullptr;
+	
 }
 
-VerticesLoader::~VerticesLoader() 
+VerticesModifier_Scale* VerticesModifier_Scale::factory(glm::vec3 scale)
 {
-	#ifdef DEBUG_IMPORT
-		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
-	#endif
-
-	if(loader) delete loader; 
+	return new VerticesModifier_Scale(scale);
 }
 
-void VerticesLoader::loadVertices(VertexData& result, ResourcesLoader* resources, VulkanEnvironment* e)
-{
-	#ifdef DEBUG_RESOURCES
-		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
-	#endif
+VerticesModifier_Rotation::VerticesModifier_Rotation(glm::vec3 rotation)
+	: VerticesModifier(rotation) { }
 
-	loader->loadVertices(result, resources, e);
+void VerticesModifier_Rotation::modify(VertexSet& rawVertices)
+{
+
+}
+
+VerticesModifier_Rotation* VerticesModifier_Rotation::factory(glm::vec3 rotation)
+{
+	return new VerticesModifier_Rotation(rotation);
+}
+
+VerticesModifier_Translation::VerticesModifier_Translation(glm::vec3 position)
+	: VerticesModifier(position) { }
+
+void VerticesModifier_Translation::modify(VertexSet& rawVertices)
+{
+	for (size_t i = 0; i < rawVertices.size(); i++)
+		*(glm::vec3*)rawVertices.getElement(i) += params;
+}
+
+VerticesModifier_Translation* VerticesModifier_Translation::factory(glm::vec3 position)
+{
+	return new VerticesModifier_Translation(position);
 }
 
 

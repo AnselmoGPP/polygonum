@@ -1,34 +1,18 @@
 #ifndef TEXTURE_HPP
 #define TEXTURE_HPP
 
-#include <list>
-//#include <unordered_map>			// For storing unique vertices from the model
-
-//#define TINYOBJLOADER_IMPLEMENTATION	// Import OBJ models
-//#include "tiny_obj_loader.h"
-
-#include "assimp/Importer.hpp"			// Import models (vertices)
-#include "assimp/scene.h"
-#include "assimp/postprocess.h"
-
-//#define STB_IMAGE_IMPLEMENTATION		// Import textures
-//#include "stb_image.h"
-
-#include "shaderc/shaderc.hpp"			// Compile shaders (GLSL code to SPIR-V)
-
-#include "environment.hpp"
-#include "vertex.hpp"
-#include "commons.hpp"
+#include "polygonum/environment.hpp"
+#include "polygonum/vertex.hpp"
 
 
 /*
-	A VerticesLoader, ShaderLoader and TextureLoader objects are passed to our ModelData.
+	A VertexesLoader, ShaderLoader and TextureLoader objects are passed to our ModelData.
 	ModelData uses it to create a ResourceLoader member.
 	Later (in ModelData::fullConstruction()), ResourceLoader::loadResources() is used for loading resources.
 
-	VerticesLoader has a VLModule* member. A children of VLModule is built, depending upon the VerticesLoader constructor used.
+	VertexesLoader has a VLModule* member. A children of VLModule is built, depending upon the VertexesLoader constructor used.
 	ResourceLoader::loadResources()
-		VerticesLoader::loadVertices()
+		VertexesLoader::loadVertices()
 			VLModule::loadVertices()
 				getRawData() (polymorphic)
 				createBuffers()
@@ -39,13 +23,12 @@
 */
 
 
-// Definitions ----------
+// Declarations ----------
 
 struct VertexData;
-class VerticesLoader;
-class VLModule;
-	class VLM_fromFile;
-	class VLM_fromBuffer;
+class VertexesLoader;
+	class VL_fromFile;
+	class VL_fromBuffer;
 
 class Shader;
 class ShaderLoader;
@@ -102,11 +85,53 @@ struct VertexData
 	VkDeviceMemory				 indexBufferMemory;		//!< Opaque handle to a device memory object (here, memory for the index buffer).
 };
 
-/// (ADT) Vertices Loader Module (VLM) used in VerticesLoader for loading vertices from any source.
-class VLModule
+class VerticesModifier
 {
 protected:
+	glm::vec3 params;   // Used for scaling, rotating, or translating
+
+public:
+	VerticesModifier(glm::vec3 params);
+	virtual ~VerticesModifier();
+
+	virtual void modify(VertexSet& rawVertices) = 0;
+};
+
+class VerticesModifier_Scale : public VerticesModifier
+{
+public:
+	VerticesModifier_Scale(glm::vec3 scale);
+
+	void modify(VertexSet& rawVertices) override;
+	static VerticesModifier_Scale* factory(glm::vec3 scale);   //!< Factory function
+};
+
+class VerticesModifier_Rotation : public VerticesModifier
+{
+public:
+	VerticesModifier_Rotation(glm::vec3 rotation);
+
+	void modify(VertexSet& rawVertices) override;
+	static VerticesModifier_Rotation* factory(glm::vec3 rotation);   //!< Factory function
+};
+
+class VerticesModifier_Translation : public VerticesModifier
+{
+public:
+	VerticesModifier_Translation(glm::vec3 position);
+
+	void modify(VertexSet& rawVertices) override;
+	static VerticesModifier_Translation* factory(glm::vec3 position);   //!< Factory function
+};
+
+/// (ADT) Vertices Loader Module (VLM) used in VertexesLoader for loading vertices from any source.
+class VertexesLoader
+{
+protected:
+	VertexesLoader(size_t vertexSize, std::initializer_list<VerticesModifier*> modifiers);
+
 	const size_t vertexSize;	//!< Size (bytes) of a vertex object
+	std::vector<VerticesModifier*> modifiers;
 
 	virtual void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources) = 0;					//!< Get raw vertex data (vertices & indices)
 	void createBuffers(VertexData& result, const VertexSet& rawVertices, const std::vector<uint16_t>& rawIndices, VulkanEnvironment* e);	//!< Upload raw vertex data to Vulkan (i.e., create Vulkan buffers)
@@ -118,28 +143,31 @@ protected:
 	glm::vec3 getVertexTangent(const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3, const glm::vec2 uv1, const glm::vec2 uv2, const glm::vec2 uv3);
 
 public:
-	VLModule(size_t vertexSize);
-	virtual ~VLModule() { };
-	virtual VLModule* clone() = 0;		//!< Create a new object of children type and return its pointer.
+	virtual ~VertexesLoader();
+	virtual VertexesLoader* clone() = 0;		//!< Create a new object of children type and return its pointer.
 
 	void loadVertices(VertexData& result, ResourcesLoader* resources, VulkanEnvironment* e);
 };
 
-class VLM_fromBuffer : public VLModule
+class VL_fromBuffer : public VertexesLoader
 {
+	VL_fromBuffer(const void* verticesData, size_t vertexSize, size_t vertexCount, const std::vector<uint16_t>& indices, std::initializer_list<VerticesModifier*> modifiers = {});
+
 	VertexSet rawVertices;
 	std::vector<uint16_t> rawIndices;
 
 	void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources) override;
 
 public:
-	VLM_fromBuffer(const void* verticesData, size_t vertexSize, size_t vertexCount, const std::vector<uint16_t>& indices);
-	VLModule* clone() override;
+	static VL_fromBuffer* factory(const void* verticesData, size_t vertexSize, size_t vertexCount, const std::vector<uint16_t>& indices, std::initializer_list<VerticesModifier*> modifiers = {});
+	VertexesLoader* clone() override;
 };
 
 /// Process a graphics file (obj, ...) and get the meshes. <<< Problem: This takes all the meshes in each node and stores them together. However, meshes from different nodes have their own indices, all of them in the range [0, number of vertices in the mesh). Since each mesh is an independent object, they cannot be put together without messing up with the indices (they should be stored as different models). 
-class VLM_fromFile : public VLModule
+class VL_fromFile : public VertexesLoader
 {
+	VL_fromFile(std::string filePath, std::initializer_list<VerticesModifier*> modifiers = {});	//!< vertexSize == (3+3+2) * sizeof(float)
+
 	std::string path;
 
 	VertexSet* vertices;
@@ -152,24 +180,8 @@ class VLM_fromFile : public VLModule
 	void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources) override;
 
 public:
-	VLM_fromFile(std::string& filePath);	//!< vertexSize == (3+3+2) * sizeof(float)
-
-	VLModule* clone() override;
-};
-
-/// Wrapper around VLModule for loading vertices from any source. It creates a VLModule children, depending upon the constructor called, which will be used for loading vertices later (loadVertices). 
-class VerticesLoader
-{
-	VLModule* loader;
-
-public:
-	VerticesLoader();
-	VerticesLoader(std::string& filePath);	//!< From file (vertexSize == (3+3+2) * sizeof(float))
-	VerticesLoader(size_t vertexSize, const void* verticesData, size_t vertexCount, std::vector<uint16_t>& indices);	//!< From buffers
-	VerticesLoader(const VerticesLoader& obj);	//!< Copy constructor (necessary because loader can be freed in destructor)
-	~VerticesLoader();
-
-	void loadVertices(VertexData& result, ResourcesLoader* resources, VulkanEnvironment* e);
+	static VL_fromFile* factory(std::string filePath, std::initializer_list<VerticesModifier*> modifiers = {});	//!< From file (vertexSize == (3+3+2) * sizeof(float))
+	VertexesLoader* clone() override;
 };
 
 
@@ -391,10 +403,10 @@ public:
 /// Encapsulates data required for loading resources (vertices, indices, shaders, textures) and loading methods.
 struct ResourcesLoader
 {
-	ResourcesLoader(VerticesLoader& verticesLoader, std::vector<ShaderLoader>& shadersInfo, std::vector<TextureLoader>& texturesInfo, VulkanEnvironment* e);
+	ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader>& shadersInfo, std::vector<TextureLoader>& texturesInfo, VulkanEnvironment* e);
 
 	VulkanEnvironment* e;
-	VerticesLoader vertices;
+	std::shared_ptr<VertexesLoader> vertices;
 	std::vector<ShaderLoader> shaders;
 	std::vector<TextureLoader> textures;
 

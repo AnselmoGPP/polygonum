@@ -1,11 +1,7 @@
 #ifndef AUXILIARY_HPP
 #define AUXILIARY_HPP
 
-#include <vector>
-#include <list>
-
-//#include "vertex.hpp"
-#include "commons.hpp"
+#include "polygonum/commons.hpp"
 
 
 // Print data -----------------------------------------------------------------
@@ -154,6 +150,8 @@ extern double e;
 float getDist(const glm::vec3& a, const glm::vec3& b);
 
 float getSqrDist(const glm::vec3& a, const glm::vec3& b);
+
+glm::vec3 unitVec(glm::vec3& vec);
 
 glm::vec3 reflect(const glm::vec3& lightRay, const glm::vec3& normal);
 

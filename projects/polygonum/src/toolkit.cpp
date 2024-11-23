@@ -1,10 +1,7 @@
-
 #include<iostream>
 
-#include <glm/gtc/type_ptr.hpp>
-
-#include "toolkit.hpp"
-#include "physics.hpp"
+#include "polygonum/toolkit.hpp"
+#include "polygonum/physics.hpp"
 
 
 double pi = 3.141592653589793238462;
@@ -23,6 +20,8 @@ float getSqrDist(const glm::vec3& a, const glm::vec3& b)
 	glm::vec3 vec = a - b;
 	return vec.x * vec.x + vec.y * vec.y + vec.z * vec.z;
 }
+
+glm::vec3 unitVec(glm::vec3& vec) { return vec / glm::length(vec); }
 
 glm::vec3 reflect(const glm::vec3& lightRay, const glm::vec3& normal)
 {

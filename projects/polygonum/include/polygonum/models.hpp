@@ -1,16 +1,12 @@
 #ifndef MODELS_HPP
 #define MODELS_HPP
 
-#include <iostream>
-#include <array>
-#include <functional>						// std::function (function wrapper that stores a callable object)
-#include <fstream>
-#include <string>
+//#include <functional>						// std::function (function wrapper that stores a callable object)
 
-#include "vertex.hpp"
-#include "ubo.hpp"
-#include "importer.hpp"
-#include "commons.hpp"
+#include "polygonum/vertex.hpp"
+#include "polygonum/ubo.hpp"
+#include "polygonum/importer.hpp"
+#include "polygonum/commons.hpp"
 
 #define LINE_WIDTH 1.0f
 
@@ -23,7 +19,7 @@ struct ModelDataInfo
 	size_t activeInstances;						//!< <= maxDescriptorsCount_vs
 	VkPrimitiveTopology topology;				//!< Primitive topology (VK_PRIMITIVE_TOPOLOGY_ ... POINT_LIST, LINE_LIST, LINE_STRIP, TRIANGLE_LIST, TRIANGLE_STRIP). Used when creating the graphics pipeline.
 	VertexType vertexType;						//!< VertexType defines the characteristics of a vertex (size and type of the vertex' attributes: Position, Color, Texture coordinates, Normals...).
-	VerticesLoader* verticesLoader;				//!< Info for loading vertices from any source.
+	VertexesLoader* vertexesLoader;				//!< Info for loading vertices from any source.
 	std::vector<ShaderLoader>* shadersInfo;		//!< Shaders info
 	std::vector<TextureLoader>* texturesInfo;	//!< Textures info
 	size_t maxDescriptorsCount_vs;				//!< Max. number of active instances

@@ -1,6 +1,6 @@
+#include <iostream>
 
-#include "models.hpp"
-#include "commons.hpp"
+#include "polygonum/models.hpp"
 
 
 ModelDataInfo::ModelDataInfo()
@@ -8,7 +8,7 @@ ModelDataInfo::ModelDataInfo()
 	activeInstances(0),
 	topology(VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST),
 	vertexType(vt_332),
-	verticesLoader(nullptr),
+	vertexesLoader(nullptr),
 	shadersInfo(nullptr),
 	texturesInfo(nullptr),
 	maxDescriptorsCount_vs(0),
@@ -45,7 +45,7 @@ ModelData::ModelData(VulkanEnvironment* environment, ModelDataInfo& modelInfo)
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
 	#endif
 
-	resLoader = new ResourcesLoader(*modelInfo.verticesLoader, *modelInfo.shadersInfo, *modelInfo.texturesInfo, e);
+	resLoader = new ResourcesLoader(modelInfo.vertexesLoader, *modelInfo.shadersInfo, *modelInfo.texturesInfo, e);
 }
 
 ModelData::~ModelData()

@@ -1,7 +1,7 @@
-﻿#include "renderer.hpp"
-#include "toolkit.hpp"
-#include "physics.hpp"
-#include "ECSarch.hpp"
+﻿#include "polygonum/renderer.hpp"
+#include "polygonum/toolkit.hpp"
+#include "polygonum/physics.hpp"
+#include "polygonum/ecs.hpp"
 
 /* Example project: 3D cube */
 

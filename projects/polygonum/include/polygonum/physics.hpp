@@ -1,12 +1,8 @@
 #ifndef PHYSICS_HPP
 #define PHYSICS_HPP
 
-#include <vector>
-#include <iostream>
+#include "polygonum/commons.hpp"
 
-//#include "btBulletDynamicsCommon.h"
-
-#include "commons.hpp"
 
 // BulletPhysics ----------------------------------------------------------
 /*

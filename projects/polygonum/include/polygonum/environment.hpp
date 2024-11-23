@@ -1,15 +1,11 @@
 #ifndef ENVIRONMENT_HPP
 #define ENVIRONMENT_HPP
 
-#include <vector>
 #include <optional>					// std::optional<uint32_t> (Wrapper that contains no value until you assign something to it. Contains member has_value())
 #include <mutex>
 
-//#include "vulkan/vulkan.h"		// From LunarG SDK. Can be used for off-screen rendering
-//#define GLFW_INCLUDE_VULKAN		// Makes GLFW load the Vulkan header with it
-//#include "GLFW/glfw3.h"
+#include "polygonum/input.hpp"
 
-#include "input.hpp"
 
 #define VAL_LAYERS					// Enable Validation layers
 

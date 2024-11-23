@@ -1,11 +1,9 @@
-
 #include <iostream>
 
-#include "ubo.hpp"
+#include "polygonum/ubo.hpp"
 
 
-Sizes size;
-
+Sizes sizes;
 
 // (Set of) Uniform Buffer Objects -----------------------------------------------------------------
 

@@ -1,9 +1,8 @@
 #ifndef INPUT_HPP
 #define INPUT_HPP
 
-#include "vulkan/vulkan.h"			// From LunarG SDK. Can be used for off-screen rendering
-//#define GLFW_INCLUDE_VULKAN		// Makes GLFW load the Vulkan header with it
-#include "GLFW/glfw3.h"
+#include "polygonum/commons.hpp"
+
 
 /**
 	@brief Input/Output manager for input (controls) and output (window) operations. 

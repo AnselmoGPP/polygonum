@@ -1,12 +1,8 @@
-#ifndef ECSARCH_HPP
-#define ECSARCH_HPP
+#ifndef ECS_HPP
+#define ECS_HPP
 
 #include <unordered_map>
 #include <typeindex>
-#include <string>
-#include <vector>
-#include <memory>
-//#include <initializer_list>
 
 
 // Prototypes ----------

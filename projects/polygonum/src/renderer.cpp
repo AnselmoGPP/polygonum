@@ -1,17 +1,10 @@
-
 #include <iostream>
 #include <stdexcept>
-#include <cstdlib>				// EXIT_SUCCESS, EXIT_FAILURE
 #include <array>
-#include <cstdint>				// UINT32_MAX
-#include <algorithm>			// std::min / std::max
-#include <fstream>
-#include <chrono>
-#include <string>
 
-#include "renderer.hpp"
-#include "commons.hpp"
-#include "toolkit.hpp"
+#include "polygonum/renderer.hpp"
+#include "polygonum/input.hpp"
+#include "polygonum/toolkit.hpp"
 
 
 // LoadingWorker ---------------------------------------------------------------------
@@ -867,8 +860,6 @@ void Renderer::createLightingPass(unsigned numLights, std::string vertShaderPath
 	std::vector<uint16_t> i_quad;
 	getScreenQuad(v_quad, i_quad, 1.f, 0.f);	// <<< The parameter zValue doesn't represent height (otherwise, this value should serve for hiding one plane behind another).
 
-	VerticesLoader vertexData(vt_32.vertexSize, v_quad.data(), 4, i_quad);
-
 	std::vector<ShaderLoader> usedShaders{ 
 		ShaderLoader(vertShaderPath),
 		ShaderLoader(fragShaderPath, std::vector<ShaderModifier>{ {sm_changeHeader, {fragToolsHeader}} })
@@ -881,13 +872,13 @@ void Renderer::createLightingPass(unsigned numLights, std::string vertShaderPath
 	modelInfo.activeInstances = 1;
 	modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	modelInfo.vertexType = vt_32;
-	modelInfo.verticesLoader = &vertexData;
+	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = &usedShaders;
 	modelInfo.texturesInfo = &usedTextures;
 	modelInfo.maxDescriptorsCount_vs = 0;
 	modelInfo.maxDescriptorsCount_fs = 1;
 	modelInfo.UBOsize_vs = 0;
-	modelInfo.UBOsize_fs = size.vec4 + numLights * sizeof(Light);	// camPos,  n * LightPosDir (2*vec4),  n * LightProps (6*vec4);
+	modelInfo.UBOsize_fs = sizes.vec4 + numLights * sizeof(Light);	// camPos,  n * LightPosDir (2*vec4),  n * LightProps (6*vec4);
 	modelInfo.globalUBO_vs;
 	modelInfo.globalUBO_fs;
 	modelInfo.transparency = false;
@@ -912,8 +903,8 @@ void Renderer::updateLightingPass(glm::vec3& camPos, Light* lights, unsigned num
 	for (int i = 0; i < models[lightingPass].fsUBO.numActiveDescriptors; i++)
 	{
 		dest = models[lightingPass].fsUBO.getDescriptorPtr(i);
-		memcpy(dest, &camPos, size.vec4);
-		dest += size.vec4;
+		memcpy(dest, &camPos, sizes.vec4);
+		dest += sizes.vec4;
 		memcpy(dest, lights, numLights * sizeof(Light));
 	}
 }
@@ -924,8 +915,6 @@ void Renderer::createPostprocessingPass(std::string vertShaderPath, std::string 
 	std::vector<uint16_t> i_quad;
 	getScreenQuad(v_quad, i_quad, 1.f, 0.f);	// <<< The parameter zValue doesn't represent heigth (otherwise, this value should serve for hiding one plane behind another).
 
-	VerticesLoader vertexData(vt_32.vertexSize, v_quad.data(), 4, i_quad);
-
 	std::vector<ShaderLoader> usedShaders{ vertShaderPath, fragShaderPath };
 	
 	std::vector<TextureLoader> usedTextures{ };
@@ -935,7 +924,7 @@ void Renderer::createPostprocessingPass(std::string vertShaderPath, std::string 
 	modelInfo.activeInstances = 1;
 	modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	modelInfo.vertexType = vt_32;
-	modelInfo.verticesLoader = &vertexData;
+	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = &usedShaders;
 	modelInfo.texturesInfo = &usedTextures;
 	modelInfo.maxDescriptorsCount_vs = 0;

@@ -1,10 +1,7 @@
-
-#include "timer.hpp"
-
-#include <iostream>
 #include <thread>
 #include <chrono>
-#include <cmath>
+
+#include "polygonum/timer.hpp"
 
 
 void sleep(int milliseconds) { std::this_thread::sleep_for(std::chrono::milliseconds(milliseconds)); }
