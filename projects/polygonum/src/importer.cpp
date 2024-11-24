@@ -19,7 +19,7 @@ std::vector<uint16_t> noIndices;
 
 // RESOURCES --------------------------------------------------------
 
-ResourcesLoader::ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader>& shadersInfo, std::vector<TextureLoader>& texturesInfo, VulkanEnvironment* e)
+ResourcesLoader::ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader*>& shadersInfo, std::vector<TextureLoader>& texturesInfo, VulkanEnvironment* e)
 	: vertices(VertexesLoader), shaders(shadersInfo), textures(texturesInfo), e(e) { }
 
 void ResourcesLoader::loadResources(VertexData& destVertexData, std::vector<shaderIter>& destShaders, std::list<Shader>& loadedShaders, std::vector<texIter>& destTextures, std::list<Texture>& loadedTextures, std::mutex& mutResources)
@@ -36,7 +36,7 @@ void ResourcesLoader::loadResources(VertexData& destVertexData, std::vector<shad
 		// Load shaders
 		for (unsigned i = 0; i < shaders.size(); i++)
 		{
-			shaderIter iter = shaders[i].loadShader(loadedShaders , *e);
+			shaderIter iter = shaders[i]->loadShader(loadedShaders, e);
 			iter->counter++;
 			destShaders.push_back(iter);
 		}
@@ -419,11 +419,10 @@ Shader::~Shader()
 	vkDestroyShaderModule(e.c.device, shaderModule, nullptr); 
 }
 
-SLModule::SLModule(const std::string& id, std::vector<ShaderModifier>& modifications)
+ShaderLoader::ShaderLoader(const std::string& id, const std::initializer_list<ShaderModifier>& modifications)
 	: id(id), mods(modifications)
 {
-	if (mods.size())	// if there're modifiers, name has to change. Otherwise, it's possible that 2 different shaders have same name when the original shader is the same.
-	{
+	if (mods.size())	// if there're modifiers, id has to change. Otherwise, it's possible that 2 different shaders have same name when the original shader is the same.
 		for (ShaderModifier mod : mods)
 		{
 			this->id += "_" + std::to_string((int)mod.flag);
@@ -431,10 +430,9 @@ SLModule::SLModule(const std::string& id, std::vector<ShaderModifier>& modificat
 			for(const std::string& str : mod.params)
 				this->id += "_" + str;
 		}
-	}
-};
+}
 
-std::list<Shader>::iterator SLModule::loadShader(std::list<Shader>& loadedShaders, VulkanEnvironment* e)
+std::list<Shader>::iterator ShaderLoader::loadShader(std::list<Shader>& loadedShaders, VulkanEnvironment* e)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << ": " << this->id << std::endl;
@@ -487,7 +485,7 @@ std::list<Shader>::iterator SLModule::loadShader(std::list<Shader>& loadedShader
 	return (--loadedShaders.end());
 }
 
-void SLModule::applyModifications(std::string& shader)
+void ShaderLoader::applyModifications(std::string& shader)
 {
 	int count = 0;
 	bool found;
@@ -589,7 +587,7 @@ void SLModule::applyModifications(std::string& shader)
 		findStrAndReplace(shader, "texSampler[1]", "texSampler[" + std::to_string((int)count) + "]");
 }
 
-bool SLModule::findTwoAndReplaceBetween(std::string& text, const std::string& str1, const std::string& str2, const std::string& replacement)
+bool ShaderLoader::findTwoAndReplaceBetween(std::string& text, const std::string& str1, const std::string& str2, const std::string& replacement)
 {
 	size_t pos1  = text.find(str1, 0);
 	size_t pos2 = text.find(str2, pos1);
@@ -599,7 +597,7 @@ bool SLModule::findTwoAndReplaceBetween(std::string& text, const std::string& st
 	return true;
 }
 
-bool SLModule::findStrAndErase(std::string& text, const std::string& str)
+bool ShaderLoader::findStrAndErase(std::string& text, const std::string& str)
 {
 	size_t pos = text.find(str, 0);
 	if (pos == text.npos) return false;
@@ -608,7 +606,7 @@ bool SLModule::findStrAndErase(std::string& text, const std::string& str)
 	return true;
 }
 
-bool SLModule::findStrAndReplace(std::string& text, const std::string& str, const std::string& replacement)
+bool ShaderLoader::findStrAndReplace(std::string& text, const std::string& str, const std::string& replacement)
 {
 	size_t pos = text.find(str, 0);
 	if (pos == text.npos) return false;
@@ -617,7 +615,7 @@ bool SLModule::findStrAndReplace(std::string& text, const std::string& str, cons
 	return true;
 }
 
-bool SLModule::findStrAndReplaceLine(std::string& text, const std::string& str, const std::string& replacement)
+bool ShaderLoader::findStrAndReplaceLine(std::string& text, const std::string& str, const std::string& replacement)
 {
 	size_t pos = text.find(str, 0);
 	if (pos == text.npos) return false;
@@ -630,54 +628,28 @@ bool SLModule::findStrAndReplaceLine(std::string& text, const std::string& str, 
 	return true;
 }
 
-SLM_fromBuffer::SLM_fromBuffer(const std::string& id, const std::string& glslText, std::vector<ShaderModifier>& modifications)
-	: SLModule(id, modifications), data(glslText) { }
+SL_fromBuffer::SL_fromBuffer(const std::string& id, const std::string& glslText, const std::initializer_list<ShaderModifier>& modifications)
+	: ShaderLoader(id, modifications), data(glslText) { }
 
-SLModule* SLM_fromBuffer::clone() { return new SLM_fromBuffer(*this); }
+ShaderLoader* SL_fromBuffer::clone() { return new SL_fromBuffer(*this); }
 
-void SLM_fromBuffer::getRawData(std::string& glslData) { glslData = data; }
+void SL_fromBuffer::getRawData(std::string& glslData) { glslData = data; }
 
-SLM_fromFile::SLM_fromFile(const std::string& filePath, std::vector<ShaderModifier>& modifications)
-	: SLModule(filePath, modifications), filePath(filePath) { };
-
-SLModule* SLM_fromFile::clone() { return new SLM_fromFile(*this); }
-
-void SLM_fromFile::getRawData(std::string& glslData) { readFile(filePath.c_str(), glslData); }
-
-ShaderLoader::ShaderLoader(const std::string& filePath, std::vector<ShaderModifier>& modifications)
+SL_fromBuffer* SL_fromBuffer::factory(std::string id, const std::string& glslText, std::initializer_list<ShaderModifier> modifications)
 {
-	loader = new SLM_fromFile(filePath, modifications);
+	return new SL_fromBuffer(id, glslText, modifications);
 }
 
-ShaderLoader::ShaderLoader(const std::string& id, const std::string& text, std::vector<ShaderModifier>& modifications)
+SL_fromFile::SL_fromFile(const std::string& filePath, std::initializer_list<ShaderModifier>& modifications)
+	: ShaderLoader(filePath, modifications), filePath(filePath) { };
+
+ShaderLoader* SL_fromFile::clone() { return new SL_fromFile(*this); }
+
+void SL_fromFile::getRawData(std::string& glslData) { readFile(filePath.c_str(), glslData); }
+
+SL_fromFile* SL_fromFile::factory(std::string filePath, std::initializer_list<ShaderModifier> modifications)
 {
-	loader = new SLM_fromBuffer(id, text, modifications);
-}
-
-ShaderLoader::ShaderLoader() : loader(nullptr) { }
-
-ShaderLoader::ShaderLoader(const ShaderLoader& obj)
-{
-	if (obj.loader) loader = obj.loader->clone();
-	else loader = nullptr;
-}
-
-ShaderLoader::~ShaderLoader()
-{ 
-	#ifdef DEBUG_IMPORT
-		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
-	#endif
-
-	if (loader) delete loader; 
-}
-
-std::list<Shader>::iterator ShaderLoader::loadShader(std::list<Shader>& loadedShaders, VulkanEnvironment& e)
-{
-	#ifdef DEBUG_RESOURCES
-		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
-	#endif
-
-	return loader->loadShader(loadedShaders, &e);
+	return new SL_fromFile(filePath, modifications);
 }
 
 

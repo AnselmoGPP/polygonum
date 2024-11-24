@@ -151,7 +151,7 @@ public:
 
 class VL_fromBuffer : public VertexesLoader
 {
-	VL_fromBuffer(const void* verticesData, size_t vertexSize, size_t vertexCount, const std::vector<uint16_t>& indices, std::initializer_list<VerticesModifier*> modifiers = {});
+	VL_fromBuffer(const void* verticesData, size_t vertexSize, size_t vertexCount, const std::vector<uint16_t>& indices, std::initializer_list<VerticesModifier*> modifiers);
 
 	VertexSet rawVertices;
 	std::vector<uint16_t> rawIndices;
@@ -166,7 +166,7 @@ public:
 /// Process a graphics file (obj, ...) and get the meshes. <<< Problem: This takes all the meshes in each node and stores them together. However, meshes from different nodes have their own indices, all of them in the range [0, number of vertices in the mesh). Since each mesh is an independent object, they cannot be put together without messing up with the indices (they should be stored as different models). 
 class VL_fromFile : public VertexesLoader
 {
-	VL_fromFile(std::string filePath, std::initializer_list<VerticesModifier*> modifiers = {});	//!< vertexSize == (3+3+2) * sizeof(float)
+	VL_fromFile(std::string filePath, std::initializer_list<VerticesModifier*> modifiers);	//!< vertexSize == (3+3+2) * sizeof(float)
 
 	std::string path;
 
@@ -230,7 +230,7 @@ struct ShaderModifier
 	std::vector<std::string> params;
 };
 
-class SLModule		/// Shader Loader Module
+class ShaderLoader		/// Shader Loader Module
 {
 	std::vector<ShaderModifier> mods;				//!< Modifications to the shader.
 	void applyModifications(std::string& shader);	//!< Applies modifications defined by "mods".
@@ -241,54 +241,42 @@ class SLModule		/// Shader Loader Module
 	bool findTwoAndReplaceBetween(std::string& text, const std::string& str1, const std::string& str2, const std::string& replacement);	//!< Find two sub-strings and replace what is in between the beginning of string 1 and end of string 2.
 
 protected:
-	std::string id;
-
+	ShaderLoader(const std::string& id, const std::initializer_list<ShaderModifier>& modifications);
 	virtual void getRawData(std::string& glslData) = 0;
 
+	std::string id;
+
 public:
-	SLModule(const std::string& id, std::vector<ShaderModifier>& modifications);
-	virtual ~SLModule() { };
+	virtual ~ShaderLoader() { };
 
 	std::list<Shader>::iterator loadShader(std::list<Shader>& loadedShaders, VulkanEnvironment* e);	//!< Get an iterator to the shader in loadedShaders. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
-	virtual SLModule* clone() = 0;
+	virtual ShaderLoader* clone() = 0;
 };
 
-class SLM_fromBuffer : public SLModule
+class SL_fromBuffer : public ShaderLoader
 {
+	SL_fromBuffer(const std::string& id, const std::string& glslText, const std::initializer_list<ShaderModifier>& modifications);
+	void getRawData(std::string& glslData) override;
+
 	std::string data;
 
-	void getRawData(std::string& glslData) override;
-
 public:
-	SLM_fromBuffer(const std::string& id, const std::string& glslText, std::vector<ShaderModifier>& modifications);
-	SLModule* clone() override;
+	static SL_fromBuffer* factory(std::string id, const std::string& glslText, std::initializer_list<ShaderModifier> modifications = {});
+	ShaderLoader* clone() override;
 };
 
-class SLM_fromFile : public SLModule
+class SL_fromFile : public ShaderLoader
 {
+	SL_fromFile(const std::string& filePath, std::initializer_list<ShaderModifier>& modifications);
+	void getRawData(std::string& glslData) override;
+
 	std::string filePath;
 
-	void getRawData(std::string& glslData) override;
-
 public:
-	SLM_fromFile(const std::string& filePath, std::vector<ShaderModifier>& modifications);
-	SLModule* clone() override;
+	static SL_fromFile* factory(std::string filePath, std::initializer_list<ShaderModifier> modifications = {});
+	ShaderLoader* clone() override;
 };
 
-/// Wrapper around SLModule for loading shaders from any source.
-class ShaderLoader
-{
-	SLModule* loader;
-
-public:
-	ShaderLoader(const std::string& filePath, std::vector<ShaderModifier>& modifications = std::vector<ShaderModifier>());						//!< From file
-	ShaderLoader(const std::string& id, const std::string& text, std::vector<ShaderModifier>& modifications = std::vector<ShaderModifier>());	//!< From buffer
-	ShaderLoader();													//!< Default constructor
-	ShaderLoader(const ShaderLoader& obj);							//!< Copy constructor (necessary because loader can be freed in destructor)
-	~ShaderLoader();
-
-	std::list<Shader>::iterator loadShader(std::list<Shader>& loadedShaders, VulkanEnvironment& e);
-};
 
 /**
 	Includer interface for being able to "#include" headers data on shaders
@@ -403,11 +391,11 @@ public:
 /// Encapsulates data required for loading resources (vertices, indices, shaders, textures) and loading methods.
 struct ResourcesLoader
 {
-	ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader>& shadersInfo, std::vector<TextureLoader>& texturesInfo, VulkanEnvironment* e);
+	ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader*>& shadersInfo, std::vector<TextureLoader>& texturesInfo, VulkanEnvironment* e);
 
 	VulkanEnvironment* e;
 	std::shared_ptr<VertexesLoader> vertices;
-	std::vector<ShaderLoader> shaders;
+	std::vector<ShaderLoader*> shaders;
 	std::vector<TextureLoader> textures;
 
 	/// Load resources (vertices, indices, shaders, textures) and upload them to Vulkan. If a shader or texture exists in Renderer, it just takes the iterator.

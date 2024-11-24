@@ -33,19 +33,16 @@ struct UBO;
 		|-float-|             |----vec3----|        |--------vec4--------|
 */
 
-struct Sizes
-{
-	size_t UniformAlignment = 16;	// Alignment required for each uniform in the UBO (usually, 16 bytes).
-	size_t vec2 = sizeof(glm::vec2);
-	size_t vec3 = sizeof(glm::vec3);
-	size_t vec4 = sizeof(glm::vec4);
-	size_t ivec4 = sizeof(glm::ivec4);
-	size_t mat4 = sizeof(glm::mat4);
-	//size_t materialSize = sizeof(Material);
-	//size_t lightSize;
-};
-
-extern Sizes sizes;
+namespace sizes {
+	extern size_t UniformAlignment;	// Alignment required for each uniform in the UBO (usually, 16 bytes).
+	extern size_t vec2;
+	extern size_t vec3;
+	extern size_t vec4;
+	extern size_t ivec4;
+	extern size_t mat4;
+	//extern size_t materialSize = sizeof(Material);
+	//extern size_t lightSize;
+}
 
 struct Light
 {

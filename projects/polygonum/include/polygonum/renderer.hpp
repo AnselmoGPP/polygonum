@@ -105,7 +105,6 @@ class Renderer
 	// Main parameters
 	IOmanager					io;
 	VulkanEnvironment			e;
-	//TimerSet					timer;
 	Timer						timer;
 
 	std::unordered_map<key64, ModelData> models;   //!< All models (constructed or not). std::unordered_map uses a hash table. Complexity for lookup, insertion, and deletion: O(1) (average) - O(n) (worst-case)

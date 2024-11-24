@@ -208,12 +208,10 @@ Main contents:
 	- `ModelData::recreate_Pipeline_Descriptors` (`createGraphicsPipeline`, `createUBObuffers`, `createDescriptorPool`, `createDescriptorSets`)
 	- `Renderer::createCommandBuffers`
 
-
-
-void createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader);
-void updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights);
-void createPostprocessingPass(std::string vertShaderPath, std::string fragShaderPath);
-void updatePostprocessingPass();
+  - void createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader);
+  - void updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights);
+  - void createPostprocessingPass(std::string vertShaderPath, std::string fragShaderPath);
+  - void updatePostprocessingPass();
 
 
 

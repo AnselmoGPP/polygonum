@@ -3,7 +3,17 @@
 #include "polygonum/ubo.hpp"
 
 
-Sizes sizes;
+namespace sizes {
+	size_t UniformAlignment = 16;
+	size_t vec2 = sizeof(glm::vec2);
+	size_t vec3 = sizeof(glm::vec3);
+	size_t vec4 = sizeof(glm::vec4);
+	size_t ivec4 = sizeof(glm::ivec4);
+	size_t mat4 = sizeof(glm::mat4);
+	//size_t materialSize = sizeof(Material);
+	//size_t lightSize;
+}
+
 
 // (Set of) Uniform Buffer Objects -----------------------------------------------------------------
 
