@@ -21,7 +21,7 @@ struct ModelDataInfo
 	VertexType vertexType;						//!< VertexType defines the characteristics of a vertex (size and type of the vertex' attributes: Position, Color, Texture coordinates, Normals...).
 	VertexesLoader* vertexesLoader;				//!< Info for loading vertices from any source.
 	std::vector<ShaderLoader*> shadersInfo;		//!< Shaders info
-	std::vector<TextureLoader>* texturesInfo;	//!< Textures info
+	std::vector<TextureLoader*> texturesInfo;	//!< Textures info
 	size_t maxDescriptorsCount_vs;				//!< Max. number of active instances
 	size_t maxDescriptorsCount_fs;
 	size_t UBOsize_vs;

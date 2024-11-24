@@ -19,7 +19,7 @@ std::vector<uint16_t> noIndices;
 
 // RESOURCES --------------------------------------------------------
 
-ResourcesLoader::ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader*>& shadersInfo, std::vector<TextureLoader>& texturesInfo, VulkanEnvironment* e)
+ResourcesLoader::ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader*>& shadersInfo, std::vector<TextureLoader*>& texturesInfo, VulkanEnvironment* e)
 	: vertices(VertexesLoader), shaders(shadersInfo), textures(texturesInfo), e(e) { }
 
 void ResourcesLoader::loadResources(VertexData& destVertexData, std::vector<shaderIter>& destShaders, std::list<Shader>& loadedShaders, std::vector<texIter>& destTextures, std::list<Texture>& loadedTextures, std::mutex& mutResources)
@@ -44,7 +44,7 @@ void ResourcesLoader::loadResources(VertexData& destVertexData, std::vector<shad
 		// Load textures
 		for (unsigned i = 0; i < textures.size(); i++)
 		{
-			texIter iter = textures[i].loadTexture(loadedTextures, *e);
+			texIter iter = textures[i]->loadTexture(loadedTextures, e);
 			iter->counter++;
 			destTextures.push_back(iter);
 		}
@@ -347,7 +347,7 @@ void VL_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*> &mesh
 				for (unsigned j = 0; j < material->GetTextureCount(types[i]); j++)
 				{
 					material->GetTexture(types[i], j, &fileName);					// get texture file location
-					resources->textures.push_back(TextureLoader(fileName.C_Str()));	// Get RESOURCES
+					resources->textures.push_back(TL_fromFile::factory(fileName.C_Str()));	// Get RESOURCES
 					fileName.Clear();
 				}
 		}
@@ -671,10 +671,10 @@ Texture::~Texture()
 	e.c.memAllocObjects--;
 }
 
-TLModule::TLModule(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode) 
+TextureLoader::TextureLoader(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode)
 	: id(id), imageFormat(imageFormat), addressMode(addressMode) { };
 
-std::list<Texture>::iterator TLModule::loadTexture(std::list<Texture>& loadedTextures, VulkanEnvironment* e)
+std::list<Texture>::iterator TextureLoader::loadTexture(std::list<Texture>& loadedTextures, VulkanEnvironment* e)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << ": " << this->id << std::endl;
@@ -702,7 +702,7 @@ std::list<Texture>::iterator TLModule::loadTexture(std::list<Texture>& loadedTex
 	return (--loadedTextures.end());
 }
 
-std::pair<VkImage, VkDeviceMemory> TLModule::createTextureImage(unsigned char* pixels, int32_t texWidth, int32_t texHeight, uint32_t& mipLevels)
+std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned char* pixels, int32_t texWidth, int32_t texHeight, uint32_t& mipLevels)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << "   " << __func__ << std::endl;
@@ -760,7 +760,7 @@ std::pair<VkImage, VkDeviceMemory> TLModule::createTextureImage(unsigned char* p
 	return std::pair(textureImage, textureImageMemory);
 }
 
-VkImageView TLModule::createTextureImageView(VkImage textureImage, uint32_t mipLevels)
+VkImageView TextureLoader::createTextureImageView(VkImage textureImage, uint32_t mipLevels)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << "   " << __func__ << std::endl;
@@ -769,7 +769,7 @@ VkImageView TLModule::createTextureImageView(VkImage textureImage, uint32_t mipL
 	return e->createImageView(textureImage, imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
 }
 
-VkSampler TLModule::createTextureSampler(uint32_t mipLevels)
+VkSampler TextureLoader::createTextureSampler(uint32_t mipLevels)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << "   " << __func__ << std::endl;
@@ -832,7 +832,7 @@ VkSampler TLModule::createTextureSampler(uint32_t mipLevels)
 	*/
 }
 
-void TLModule::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
+void TextureLoader::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
 {
 	const std::lock_guard<std::mutex> lock(e->mutCommandPool);
 
@@ -862,7 +862,7 @@ void TLModule::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width,
 	e->endSingleTimeCommands(commandBuffer);
 }
 
-void TLModule::generateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels)
+void TextureLoader::generateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels)
 {
 	// Check if the image format supports linear blitting. We are using vkCmdBlitImage, but it's not guaranteed to be supported on all platforms because it requires our texture image format to support linear filtering, so we check it with vkGetPhysicalDeviceFormatProperties.
 	VkFormatProperties formatProperties;
@@ -962,17 +962,22 @@ void TLModule::generateMipmaps(VkImage image, VkFormat imageFormat, int32_t texW
 	e->endSingleTimeCommands(commandBuffer);
 }
 
-TLM_fromBuffer::TLM_fromBuffer(const std::string& id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat, VkSamplerAddressMode addressMode)
-	: TLModule(id, imageFormat, addressMode), texWidth(texWidth), texHeight(texHeight)
+TL_fromBuffer::TL_fromBuffer(const std::string& id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat, VkSamplerAddressMode addressMode)
+	: TextureLoader(id, imageFormat, addressMode), texWidth(texWidth), texHeight(texHeight)
 { 
 	size_t size = sizeof(float) * texWidth * texHeight;
 	data.resize(size);
 	std::copy(pixels, pixels + size, data.data());		// memcpy(data, pixels, size);
 }
 
-TLModule* TLM_fromBuffer::clone() { return new TLM_fromBuffer(*this); }
+TL_fromBuffer* TL_fromBuffer::factory(const std::string id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat, VkSamplerAddressMode addressMode)
+{
+	return new TL_fromBuffer(id, pixels, texWidth, texHeight, imageFormat, addressMode);
+}
 
-void TLM_fromBuffer::getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) 
+TextureLoader* TL_fromBuffer::clone() { return new TL_fromBuffer(*this); }
+
+void TL_fromBuffer::getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) 
 { 
 	texWidth  = this->texWidth;
 	texHeight = this->texHeight;
@@ -981,52 +986,21 @@ void TLM_fromBuffer::getRawData(unsigned char*& pixels, int32_t& texWidth, int32
 	std::copy(data.data(), data.data() + data.size(), pixels);
 }
 
-TLM_fromFile::TLM_fromFile(const std::string& filePath, VkFormat imageFormat, VkSamplerAddressMode addressMode)
-	: TLModule(filePath, imageFormat, addressMode), filePath(filePath) { }
+TL_fromFile::TL_fromFile(const std::string& filePath, VkFormat imageFormat, VkSamplerAddressMode addressMode)
+	: TextureLoader(filePath, imageFormat, addressMode), filePath(filePath) { }
 
-TLModule* TLM_fromFile::clone() { return new TLM_fromFile(*this); }
+TL_fromFile* TL_fromFile::factory(const std::string filePath, VkFormat imageFormat, VkSamplerAddressMode addressMode)
+{
+	return new TL_fromFile(filePath, imageFormat, addressMode);
+}
 
-void TLM_fromFile::getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight)
+TextureLoader* TL_fromFile::clone() { return new TL_fromFile(*this); }
+
+void TL_fromFile::getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight)
 {
 	int texChannels;
 	pixels = stbi_load(filePath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);	// Returns a pointer to an array of pixel values. STBI_rgb_alpha forces the image to be loaded with an alpha channel, even if it doesn't have one.
 	if (!pixels) throw std::runtime_error("Failed to load texture image!");
-}
-
-TextureLoader::TextureLoader(std::string filePath, VkFormat imageFormat , VkSamplerAddressMode addressMode)
-{ 
-	loader = new TLM_fromFile(filePath, imageFormat, addressMode);
-}
-
-TextureLoader::TextureLoader(unsigned char* pixels, int texWidth, int texHeight, std::string id, VkFormat imageFormat, VkSamplerAddressMode addressMode)
-{
-	loader = new TLM_fromBuffer(id, pixels, texWidth, texHeight, imageFormat, addressMode);
-}
-
-TextureLoader::TextureLoader() : loader(nullptr) { }
-
-TextureLoader::TextureLoader(const TextureLoader& obj)
-{
-	if (obj.loader) loader = obj.loader->clone();
-	else loader = nullptr;
-}
-
-TextureLoader::~TextureLoader() 
-{
-	#ifdef DEBUG_IMPORT
-		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
-	#endif
-
-	if (loader) delete loader;
-}
-
-std::list<Texture>::iterator TextureLoader::loadTexture(std::list<Texture>& loadedTextures, VulkanEnvironment& e)
-{
-	#ifdef DEBUG_RESOURCES
-		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
-	#endif
-
-	return loader->loadTexture(loadedTextures, &e);
 }
 
 /*

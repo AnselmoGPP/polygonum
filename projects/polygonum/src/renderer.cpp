@@ -865,7 +865,7 @@ void Renderer::createLightingPass(unsigned numLights, std::string vertShaderPath
 		SL_fromFile::factory(fragShaderPath, { {sm_changeHeader, {fragToolsHeader}} })
 	};
 
-	std::vector<TextureLoader> usedTextures{ };
+	std::vector<TextureLoader*> usedTextures{ };
 
 	ModelDataInfo modelInfo;
 	modelInfo.name = "lightingPass";
@@ -874,7 +874,7 @@ void Renderer::createLightingPass(unsigned numLights, std::string vertShaderPath
 	modelInfo.vertexType = vt_32;
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
-	modelInfo.texturesInfo = &usedTextures;
+	modelInfo.texturesInfo = usedTextures;
 	modelInfo.maxDescriptorsCount_vs = 0;
 	modelInfo.maxDescriptorsCount_fs = 1;
 	modelInfo.UBOsize_vs = 0;
@@ -920,7 +920,7 @@ void Renderer::createPostprocessingPass(std::string vertShaderPath, std::string 
 		SL_fromFile::factory(fragShaderPath)
 	};
 	
-	std::vector<TextureLoader> usedTextures{ };
+	std::vector<TextureLoader*> usedTextures{ };
 
 	ModelDataInfo modelInfo;
 	modelInfo.name = "postprocessingPass";
@@ -929,7 +929,7 @@ void Renderer::createPostprocessingPass(std::string vertShaderPath, std::string 
 	modelInfo.vertexType = vt_32;
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
-	modelInfo.texturesInfo = &usedTextures;
+	modelInfo.texturesInfo = usedTextures;
 	modelInfo.maxDescriptorsCount_vs = 0;
 	modelInfo.maxDescriptorsCount_fs = 0;
 	modelInfo.UBOsize_vs = 0;

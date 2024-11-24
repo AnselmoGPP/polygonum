@@ -321,14 +321,10 @@ public:
 	VkSampler			textureSampler;			//!< Opaque handle to a sampler object (it applies filtering and transformations to a texture). It is a distinct object that provides an interface to extract colors from a texture. It can be applied to any image you want (1D, 2D or 3D).
 };
 
-class TLModule		/// Texture Loader Module
+class TextureLoader   /// Texture Loader Module
 {
 protected:
-	std::string id;
-	VkFormat imageFormat;
-	VkSamplerAddressMode addressMode;
-
-	VulkanEnvironment* e;
+	TextureLoader(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode);
 
 	virtual void getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) = 0;	//!< Get pixels, texWidth, texHeight, 
 
@@ -339,50 +335,40 @@ protected:
 	void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 	void generateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
 
-public:
-	TLModule(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode);
-	virtual ~TLModule() { };
+	VulkanEnvironment* e;
+	std::string id;
+	VkFormat imageFormat;
+	VkSamplerAddressMode addressMode;
 
+public:
+	virtual ~TextureLoader() { };
 	std::list<Texture>::iterator loadTexture(std::list<Texture>& loadedTextures, VulkanEnvironment* e);	//!< Get an iterator to the Texture in loadedTextures list. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
-	virtual TLModule* clone() = 0;
+	virtual TextureLoader* clone() = 0;
 };
 
-class TLM_fromBuffer : public TLModule
+class TL_fromBuffer : public TextureLoader
 {
+	TL_fromBuffer(const std::string& id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat, VkSamplerAddressMode addressMode);
+	void getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) override;
+
 	std::vector<unsigned char> data;
 	int32_t texWidth, texHeight;
 
-	void getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) override;
-
 public:
-	TLM_fromBuffer(const std::string& id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat, VkSamplerAddressMode addressMode);
-	TLModule* clone() override;
+	static TL_fromBuffer* factory(const std::string id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
+	TextureLoader* clone() override;
 };
 
-class TLM_fromFile : public TLModule
+class TL_fromFile : public TextureLoader
 {
+	TL_fromFile(const std::string& filePath, VkFormat imageFormat, VkSamplerAddressMode addressMode);
+	void getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) override;
+
 	std::string filePath;
 
-	void getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) override;
-
 public:
-	TLM_fromFile(const std::string& filePath, VkFormat imageFormat, VkSamplerAddressMode addressMode);
-	TLModule* clone() override;
-};
-
-/// Wrapper around TLModule for loading textures from any source.
-class TextureLoader
-{
-	TLModule* loader;
-
-public:
-	TextureLoader(std::string filePath, VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
-	TextureLoader(unsigned char* pixels, int texWidth, int texHeight, std::string id, VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
-	TextureLoader();	//!< Default constructor
-	TextureLoader(const TextureLoader& obj);							//!< Copy constructor (necessary because loader can be freed in destructor)
-	~TextureLoader();
-
-	std::list<Texture>::iterator loadTexture(std::list<Texture>& loadedTextures, VulkanEnvironment& e);
+	static TL_fromFile* factory(const std::string filePath, VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
+	TextureLoader* clone() override;
 };
 
 
@@ -391,12 +377,12 @@ public:
 /// Encapsulates data required for loading resources (vertices, indices, shaders, textures) and loading methods.
 struct ResourcesLoader
 {
-	ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader*>& shadersInfo, std::vector<TextureLoader>& texturesInfo, VulkanEnvironment* e);
+	ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader*>& shadersInfo, std::vector<TextureLoader*>& texturesInfo, VulkanEnvironment* e);
 
 	VulkanEnvironment* e;
 	std::shared_ptr<VertexesLoader> vertices;
 	std::vector<ShaderLoader*> shaders;
-	std::vector<TextureLoader> textures;
+	std::vector<TextureLoader*> textures;
 
 	/// Load resources (vertices, indices, shaders, textures) and upload them to Vulkan. If a shader or texture exists in Renderer, it just takes the iterator.
 	void loadResources(VertexData& destVertexData, std::vector<shaderIter>& destShaders, std::list<Shader>& loadedShaders, std::vector<texIter>& destTextures, std::list<Texture>& loadedTextures, std::mutex& mutResources);

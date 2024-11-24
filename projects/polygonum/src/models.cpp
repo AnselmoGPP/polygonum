@@ -10,7 +10,7 @@ ModelDataInfo::ModelDataInfo()
 	vertexType(vt_332),
 	vertexesLoader(nullptr),
 	shadersInfo(std::vector<ShaderLoader*>()),
-	texturesInfo(nullptr),
+	texturesInfo(std::vector<TextureLoader*>()),
 	maxDescriptorsCount_vs(0),
 	maxDescriptorsCount_fs(0),
 	UBOsize_vs(0),
@@ -45,7 +45,7 @@ ModelData::ModelData(VulkanEnvironment* environment, ModelDataInfo& modelInfo)
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
 	#endif
 
-	resLoader = new ResourcesLoader(modelInfo.vertexesLoader, modelInfo.shadersInfo, *modelInfo.texturesInfo, e);
+	resLoader = new ResourcesLoader(modelInfo.vertexesLoader, modelInfo.shadersInfo, modelInfo.texturesInfo, e);
 }
 
 ModelData::~ModelData()
