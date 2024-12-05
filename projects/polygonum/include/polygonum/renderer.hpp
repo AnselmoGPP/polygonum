@@ -43,17 +43,15 @@ enum Task{ none, construct, delet };
 /// Reponsible for the loading thread and its processes.
 class LoadingWorker
 {
+	Renderer& rend;
 	std::queue<std::pair<key64, Task>> tasks;   //!< FIFO queue
 	std::unordered_map<key64, ModelData> modelTP;   //!< Model To Process: A model is moved here temporarily for processing. After processing, it's tranferred to its final destination.
 
-	std::unordered_map<key64, ModelData>& models;
-	std::list<Texture>& textures;
-	std::list<Shader>& shaders;
-	//std::unordered_map<std::string, Texture>& textures;
-	//std::unordered_map<std::string, Shader>& shaders;
+	//std::unordered_map<key64, ModelData>& models;
+	//std::list<Texture>& textures;
+	//std::list<Shader>& shaders;
 
-
-	bool&					updateCommandBuffer;
+	//bool&					updateCommandBuffer;
 
 	int						waitTime;				//!< Time (milliseconds) the loading-thread wait till next check.
 	bool					runThread;				//!< Signals whether the secondary thread (loadingThread) should be running.
@@ -73,7 +71,7 @@ class LoadingWorker
 	void returnModel(key64 key);   //!< Extract model from "modelTP" to "models"
 
 public:
-	LoadingWorker(int waitTime, std::unordered_map<key64, ModelData>& models, std::list<Texture>& textures, std::list<Shader>& shaders, bool& updateCommandBuffer);
+	LoadingWorker(int waitTime, Renderer& rend);
 	~LoadingWorker();
 
 	std::mutex mutModels;   //!< for Renderer::models
@@ -99,6 +97,9 @@ public:
 */
 class Renderer
 {
+	friend ResourcesLoader;
+	friend LoadingWorker;
+
 	// Hardcoded parameters
 	const int MAX_FRAMES_IN_FLIGHT = 2;		//!< How many frames should be processed concurrently.
 
@@ -110,8 +111,6 @@ class Renderer
 	std::unordered_map<key64, ModelData> models;   //!< All models (constructed or not). std::unordered_map uses a hash table. Complexity for lookup, insertion, and deletion: O(1) (average) - O(n) (worst-case)
 	vec3<key64> keys;   //!< All keys of all models, distributed per renderpass ad subpass.
 
-	//std::unordered_map<std::string, Texture> textures;   //!< Set of textures
-	//std::unordered_map<std::string, Shader> shaders;   //!< Set of shaders
 	std::list<Texture>			textures;					//!< Set of textures
 	std::list<Shader>			shaders;					//!< Set of shaders
 

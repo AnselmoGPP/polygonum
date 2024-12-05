@@ -27,7 +27,7 @@ struct Image;
 struct SwapChain;
 struct DeviceData;
 
-class RenderingWorkflow;
+class RenderPipeline;
 class RP_DS;
 class RP_DS_PP;
 

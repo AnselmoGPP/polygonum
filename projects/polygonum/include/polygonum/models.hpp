@@ -11,6 +11,9 @@
 #define LINE_WIDTH 1.0f
 
 
+class Renderer;
+
+
 struct ModelDataInfo
 {
 	ModelDataInfo();
@@ -46,7 +49,6 @@ class ModelData
 	VulkanEnvironment* e;
 	VkPrimitiveTopology primitiveTopology;		//!< Primitive topology (VK_PRIMITIVE_TOPOLOGY_ ... POINT_LIST, LINE_LIST, LINE_STRIP, TRIANGLE_LIST, TRIANGLE_STRIP). Used when creating the graphics pipeline.
 	VertexType vertexType;
-	std::vector<shaderIter> shaders;			//!< Vertex shader (0), Fragment shader (1)
 	bool hasTransparencies;						//!< Flags if textures contain transparencies (alpha channel)
 	VkCullModeFlagBits cullMode;				//!< VK_CULL_MODE_BACK_BIT, VK_CULL_MODE_NONE, ...
 	UBO* globalUBO_vs;
@@ -97,7 +99,7 @@ public:
 	ModelData& ModelData::operator=(ModelData&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
 
 	/// Creates graphic pipeline and descriptor sets, and loads data for creating buffers (vertex, indices, textures). Useful in a second thread
-	ModelData& fullConstruction(std::list<Shader>& shadersList, std::list<Texture>& texturesList, std::mutex& mutResources);
+	ModelData& fullConstruction(Renderer &rend);
 
 	/// Destroys graphic pipeline and descriptor sets. Called by destructor, and for window resizing (by Renderer::recreateSwapChain()::cleanupSwapChain()).
 	void cleanup_Pipeline_Descriptors();
@@ -112,6 +114,7 @@ public:
 	VkPipeline					 graphicsPipeline;		//!< Opaque handle to a pipeline object.
 
 	std::vector<texIter>		 textures;				//!< Set of textures used by this model.
+	std::vector<shaderIter>		 shaders;				//!< Vertex shader (0), Fragment shader (1)
 
 	VertexData					 vert;					//!< Vertex data + Indices
 

@@ -19,8 +19,7 @@
     + [Subpass](#subpass)
     + [Renderer](#renderer)
     + [ModelData](#modeldata)
-    + [Texture](#texture)
-    + [Shader](#shader)
+    + [Resources](#resources)
     + [LoadingWorker](#loadingworker)
     + [UBO](#ubo)
     + [TimerSet](#timerset)
@@ -208,23 +207,122 @@ Main contents:
 	- `ModelData::recreate_Pipeline_Descriptors` (`createGraphicsPipeline`, `createUBObuffers`, `createDescriptorPool`, `createDescriptorSets`)
 	- `Renderer::createCommandBuffers`
 
-  - void createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader);
-  - void updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights);
-  - void createPostprocessingPass(std::string vertShaderPath, std::string fragShaderPath);
-  - void updatePostprocessingPass();
-
-
-
+  - Helpers:
+    - void createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader);
+    - void updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights);
+    - void createPostprocessingPass(std::string vertShaderPath, std::string fragShaderPath);
+    - void updatePostprocessingPass();
+    - getters: timer, rendersCount, frameCount, FPS, modelsCount, commandsCount, loadedShaders, loadedTextures, IO, MaxMemoryAllocationCount, MemAllocObjects
 
 ### ModelData
 
-### Texture
+It stores the data directly related to a graphic object. It manages vertices, indices, UBOs, textures (pointers), etc.
 
-### Shader
+Process: Load a model.
+
+- `Renderer::newModel(ModelDataInfo& modelInfo)`: Emplace a new `Model` object (partially constructed) in `Renderer::models` (unordered map) and order a new `construct` task to the worker.
+- In parallel, `LoadingWorker` will call `ModelData::fullConstruction()`, which will load (via ModelData::ResourcesLoader) the model's
+  - vertices (loads them to the model object)
+  - shaders and textures (loads them to the renderer, if not loaded, and passes references to the model object)
+- Once fully constructed, `Renderer` will recreate the command buffer (`Renderer::createCommandBuffers`) in the next render-loop iteration so it can be rendered. 
+
+Main contents
+
+- `fullConstruction()`: Creates graphic pipeline, descriptor sets, and resources buffers (vertexes, indices, textures). Useful in a second thread.
+- `cleanup_Pipeline_Descriptors()`: Destroys graphic pipeline and descriptor sets. Called by destructor, and for window resizing (by `Renderer::recreateSwapChain()::cleanupSwapChain()`).
+- `recreate_Pipeline_Descriptors()`: Creates graphic pipeline and descriptor sets. Called for window resizing (by `Renderer::recreateSwapChain()`).
+- `getActiveInstancesCount()`: 
+- `setActiveInstancesCount()`: Set number of active instances (<= `vsUBO.maxUBOcount`).
+
+- `VkPipelineLayout`: Pipeline layout. Allows to use uniform values in shaders (globals similar to dynamic state variables that can be changed at drawing time to alter the behavior of your shaders without having to recreate them).
+- `VkPipeline` (`graphicsPipeline`): Opaque handle to a pipeline object.
+- `std::vector<std::list<Texture>::iterator>` (`textures`): Set of textures used by this model.
+- `VertexData` (`vert`): Vertex data + Indices
+- UBOs (`UBO vsUBO`, `UBO fsUBO`): Stores the set of UBOs that will be passed to the vertex shader, and the single UBO that will be passed to the fragment shader.
+- Descriptor set layouts (`VkDescriptorSetLayout descriptorSetLayout`): Opaque handle to a descriptor set layout object (combines all of the descriptor bindings).
+- Descriptor pool (`VkDescriptorPool`): Opaque handle to a descriptor pool object.
+- Descriptor sets (`std::vector<VkDescriptorSet>`): List. Opaque handle to a descriptor set object. One for each swap chain image.
+- Render pass index (`uint32_t`) (lighting pass, geometry pass, forward shading, post-processing...).
+- Subpass index (`uint32_t`)
+- Layer (size_t): Layer where this model will be drawn (Painter's algorithm).
+- `ResourcesLoader*`: Info used for loading resources (vertices + indices, shaders, textures). When resources are loaded, this is set to nullptr.
+- `bool fullyConstructed`: Is object fully constructed (i.e. model loaded into Vulkan)?
+- `bool ready`: Object ready for rendering (i.e., it's fully constructed and in Renderer::models)
+- Name (`std::string`): For debugging purposes.
+
+### Resources
+
+`VertexData` is a container for vertexes and indices data (`VkBuffer`, `VkDeviceMemory`) of a model. `VertexesLoader` is an ADT used for loading vertices (`loadVertexes()`) from any source. Subclasses define how data is taken from source (`VL_fromFile`, `VL_fromBuffer`). Additionally, modifications at loading-time can be applied to the vertexes (`VerticesModifier`). `ModelData` keeps the vertexes and indices it uses.
+
+`Shader` is a container for shader data (`VkShaderModule`). `ShaderLoader` is an ADT used for loading shaders (`loadShader()`) from any source. Subclasses define how data is taken from source (`SL_fromFile`, `SL_fromBuffer`). Additionally, modifications at loading-time can be applied to the shaders (`ShaderModifier`). `Renderer` keeps all the shaders, and `ModelData` objects use the ones they want.
+
+`Texture` is a container for texture data (`VkImage`, `VkDeviceMemory`, `VkImageView`, `VkSampler`). `TextureLoader` is an ADT used for loading a texture (`loadTexture()`) from any source. Subclasses define how data is taken from source (`TL_fromFile`, `TL_fromBuffer`). `Renderer` keeps all the textures, and `ModelData` objects use the ones they want.
+
+`ResourcesLoader` is used for loading a set of different resources at the same time (vertices + indices, shaders, textures). A `ModelData` object contains one `ResourcesLoader` instance as a pointer. During ModelData object construction, we pass loaders to it (one `VertexesLoader` and some `ShaderLoader` and `TextureLoader`), and they will be used used later (at `Worker::loadingThread` > `ModelData::fullConstruction` > `ResourcesLoader::loadResources`) to load and get the actual resources, after which the `ResourcesLoader` pointer is deleted. `Renderer` contains all the shaders and textures. `loadResources` gets all vertexes and indices (`VertexesLoader::loadVertexes`) and saves them in `ModelData`, and also gets all shaders (`ShadersLoader::loadShader`) and textures (`TextureLoader::loadTexture`) from `Renderer`, or loads them (from file, buffer...) if it doesn't have them, and saves a reference to them in `ModelData`.
+
+What is to load a resource? How are resources loaded? <<<
+
+- `ResourcesLoader`: Encapsulates data required for loading resources (vertices + indices, shaders, textures) and loading methods.
+  - `VulkanEnvironment`
+  - `std::shared_ptr<VertexesLoader> vertices`
+  - `std::vector<ShaderLoader*> shaders`
+  - `std::vector<TextureLoader*> textures`
+  - `loadResources()`: Get resources (vertices, indices, shaders, textures) from any source (file, buffer...) and upload them to Vulkan. Called in `ModelData::fullConstruction()`. If a shader or texture exists in Renderer, it just takes the iterator. As a result, `ModelData` gets the Vulkan buffers (`VertexData`, `shaderIter`s, `textureIter`s).
 
 ### LoadingWorker
 
+`LoadingWorker` manages the secondary thread, which is a loop used for loading and delete models. This thread starts (`LoadingWorker::start()`) and finishes (`LoadingWorker::stop()`) together with the render-loop (`Renderer::renderLoop()`). The user can order (`LoadingWorker::newTask()`) this thread to load a model (`ModelData::fullConstruction()`) or delete it (make it disappear). Each loop iterations has a little pause time. Each time a model is constructed, vertexes, textures, and shaders are loaded too (`ResourcesLoader`). PENDING: AUTOMATIC DELETION OF RESOURCES.
+
 ### UBO
+
+**Descriptor set**: Collection of descriptors (bindings), each of which provides information about resources (buffers, images...) that are made accessible to shaders. It's bound to the graphics (or compute) pipeline to allow shaders to access these resources during rendering (or computation). Each model creates and keeps its own `VkDescriptorSet` (created from its own `VkDescriptorSetLayout` and `VkDescriptorPool`), which specifies the types, counts, and stages (vertex shader, fragment shader...) that can access each descriptor (VkDescriptorSet).
+
+**Descriptor**: It corresponds to:
+
+- UBOs (Uniform Buffer Objects): Constant data.
+- Storage buffers: Large, mutable data for compute shaders or advanced rendering techniques.
+- Textures (sampled images) and associated samplers for accessing images.
+- Input attachments (e.g., rendered images): Passed directly between subpasses in a render pass.
+
+**`VkDescriptorSetLayout`**: It defines the layout of a descriptor set, which specifies the types, counts, and stages (vertex shader, fragment shader...) that can access each descriptor. Example:
+
+- Vertex shader:
+  - Global UBO: View matrix, Projection matrix
+  - Particular UBO: Model matrix, Normal matrix
+
+- Fragment shader:
+  - Global UBO: Camera position, Light parameters
+  - Particular UBO: Colors
+  - Samplers: Textures
+
+**Uniform Buffer Object** (UBO): Buffer that holds constant data (read-only, unmodifiable during shader execution) that shaders need to access frequently. It contains some uniforms/attributes (variables). It has limited size (64 KB or less), depending on Vulkan implementation and device properties. UBO memory organization in the GPU:
+
+- The UBO has to be aligned with `minUniformBufferOffsetAlignment` bytes (`vkGetPhysicalDeviceProperties`).
+- The uniforms (variables or struct members) passed to the shader usually have to be aligned with 16 bytes (`UniformAlignment`) (but members created inside the shader doesn't).
+- Due to the 16-bytes alignment requirement, you should pass variables that fit 16 bytes (example: vec4, float[4], int[4]...) or fit your variables in packages of 16 bytes (example: float + int + vec2).
+
+UBO space:
+
+    |--------------------------------`minUBOffsetAlignment`(256)-----------------------------|
+    |---------16---------||---------16---------||---------16---------||---------16---------|
+
+Data passed:
+
+    |----------------------------my struct---------------------------||--int--|
+    |-float-|             |----vec3----|        |--------vec4--------|
+
+Global UBOs (`globalUBO_vs`, `globalUBO_fs`) are defined at `Renderer` construction (`globalUBO_vs` is made of many subUBOs, one per instance rendering). Particular UBOs are defined at `ModelData` construction. `Renderer` keeps the global UBOs. `ModelData` keeps particular UBOs. `Renderer` keeps textures, but `ModelData` use them.
+
+**`UBO`**: Container for a composite UBO (UBO containing one or more sub-UBOs, which are useful for instance rendering). It maximum size and number of subUBOs is fixed at construction time. It holds the UBO bytes, `VkBuffer`, and `VkDeviceMemory`. Get a pointer to the beginning (`getDescriptorPtr()`) and fill it with data. Set the number of rendered instances with `setNumActiveDescriptors()`.
+
+
+
+
+Model matrix for Normals: Normals are passed to fragment shader in world coordinates, so they have to be multiplied by the model matrix (MM) first (this MM should not include the translation part, so we just take the upper-left 3x3 part). However, non-uniform scaling can distort normals, so we have to create a specific MM especially tailored for normal vectors: mat3(transpose(inverse(model))) * aNormal.
+
+
+
+
 
 ### TimerSet
 
@@ -245,7 +343,7 @@ It manages time. Methods:
 
 
 
-
+PENDING: Amplify RenderPipeline
 
 
 

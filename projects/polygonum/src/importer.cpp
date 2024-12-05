@@ -1,8 +1,10 @@
 #include <iostream>
+#include <array>
 
 #define STB_IMAGE_IMPLEMENTATION		// Import textures
 #include "stb_image.h"
 
+#include "polygonum/renderer.hpp"
 #include "polygonum/importer.hpp"
 #include "polygonum/models.hpp"
 
@@ -19,34 +21,37 @@ std::vector<uint16_t> noIndices;
 
 // RESOURCES --------------------------------------------------------
 
-ResourcesLoader::ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader*>& shadersInfo, std::vector<TextureLoader*>& texturesInfo, VulkanEnvironment* e)
-	: vertices(VertexesLoader), shaders(shadersInfo), textures(texturesInfo), e(e) { }
+ResourcesLoader::ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader*>& shadersInfo, std::vector<TextureLoader*>& texturesInfo)
+	: vertices(VertexesLoader), shaders(shadersInfo), textures(texturesInfo) { }
 
-void ResourcesLoader::loadResources(VertexData& destVertexData, std::vector<shaderIter>& destShaders, std::list<Shader>& loadedShaders, std::vector<texIter>& destTextures, std::list<Texture>& loadedTextures, std::mutex& mutResources)
+void ResourcesLoader::loadResources(ModelData& model, Renderer& rend)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
 	
-	vertices->loadVertices(destVertexData, this, e);
+	// <<< why not using Renderer to access destination buffers?
+	
+	// Load vertexes and indices
+	vertices->loadVertexes(model.vert, this, &rend.e);
 	
 	{
-		const std::lock_guard<std::mutex> lock(mutResources);
+		const std::lock_guard<std::mutex> lock(rend.worker.mutResources);
 		
 		// Load shaders
 		for (unsigned i = 0; i < shaders.size(); i++)
 		{
-			shaderIter iter = shaders[i]->loadShader(loadedShaders, e);
+			shaderIter iter = shaders[i]->loadShader(rend.shaders, &rend.e);
 			iter->counter++;
-			destShaders.push_back(iter);
+			model.shaders.push_back(iter);
 		}
 		
 		// Load textures
 		for (unsigned i = 0; i < textures.size(); i++)
 		{
-			texIter iter = textures[i]->loadTexture(loadedTextures, e);
+			texIter iter = textures[i]->loadTexture(rend.textures, &rend.e);
 			iter->counter++;
-			destTextures.push_back(iter);
+			model.textures.push_back(iter);
 		}
 	}
 }
@@ -59,13 +64,12 @@ VertexesLoader::VertexesLoader(size_t vertexSize, std::initializer_list<Vertices
 
 VertexesLoader::~VertexesLoader() { }
 
-void VertexesLoader::loadVertices(VertexData& result, ResourcesLoader* resources, VulkanEnvironment* e)
+void VertexesLoader::loadVertexes(VertexData& result, ResourcesLoader* resources, VulkanEnvironment* e)
 {
 	VertexSet rawVertices;
 	std::vector<uint16_t> rawIndices;
 	
-	getRawData(rawVertices, rawIndices, *resources);		// Get the raw data
-
+	getRawData(rawVertices, rawIndices, *resources);		// Get raw data from source
 	createBuffers(result, rawVertices, rawIndices, e);		// Upload data to Vulkan
 }
 
@@ -439,7 +443,7 @@ std::list<Shader>::iterator ShaderLoader::loadShader(std::list<Shader>& loadedSh
 	#endif
 	
 	// Look for it in loadedShaders
-	for (auto i = loadedShaders.begin(); i != loadedShaders.end(); i++)
+	for (auto i = loadedShaders.begin(); i != loadedShaders.end(); i++) // <<< Faster way to look for shaders/textures...
 		if (i->id == id) return i;
 	
 	// Load shader (if not loaded yet)
@@ -650,6 +654,28 @@ void SL_fromFile::getRawData(std::string& glslData) { readFile(filePath.c_str(),
 SL_fromFile* SL_fromFile::factory(std::string filePath, std::initializer_list<ShaderModifier> modifications)
 {
 	return new SL_fromFile(filePath, modifications);
+}
+
+shaderc_include_result* ShaderIncluder::GetInclude(const char* sourceName, shaderc_include_type type, const char* destName, size_t includeDepth)
+{
+	auto container = new std::array<std::string, 2>;
+	(*container)[0] = std::string(sourceName);
+	readFile(sourceName, (*container)[1]);
+
+	auto data = new shaderc_include_result;
+	data->user_data = container;
+	data->source_name = (*container)[0].data();
+	data->source_name_length = (*container)[0].size();
+	data->content = (*container)[1].data();
+	data->content_length = (*container)[1].size();
+
+	return data;
+}
+
+void ShaderIncluder::ReleaseInclude(shaderc_include_result* data)
+{
+	delete static_cast<std::array<std::string, 2>*>(data->user_data);
+	delete data;
 }
 
 

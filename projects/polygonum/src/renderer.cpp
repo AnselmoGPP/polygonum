@@ -9,8 +9,8 @@
 
 // LoadingWorker ---------------------------------------------------------------------
 
-LoadingWorker::LoadingWorker(int waitTime, std::unordered_map<key64, ModelData>& models, std::list<Texture>& textures, std::list<Shader>& shaders, bool& updateCommandBuffer)
-	: models(models),textures(textures), shaders(shaders), updateCommandBuffer(updateCommandBuffer), waitTime(waitTime), runThread(false) { }
+LoadingWorker::LoadingWorker(int waitTime, Renderer& rend)
+	: rend(rend), waitTime(waitTime), runThread(false) { }
 
 LoadingWorker::~LoadingWorker() 
 { 
@@ -44,9 +44,9 @@ void LoadingWorker::extractModel(key64 key)
 {
 	const std::lock_guard<std::mutex> lock(mutModels);
 	
-	models[key].ready = false;
+	rend.models[key].ready = false;
 
-	auto node = models.extract(key);   // auto = std::unordered_map<key64, ModelData>::node_type
+	auto node = rend.models.extract(key);   // auto = std::unordered_map<key64, ModelData>::node_type
 	if (node.empty() == false)
 		modelTP.insert(std::move(node));
 }
@@ -57,10 +57,10 @@ void LoadingWorker::returnModel(key64 key)
 
 	auto node = modelTP.extract(key);   // auto = std::unordered_map<key64, ModelData>::node_type
 	if (node.empty() == false)
-		models.insert(std::move(node));
+		rend.models.insert(std::move(node));
 
-	if(models[key].fullyConstructed)
-		models[key].ready = true;
+	if(rend.models[key].fullyConstructed)
+		rend.models[key].ready = true;
 }
 
 void LoadingWorker::loadingThread()
@@ -92,15 +92,15 @@ void LoadingWorker::loadingThread()
 				//modelTP.begin()->second.fullConstruction(shaders, textures, mutResources);
 				//returnModel(key);
 				//updateCommandBuffer = true;
-				models[key].fullConstruction(shaders, textures, mutResources);
-				models[key].ready = true;
-				updateCommandBuffer = true;
+				rend.models[key].fullConstruction(rend);
+				rend.models[key].ready = true;
+				rend.updateCommandBuffer = true;
 				break;
 
 			case delet:
 				extractModel(key);
 				modelTP.clear();
-				updateCommandBuffer = true;
+				rend.updateCommandBuffer = true;
 				break;
 
 			default:
@@ -173,31 +173,6 @@ void LoadingWorker::loadingThread()
 }
 
 
-// ShaderIncluder ---------------------------------------------------------------------
-
-shaderc_include_result* ShaderIncluder::GetInclude(const char* sourceName, shaderc_include_type type, const char* destName, size_t includeDepth)
-{
-	auto container = new std::array<std::string, 2>;
-	(*container)[0] = std::string(sourceName);
-	readFile(sourceName, (*container)[1]);
-
-	auto data = new shaderc_include_result;
-	data->user_data = container;
-	data->source_name = (*container)[0].data();
-	data->source_name_length = (*container)[0].size();
-	data->content = (*container)[1].data();
-	data->content_length = (*container)[1].size();
-
-	return data;
-}
-
-void ShaderIncluder::ReleaseInclude(shaderc_include_result* data)
-{
-	delete static_cast<std::array<std::string, 2>*>(data->user_data);
-	delete data;
-}
-
-
 // Renderer ---------------------------------------------------------------------
 
 Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOinfo globalUBO_vs, UBOinfo globalUBO_fs)
@@ -211,7 +186,7 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOi
 	maxFPS(30),
 	globalUBO_vs(&e, globalUBO_vs),
 	globalUBO_fs(&e, globalUBO_fs),
-	worker(500, models, textures, shaders, updateCommandBuffer),
+	worker(500, *this),
 	newKey(0)
 { 
 	#ifdef DEBUG_RENDERER
@@ -226,8 +201,8 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOi
 		keys[rp].resize(e.rp->renderPasses[rp].subpasses.size());
 
 	// Create UBOs
-	if (this->globalUBO_vs.totalBytes) this->globalUBO_vs.createUBObuffers();
-	if (this->globalUBO_fs.totalBytes) this->globalUBO_fs.createUBObuffers();
+	if (this->globalUBO_vs.totalBytes) this->globalUBO_vs.createUBO();
+	if (this->globalUBO_fs.totalBytes) this->globalUBO_fs.createUBO();
 }
 
 Renderer::~Renderer() 
@@ -653,8 +628,8 @@ void Renderer::cleanup()
 	textures.clear();
 	shaders.clear();
 
-	if(globalUBO_vs.totalBytes)  globalUBO_vs.destroyUBOs();
-	if (globalUBO_fs.totalBytes) globalUBO_fs.destroyUBOs();
+	if(globalUBO_vs.totalBytes)  globalUBO_vs.destroyUBO();
+	if (globalUBO_fs.totalBytes) globalUBO_fs.destroyUBO();
 	
 	// Cleanup environment
 	e.cleanup();
@@ -817,7 +792,7 @@ void Renderer::updateStates(uint32_t currentImage)
 		{
 			model = &it->second;
 
-			activeBytes = model->vsUBO.numActiveDescriptors * model->vsUBO.descriptorSize;
+			activeBytes = model->vsUBO.numActiveSubUbos * model->vsUBO.subUboSize;
 			if (activeBytes)
 			{
 				vkMapMemory(e.c.device, model->vsUBO.uboMemories[currentImage], 0, activeBytes, 0, &data);	// Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
@@ -825,7 +800,7 @@ void Renderer::updateStates(uint32_t currentImage)
 				vkUnmapMemory(e.c.device, model->vsUBO.uboMemories[currentImage]);							// "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
 			}
 
-			activeBytes = model->fsUBO.numActiveDescriptors * model->fsUBO.descriptorSize;
+			activeBytes = model->fsUBO.numActiveSubUbos * model->fsUBO.subUboSize;
 			if (activeBytes)
 			{
 				vkMapMemory(e.c.device, model->fsUBO.uboMemories[currentImage], 0, activeBytes, 0, &data);
@@ -900,9 +875,9 @@ void Renderer::updateLightingPass(glm::vec3& camPos, Light* lights, unsigned num
 	//	//...
 	//}
 
-	for (int i = 0; i < models[lightingPass].fsUBO.numActiveDescriptors; i++)
+	for (int i = 0; i < models[lightingPass].fsUBO.numActiveSubUbos; i++)
 	{
-		dest = models[lightingPass].fsUBO.getDescriptorPtr(i);
+		dest = models[lightingPass].fsUBO.getSubUboPtr(i);
 		memcpy(dest, &camPos, sizes::vec4);
 		dest += sizes::vec4;
 		memcpy(dest, lights, numLights * sizeof(Light));

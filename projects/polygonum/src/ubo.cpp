@@ -14,29 +14,31 @@ namespace sizes {
 	//size_t lightSize;
 }
 
+UBOinfo::UBOinfo(size_t maxNumSubUbos, size_t numActiveSubUbos, size_t minSubUboSize)
+	: maxNumSubUbos(maxNumSubUbos), numActiveSubUbos(numActiveSubUbos), minSubUboSize(minSubUboSize) { }
 
-// (Set of) Uniform Buffer Objects -----------------------------------------------------------------
+UBOinfo::UBOinfo()
+	: maxNumSubUbos(0), numActiveSubUbos(0), minSubUboSize(0) { }
 
-/// Constructor. Computes sizes (range, totalBytes) and allocates buffers (ubo, offsets).
 UBO::UBO(VulkanEnvironment* e, UBOinfo uboInfo)
 	:e(e),
-	maxNumDescriptors(uboInfo.maxNumDescriptors),
-	descriptorSize(uboInfo.minDescriptorSize ? e->c.deviceData.minUniformBufferOffsetAlignment * (1 + uboInfo.minDescriptorSize / e->c.deviceData.minUniformBufferOffsetAlignment) : 0),
-	totalBytes(descriptorSize* maxNumDescriptors),
+	maxNumSubUbos(uboInfo.maxNumSubUbos),
+	subUboSize(uboInfo.minSubUboSize ? e->c.deviceData.minUniformBufferOffsetAlignment * (1 + uboInfo.minSubUboSize / e->c.deviceData.minUniformBufferOffsetAlignment) : 0),
+	totalBytes(subUboSize* maxNumSubUbos),
 	ubo(totalBytes)
 {
-	setNumActiveDescriptors(uboInfo.numActiveDescriptors);
+	setNumActiveSubUbos(uboInfo.numActiveSubUbos);
 }
 
 UBO::UBO() 
-	: maxNumDescriptors(0), numActiveDescriptors(0), descriptorSize(0), totalBytes(0), ubo(0), uboBuffers(0), uboMemories(0) 
+	: e(nullptr), maxNumSubUbos(0), numActiveSubUbos(0), subUboSize(0), totalBytes(0), ubo(0), uboBuffers(0), uboMemories(0)
 { };
 
 UBO::UBO(UBO&& other) noexcept
 	: e(other.e),
-	maxNumDescriptors(other.maxNumDescriptors),
-	numActiveDescriptors(other.numActiveDescriptors),
-	descriptorSize(other.descriptorSize),
+	maxNumSubUbos(other.maxNumSubUbos),
+	numActiveSubUbos(other.numActiveSubUbos),
+	subUboSize(other.subUboSize),
 	totalBytes(other.totalBytes)
 {
 	ubo = std::move(other.ubo);
@@ -50,9 +52,9 @@ UBO& UBO::operator=(UBO&& other) noexcept
 	{
 		// Transfer resources ownership
 		e = other.e;
-		maxNumDescriptors = other.maxNumDescriptors;
-		numActiveDescriptors = other.numActiveDescriptors;
-		descriptorSize = other.descriptorSize;
+		maxNumSubUbos = other.maxNumSubUbos;
+		numActiveSubUbos = other.numActiveSubUbos;
+		subUboSize = other.subUboSize;
 		totalBytes = other.totalBytes;
 
 		ubo = std::move(other.ubo);
@@ -60,9 +62,9 @@ UBO& UBO::operator=(UBO&& other) noexcept
 		uboMemories = std::move(other.uboMemories);
 
 		// Leave other in valid state
-		other.maxNumDescriptors = 0;
-		other.numActiveDescriptors = 0;
-		other.descriptorSize = 0;
+		other.maxNumSubUbos = 0;
+		other.numActiveSubUbos = 0;
+		other.subUboSize = 0;
 		other.totalBytes = 0;
 
 		other.ubo.clear();
@@ -72,44 +74,44 @@ UBO& UBO::operator=(UBO&& other) noexcept
 	return *this;
 }
 
-uint8_t* UBO::getDescriptorPtr(size_t descriptorIndex) { return ubo.data() + descriptorIndex * descriptorSize; }
+uint8_t* UBO::getSubUboPtr(size_t descriptorIndex) { return ubo.data() + descriptorIndex * subUboSize; }
 
-bool UBO::setNumActiveDescriptors(size_t count)
+bool UBO::setNumActiveSubUbos(size_t count)
 {
-	if (count > maxNumDescriptors)
+	if (count > maxNumSubUbos)
 	{
-		numActiveDescriptors = maxNumDescriptors;
+		numActiveSubUbos = maxNumSubUbos;
 		return false;
 	}
 
-	numActiveDescriptors = count;
+	numActiveSubUbos = count;
 	return true;
 }
 
 // (21)
-void UBO::createUBObuffers()
+void UBO::createUBO()
 {
-	if (!maxNumDescriptors) return;
+	if (!maxNumSubUbos) return;
 
 	uboBuffers.resize(e->swapChain.images.size());
 	uboMemories.resize(e->swapChain.images.size());
 	
 	//destroyUniformBuffers();		// Not required since Renderer calls this first
 
-	if (descriptorSize)
+	if (subUboSize)
 		for (size_t i = 0; i < e->swapChain.images.size(); i++)
 			createBuffer(
 				e,
-				maxNumDescriptors == 0 ? descriptorSize : totalBytes,
+				maxNumSubUbos == 0 ? subUboSize : totalBytes,
 				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 				uboBuffers[i],
 				uboMemories[i]);
 }
 
-void UBO::destroyUBOs()
+void UBO::destroyUBO()
 {
-	if (descriptorSize)
+	if (subUboSize)
 	{
 		for (size_t i = 0; i < e->swapChain.images.size(); i++)
 		{

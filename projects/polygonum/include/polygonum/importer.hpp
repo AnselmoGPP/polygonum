@@ -25,6 +25,9 @@
 
 // Declarations ----------
 
+class Renderer;
+class ModelData;
+
 struct VertexData;
 class VertexesLoader;
 	class VL_fromFile;
@@ -71,7 +74,7 @@ extern std::vector<uint16_t   > noIndices;			//!< Vector with 0 indices
 
 // VERTICES --------------------------------------------------------
 
-/// Vulkan Vertex data (position, color, texture coordinates...) and Indices
+/// Container for Vertexes (position, color, texture coordinates...) and Indices.
 struct VertexData
 {
 	// Vertices
@@ -85,6 +88,7 @@ struct VertexData
 	VkDeviceMemory				 indexBufferMemory;		//!< Opaque handle to a device memory object (here, memory for the index buffer).
 };
 
+/// Apply modifications to vertices right after loading them.
 class VerticesModifier
 {
 protected:
@@ -124,7 +128,7 @@ public:
 	static VerticesModifier_Translation* factory(glm::vec3 position);   //!< Factory function
 };
 
-/// (ADT) Vertices Loader Module (VLM) used in VertexesLoader for loading vertices from any source.
+/// ADT for loading vertices from any source. Subclasses will define how data is taken from source (getRawData): from file, from buffer, etc.
 class VertexesLoader
 {
 protected:
@@ -132,8 +136,8 @@ protected:
 
 	const size_t vertexSize;	//!< Size (bytes) of a vertex object
 	std::vector<VerticesModifier*> modifiers;
-
-	virtual void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources) = 0;					//!< Get raw vertex data (vertices & indices)
+	
+	virtual void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources) = 0;   //!< Get vertexes and indices from source. Subclasses define this.
 	void createBuffers(VertexData& result, const VertexSet& rawVertices, const std::vector<uint16_t>& rawIndices, VulkanEnvironment* e);	//!< Upload raw vertex data to Vulkan (i.e., create Vulkan buffers)
 
 	void createVertexBuffer(const VertexSet& rawVertices, VertexData& result, VulkanEnvironment* e);									//!< Vertex buffer creation.
@@ -146,9 +150,10 @@ public:
 	virtual ~VertexesLoader();
 	virtual VertexesLoader* clone() = 0;		//!< Create a new object of children type and return its pointer.
 
-	void loadVertices(VertexData& result, ResourcesLoader* resources, VulkanEnvironment* e);
+	void loadVertexes(VertexData& result, ResourcesLoader* resources, VulkanEnvironment* e);   //!< Get vertexes from source and store them in "result" ("resources" is used to store additional resources, if they exist).
 };
 
+/// Pass all the vertices at construction time. Call to getRawData will pass these vertices.
 class VL_fromBuffer : public VertexesLoader
 {
 	VL_fromBuffer(const void* verticesData, size_t vertexSize, size_t vertexCount, const std::vector<uint16_t>& indices, std::initializer_list<VerticesModifier*> modifiers);
@@ -163,7 +168,7 @@ public:
 	VertexesLoader* clone() override;
 };
 
-/// Process a graphics file (obj, ...) and get the meshes. <<< Problem: This takes all the meshes in each node and stores them together. However, meshes from different nodes have their own indices, all of them in the range [0, number of vertices in the mesh). Since each mesh is an independent object, they cannot be put together without messing up with the indices (they should be stored as different models). 
+/// Call to getRawData process a graphics file (OBJ, ...) and gets the meshes. <<< Problem: This takes all the meshes in each node and stores them together. However, meshes from different nodes have their own indices, all of them in the range [0, number of vertices in the mesh). Since each mesh is an independent object, they cannot be put together without messing up with the indices (they should be stored as different models). 
 class VL_fromFile : public VertexesLoader
 {
 	VL_fromFile(std::string filePath, std::initializer_list<VerticesModifier*> modifiers);	//!< vertexSize == (3+3+2) * sizeof(float)
@@ -172,7 +177,7 @@ class VL_fromFile : public VertexesLoader
 
 	VertexSet* vertices;
 	std::vector<uint16_t>* indices;
-	ResourcesLoader* resources;
+	ResourcesLoader* resources;   //!< Stores textures in case they're included by the file
 
 	void processNode(const aiScene* scene, aiNode* node);					//!< Recursive function. It goes through each node getting all the meshes in each one.
 	void processMeshes(const aiScene* scene, std::vector<aiMesh*>& meshes);	//!< Get Vertex data, Indices, and Resources (textures).
@@ -187,6 +192,7 @@ public:
 
 // SHADER --------------------------------------------------------
 
+// Container for a shader.
 class Shader
 {
 public:
@@ -220,6 +226,7 @@ enum smFlag {
 	sm_none
 };
 
+/// Used by `ShaderLoader` to apply modifications to a shader right after loading it.
 struct ShaderModifier
 {
 	ShaderModifier() : flag(sm_none) { }
@@ -230,7 +237,8 @@ struct ShaderModifier
 	std::vector<std::string> params;
 };
 
-class ShaderLoader		/// Shader Loader Module
+/// ADT for loading a shader from any source. Subclasses will define how data is taken from source (getRawData): from file, from buffer, etc.
+class ShaderLoader
 {
 	std::vector<ShaderModifier> mods;				//!< Modifications to the shader.
 	void applyModifications(std::string& shader);	//!< Applies modifications defined by "mods".
@@ -253,6 +261,7 @@ public:
 	virtual ShaderLoader* clone() = 0;
 };
 
+/// Pass the shader as a string at construction time. Call to getRawData will pass that string.
 class SL_fromBuffer : public ShaderLoader
 {
 	SL_fromBuffer(const std::string& id, const std::string& glslText, const std::initializer_list<ShaderModifier>& modifications);
@@ -265,6 +274,7 @@ public:
 	ShaderLoader* clone() override;
 };
 
+/// Pass a text file path at construction time. Call to getRawData gets the shader from that file.
 class SL_fromFile : public ShaderLoader
 {
 	SL_fromFile(const std::string& filePath, std::initializer_list<ShaderModifier>& modifications);
@@ -305,6 +315,7 @@ public:
 
 // TEXTURE --------------------------------------------------------
 
+/// Container for a texture.
 class Texture
 {
 public:
@@ -321,6 +332,7 @@ public:
 	VkSampler			textureSampler;			//!< Opaque handle to a sampler object (it applies filtering and transformations to a texture). It is a distinct object that provides an interface to extract colors from a texture. It can be applied to any image you want (1D, 2D or 3D).
 };
 
+/// ADT for loading a texture from any source. Subclasses will define how data is taken from source (getRawData): from file, from buffer, etc.
 class TextureLoader   /// Texture Loader Module
 {
 protected:
@@ -346,6 +358,7 @@ public:
 	virtual TextureLoader* clone() = 0;
 };
 
+/// Pass the texture as vector of bytes (unsigned char) at construction time. Call to getRawData will pass that string.
 class TL_fromBuffer : public TextureLoader
 {
 	TL_fromBuffer(const std::string& id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat, VkSamplerAddressMode addressMode);
@@ -359,6 +372,7 @@ public:
 	TextureLoader* clone() override;
 };
 
+/// Pass a texture file path at construction time. Call to getRawData gets the texture from that file.
 class TL_fromFile : public TextureLoader
 {
 	TL_fromFile(const std::string& filePath, VkFormat imageFormat, VkSamplerAddressMode addressMode);
@@ -377,15 +391,14 @@ public:
 /// Encapsulates data required for loading resources (vertices, indices, shaders, textures) and loading methods.
 struct ResourcesLoader
 {
-	ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader*>& shadersInfo, std::vector<TextureLoader*>& texturesInfo, VulkanEnvironment* e);
+	ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader*>& shadersInfo, std::vector<TextureLoader*>& texturesInfo);
 
-	VulkanEnvironment* e;
 	std::shared_ptr<VertexesLoader> vertices;
 	std::vector<ShaderLoader*> shaders;
 	std::vector<TextureLoader*> textures;
 
-	/// Load resources (vertices, indices, shaders, textures) and upload them to Vulkan. If a shader or texture exists in Renderer, it just takes the iterator.
-	void loadResources(VertexData& destVertexData, std::vector<shaderIter>& destShaders, std::list<Shader>& loadedShaders, std::vector<texIter>& destTextures, std::list<Texture>& loadedTextures, std::mutex& mutResources);
+	/// Get resources (vertices + indices, shaders, textures) from any source (file, buffer...) and upload them to Vulkan. If a shader or texture exists in Renderer, it just takes the iterator. As a result, `ModelData` can get the Vulkan buffers (`VertexData`, `shaderIter`s, `textureIter`s).
+	void loadResources(ModelData& model, Renderer& rend);
 };
 
 
