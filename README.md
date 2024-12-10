@@ -223,7 +223,7 @@ Process: Load a model.
 - `Renderer::newModel(ModelDataInfo& modelInfo)`: Emplace a new `Model` object (partially constructed) in `Renderer::models` (unordered map) and order a new `construct` task to the worker.
 - In parallel, `LoadingWorker` will call `ModelData::fullConstruction()`, which will load (via ModelData::ResourcesLoader) the model's
   - vertices (loads them to the model object)
-  - shaders and textures (loads them to the renderer, if not loaded, and passes references to the model object)
+  - shaders and textures (loads them to the renderer, if not loaded, and passes shared_ptrs to the model object)
 - Once fully constructed, `Renderer` will recreate the command buffer (`Renderer::createCommandBuffers`) in the next render-loop iteration so it can be rendered. 
 
 Main contents
@@ -255,7 +255,8 @@ Main contents
 To load a resource (vertexes, shader, texture): Get it from the source (file, buffer...) and copy it to Vulkan memory (`VkBuffer`, `VkDeviceMemory`...).
 
 `VertexData` is a container for vertexes and indices data (`VkBuffer`, `VkDeviceMemory`) of a model.
-- `VertexesLoader` is an ADT used for loading vertices (`loadVertexes()`) from any source. Subclasses define how data is taken from source (`VL_fromFile`, `VL_fromBuffer`).
+- `VertexesLoader` is an ADT used for loading vertices (`loadVertexes()`) from any source. Subclasses define how data is taken from source (`VL_fromFile`, `VL_fromBuffer`) by defining `getRawData()`.
+- `loadVertexes()` load vertexes 
 - Modifications at loading-time can be applied to the vertexes (`VerticesModifier`). `ModelData` keeps the vertexes and indices it uses.
 
 `Shader` is a container for shader data (`VkShaderModule`).
@@ -269,7 +270,9 @@ To load a resource (vertexes, shader, texture): Get it from the source (file, bu
 - `loadTexture()` looks for a texture in `Renderer::texture`: if found, returns its key; otherwise, loads it, pushes it to `shaders`, and returns the key.
 - `Renderer` keeps all the textures, and `ModelData` objects use the ones they want.
 
-`ResourcesLoader` is used for loading a set of different resources at the same time (vertices + indices, shaders, textures). A `ModelData` object contains one `ResourcesLoader` instance as a pointer. During ModelData object construction, we pass loaders to it (one `VertexesLoader` and some `ShaderLoader` and `TextureLoader`), and they will be used used later (at `Worker::loadingThread` > `ModelData::fullConstruction` > `ResourcesLoader::loadResources`) to load and get the actual resources, after which the `ResourcesLoader` pointer is deleted. `Renderer` contains all the shaders and textures. `loadResources` gets all vertexes and indices (`VertexesLoader::loadVertexes`) and saves them in `ModelData`, and also gets all shaders (`ShadersLoader::loadShader`) and textures (`TextureLoader::loadTexture`) from `Renderer`, or loads them (from file, buffer...) if it doesn't have them, and saves a reference to them in `ModelData`.
+At `ModelData` construction, a set of `ShaderLoader`s and `TextureLoader`s are passed as parameters and stored in a `ResourcesLoader` member. During `fullConstruction`, it provides the shared_ptr<Texture> and shared_ptr<Shader> elements to `ModelData`. These elements are taken from `Renderer` (where they are stored in a `PointersManager`); or, if they doesn't exist, loaded onto `Renderer` and taken from there. Then, `fullConstruction` continues. Vertexes (and indices) are passed as parameters at `ModelData` construction, and loaded onto `ModelData` during `fullConstruction`.
+
+`ResourcesLoader` is used for loading a set of different resources at the same time (vertices + indices, shaders, textures). A `ModelData` object contains one `ResourcesLoader` instance as a pointer. During ModelData object construction, we pass loaders to it (one `VertexesLoader` and some `ShaderLoader` and `TextureLoader`), and they will be used used later (at `Worker::loadingThread` > `ModelData::fullConstruction` > `ResourcesLoader::loadResources`) to load and get the actual resources, after which the `ResourcesLoader` pointer is deleted. `Renderer` contains all the shaders and textures as weak_ptrs in a `PointersManager` data structure. `loadResources` gets all vertexes and indices (`VertexesLoader::loadVertexes`) and saves them in `ModelData`, and also gets all shaders (`ShadersLoader::loadShader`) and textures (`TextureLoader::loadTexture`) from `Renderer`, or loads them (from file, buffer...) if it doesn't have them, and saves them in `Renderer` in a `PointersManager` data structure (it stores them as weak_ptrs, provides them to `ModelData` as shared_ptrs, and deletes them automatically when not used by any `ModelData` object). 
 
 - `ResourcesLoader`: Encapsulates data required for loading resources (vertices + indices, shaders, textures) and loading methods.
   - `VulkanEnvironment`

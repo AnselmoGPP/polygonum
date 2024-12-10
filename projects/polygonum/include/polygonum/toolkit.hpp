@@ -415,7 +415,7 @@ void getDepthElements(QuadNode<T>* node, X* external)
 	//	std::get<0>(*external).push_back(node);
 }
 
-/// Data structure that stores pointers. When one of them is no longer used elsewhere, it's deleted from storage. The custom deleter used requires the element's shared pointer to know its key and the PointersManager.
+/// Data structure that stores pointers. When one of them is no longer used elsewhere, it's deleted from storage. The custom deleter used requires E to know its key and the PointersManager, which can be done by making E inherit from InterfaceForPointersManagerElements.
 template<typename K, typename E>
 class PointersManager
 {
@@ -428,10 +428,8 @@ public:
 	template<typename... Args>
 	std::shared_ptr<E> emplace(K key, Args&&... args)   // Variadic template constructor. Arguments are forwarded to T's constructor.
 	{
-		E* newPtr = new E(std::forward<Args>(args)...);
-		newPtr->setValues(this, key);
-		std::shared_ptr<E> newElement(newPtr, PointersManager::customDeleter);
-		//std::shared_ptr<E> newElement = std::make_shared<E>(std::forward<Args>(args)..., customDeleter);
+		std::shared_ptr<E> newElement(new E(std::forward<Args>(args)...), PointersManager::customDeleter);
+		newElement->setValues(this, key);
 		elements[key] = newElement;
 		return newElement;
 	}
@@ -449,13 +447,11 @@ public:
 	}
 };
 
-/// Shared pointer that allows to pass a function (that takes ptr as parameter) that will be called each time an instance is destroyed. Remember that std::shared_ptr has no virtual destructor, so deleting an object of a derived class through a pointer to the base class will only call the base class's destructor.
-/// Container for shared pointers where the elements whose counter becomes 1 (only the instance stored here remains) is deleted from storage.
 template<typename K, typename E>
 class InterfaceForPointersManagerElements
 {
 public:
-	~InterfaceForPointersManagerElements() { }
+	virtual ~InterfaceForPointersManagerElements() { }
 
 	void setValues(PointersManager<K, E>* pointersManager, K& key)
 	{

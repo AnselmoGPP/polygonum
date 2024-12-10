@@ -622,11 +622,7 @@ void Renderer::cleanup()
 	// Cleanup models, textures and shaders
 	// const std::lock_guard<std::mutex> lock(worker.mutModels);	// Not necessary (worker stopped loading thread)
 	
-	//for (size_t i = 0; i < models.size(); i++) 
-	//	models[i].clear();
 	models.clear();
-	//textures.clear();
-	shaders.clear();
 
 	if(globalUBO_vs.totalBytes)  globalUBO_vs.destroyUBO();
 	if (globalUBO_fs.totalBytes) globalUBO_fs.destroyUBO();

@@ -114,7 +114,7 @@ public:
 	VkPipeline					 graphicsPipeline;		//!< Opaque handle to a pipeline object.
 
 	std::vector<std::shared_ptr<Texture>> textures;		//!< Set of textures used by this model.
-	std::vector<shaderIter>		 shaders;				//!< Vertex shader (0), Fragment shader (1)
+	std::vector<std::shared_ptr<Shader>> shaders;		//!< Vertex shader (0), Fragment shader (1)
 
 	VertexData					 vert;					//!< Vertex data + Indices
 

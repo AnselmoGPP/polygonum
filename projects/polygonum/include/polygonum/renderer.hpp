@@ -113,7 +113,7 @@ class Renderer
 	vec3<key64> keys;   //!< All keys of all models, distributed per renderpass ad subpass.
 
 	PointersManager<std::string, Texture> textures;			//!< Set of textures
-	std::list<Shader>			shaders;					//!< Set of shaders
+	PointersManager<std::string, Shader> shaders;			//!< Set of shaders
 
 	LoadingWorker				worker;
 

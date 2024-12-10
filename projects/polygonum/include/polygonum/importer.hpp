@@ -194,7 +194,7 @@ public:
 // SHADER --------------------------------------------------------
 
 // Container for a shader.
-class Shader
+class Shader : public InterfaceForPointersManagerElements<std::string, Shader>
 {
 public:
 	Shader(VulkanEnvironment& e, const std::string id, VkShaderModule shaderModule);
@@ -202,7 +202,6 @@ public:
 
 	VulkanEnvironment& e;						//!< Used in destructor.
 	const std::string id;						//!< Used for checking whether a shader to load is already loaded.
-	unsigned counter;							//!< Number of ModelData objects using this shader.
 	const VkShaderModule shaderModule;
 };
 
@@ -258,7 +257,7 @@ protected:
 public:
 	virtual ~ShaderLoader() { };
 
-	std::list<Shader>::iterator loadShader(std::list<Shader>& loadedShaders, VulkanEnvironment* e);	//!< Get an iterator to the shader in loadedShaders. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
+	std::shared_ptr<Shader> loadShader(PointersManager<std::string, Shader>& loadedShaders, VulkanEnvironment* e);	//!< Get an iterator to the shader in loadedShaders. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
 	virtual ShaderLoader* clone() = 0;
 };
 
@@ -325,7 +324,6 @@ public:
 
 	VulkanEnvironment& e;						//!< Used in destructor.
 	const std::string id;						//!< Used for checking whether the texture to load is already loaded.
-	unsigned counter;							//!< Number of ModelData objects using this texture.
 
 	VkImage				textureImage;			//!< Opaque handle to an image object.
 	VkDeviceMemory		textureImageMemory;		//!< Opaque handle to a device memory object.

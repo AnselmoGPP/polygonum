@@ -40,17 +40,11 @@ void ResourcesLoader::loadResources(ModelData& model, Renderer& rend)
 		
 		// Load shaders
 		for (unsigned i = 0; i < shaders.size(); i++)
-		{
-			shaderIter iter = shaders[i]->loadShader(rend.shaders, &rend.e);
-			iter->counter++;
-			model.shaders.push_back(iter);
-		}
+			model.shaders.push_back(shaders[i]->loadShader(rend.shaders, &rend.e));
 		
 		// Load textures
 		for (unsigned i = 0; i < textures.size(); i++)
-		{
 			model.textures.push_back(textures[i]->loadTexture(rend.textures, &rend.e));
-		}
 	}
 }
 
@@ -410,7 +404,7 @@ VerticesModifier_Translation* VerticesModifier_Translation::factory(glm::vec3 po
 // SHADERS --------------------------------------------------------
 
 Shader::Shader(VulkanEnvironment& e, const std::string id, VkShaderModule shaderModule) 
-	: e(e), id(id), counter(0), shaderModule(shaderModule) { }
+	: e(e), id(id), shaderModule(shaderModule) { }
 
 Shader::~Shader() 
 {
@@ -434,15 +428,15 @@ ShaderLoader::ShaderLoader(const std::string& id, const std::initializer_list<Sh
 		}
 }
 
-std::list<Shader>::iterator ShaderLoader::loadShader(std::list<Shader>& loadedShaders, VulkanEnvironment* e)
+std::shared_ptr<Shader> ShaderLoader::loadShader(PointersManager<std::string, Shader>& loadedShaders, VulkanEnvironment* e)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << ": " << this->id << std::endl;
 	#endif
 	
 	// Look for it in loadedShaders
-	for (auto i = loadedShaders.begin(); i != loadedShaders.end(); i++) // <<< Faster way to look for shaders/textures...
-		if (i->id == id) return i;
+	if (loadedShaders.contains(id))
+		return loadedShaders.get(id);
 	
 	// Load shader (if not loaded yet)
 	std::string glslData;
@@ -483,8 +477,7 @@ std::list<Shader>::iterator ShaderLoader::loadShader(std::list<Shader>& loadedSh
 		throw std::runtime_error("Failed to create shader module!");
 	
 	// Create and save shader object
-	loadedShaders.emplace(loadedShaders.end(), *e, id, shaderModule);	//loadedShaders.push_back(Shader(e, id, shaderModule));
-	return (--loadedShaders.end());
+	return loadedShaders.emplace(id, *e, id, shaderModule);
 }
 
 void ShaderLoader::applyModifications(std::string& shader)
@@ -680,7 +673,7 @@ void ShaderIncluder::ReleaseInclude(shaderc_include_result* data)
 // TEXTURE --------------------------------------------------------
 
 Texture::Texture(VulkanEnvironment& e, const std::string& id, VkImage textureImage, VkDeviceMemory textureImageMemory, VkImageView textureImageView, VkSampler textureSampler)
-	: e(e), id(id), counter(0), textureImage(textureImage), textureImageMemory(textureImageMemory), textureImageView(textureImageView), textureSampler(textureSampler) { }
+	: e(e), id(id), textureImage(textureImage), textureImageMemory(textureImageMemory), textureImageView(textureImageView), textureSampler(textureSampler) { }
 
 Texture::~Texture()
 {
@@ -722,7 +715,7 @@ std::shared_ptr<Texture> TextureLoader::loadTexture(PointersManager<std::string,
 	VkSampler textureSampler                 = createTextureSampler(mipLevels);
 	
 	// Create and save texture object
-	return loadedTextures.emplace(id, *e, id, std::get<VkImage>(image), std::get<VkDeviceMemory>(image), textureImageView, textureSampler);		//loadedTextures.push_back(texture);
+	return loadedTextures.emplace(id, *e, id, std::get<VkImage>(image), std::get<VkDeviceMemory>(image), textureImageView, textureSampler);
 }
 
 std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned char* pixels, int32_t texWidth, int32_t texHeight, uint32_t& mipLevels)
