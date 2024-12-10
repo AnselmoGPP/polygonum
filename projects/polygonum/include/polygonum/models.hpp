@@ -113,7 +113,7 @@ public:
 	VkPipelineLayout			 pipelineLayout;		//!< Pipeline layout. Allows to use uniform values in shaders (globals similar to dynamic state variables that can be changed at drawing time to alter the behavior of your shaders without having to recreate them).
 	VkPipeline					 graphicsPipeline;		//!< Opaque handle to a pipeline object.
 
-	std::vector<texIter>		 textures;				//!< Set of textures used by this model.
+	std::vector<std::shared_ptr<Texture>> textures;		//!< Set of textures used by this model.
 	std::vector<shaderIter>		 shaders;				//!< Vertex shader (0), Fragment shader (1)
 
 	VertexData					 vert;					//!< Vertex data + Indices

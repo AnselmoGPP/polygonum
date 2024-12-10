@@ -3,6 +3,15 @@
 
 #include "polygonum/commons.hpp"
 
+/*
+  - Print data
+  - MVP Matrix
+  - Vertex sets
+  - Maths
+  - Algorithms
+  - Data structures
+*/
+
 
 // Print data -----------------------------------------------------------------
 
@@ -96,6 +105,7 @@ void printVec(const T& vec)
 template<typename T>
 void printS(const T& vec) { std::cout << T << std::endl; }
 
+
 // Vertex sets -----------------------------------------------------------------
 
 /// Get the XYZ axis as 3 RGB lines
@@ -142,7 +152,7 @@ public:
 };
 
 
-// Others -----------------------------------------------------------------
+// Maths -----------------------------------------------------------------
 
 extern double pi;
 extern double e;
@@ -164,6 +174,33 @@ float ratio(float a, float b, float c);
 
 /// Uses linear interpolation to get an aproximation of a base raised to a float exponent
 float powLinInterp(float base, float exponent);
+
+/// Get sign of a given value. 
+template <typename T>
+int sign(T val) { return (T(0) < val) - (val < T(0)); }
+
+/// Power of an integer to the power to an unsigned. Returns 1 if exponent is 0.
+int ipow(int base, unsigned exp);
+
+/// If input == 0, output == 1; otherwise, output == 0.
+int opposite01(int val);
+
+/// Apend an integer digit to an integer.
+uint64_t appendInt(uint64_t first, uint64_t second);
+
+/// Get area of a sphere.
+float getSphereArea(float radius);
+
+/// Get modulus safely (if b == 0, this returns 0).
+float safeMod(int a, int b);
+float safeMod(float a, float b);
+glm::vec3 safeMod(const glm::vec3& a, float b);
+
+
+// Algorithms -----------------------------------------------------------------
+
+/// Returns true (big endian) or false (little endian).
+bool isBigEndian();
 
 /// This class checks if argument X (float) is bigger than argument Y (float). But if it is true once, then it will be false in all the next calls. This is useful for executing something once only after X time (used for testing in graphicsUpdate()). Example: obj.ifBigger(time, 5);
 class ifOnce
@@ -191,9 +228,6 @@ struct Icosahedron
     static std::vector<float> icos;     // Vertices & colors (without alpha)
     static std::vector<float> index;    // Indices
 };
-
-/// Returns true (big endian) or false (little endian).
-bool isBigEndian();
 
 /// QuickSort algorithm template (using Hoare partition scheme) for element types that support > and < comparison operators.
 template <typename T>
@@ -294,10 +328,143 @@ public:
     void sort(std::vector<glm::vec3>& positions, std::vector<int>& indexVals, const glm::vec3& camPos, int low, int high);
 };
 
-float safeMod(int a, int b);
-float safeMod(float a, float b);
-glm::vec3 safeMod(const glm::vec3& a, float b);
 
-void printMessage(const char* message);
+// Data structures -----------------------------------------------------------------
+
+/// Generic Binary Search Tree Node (4 nodes).
+template<typename T>
+class QuadNode
+{
+public:
+	//QuadNode() { };
+	QuadNode(const T& element, QuadNode* a = nullptr, QuadNode* b = nullptr, QuadNode* c = nullptr, QuadNode* d = nullptr) : element(element), a(a), b(b), c(c), d(d) { };
+	~QuadNode() { if (a) delete a; if (b) delete b; if (c) delete c; if (d) delete d; };
+
+	void setElement(const T& newElement) { element = newElement; }
+	void setA(QuadNode<T>* node) { a = node; }
+	void setB(QuadNode<T>* node) { b = node; }
+	void setC(QuadNode<T>* node) { c = node; }
+	void setD(QuadNode<T>* node) { d = node; }
+
+	T& getElement() { return element; }
+	QuadNode<T>* getA() { return a; }
+	QuadNode<T>* getB() { return b; }
+	QuadNode<T>* getC() { return c; }
+	QuadNode<T>* getD() { return d; }
+
+	bool isLeaf() { return !(a || b || c || d); }	//!< Is leaf if all subnodes are null; otherwise, it's not. Full binary tree: Every node either has zero children [leaf node] or two children. All leaf nodes have an element associated. There are no nodes with only one child. Each internal node has exactly two children.
+	//bool isLeaf_BST() { return (a); }	//!< For simple Binary Trees (BT).
+
+private:
+	// Ways to deal with keys and comparing records: (1) Key / value pairs (our choice), (2) Especial comparison method, (3) Passing in a comparator function.
+	T element;
+	QuadNode<T>* a, * b, * c, * d;
+};
+
+
+template<typename T, typename V, typename X>
+void preorder(QuadNode<T>* root, V* visitor, X* external)
+{
+	if (root == nullptr) return;
+	visitor(root, external);
+	preorder(root->getA());
+	preorder(root->getB());
+	preorder(root->getC());
+	preorder(root->getD());
+}
+
+template<typename T, typename V, typename X>
+void postorder(QuadNode<T>* root, V* visitor, X* external)
+{
+	if (root == nullptr) return;
+	postorder(root->getA());
+	postorder(root->getB());
+	postorder(root->getC());
+	postorder(root->getD());
+	visitor(root, external);
+}
+
+template<typename T, typename V, typename X>
+void inorder(QuadNode<T>* root, V* visitor, X* external)
+{
+	if (root == nullptr) return;
+	inorder(root->getA());
+	visitor(root, external);
+	inorder(root->getB());
+	inorder(root->getC());
+	inorder(root->getD());
+}
+
+template<typename T, typename X>
+void getAllElements(QuadNode<T>* node, X* external)
+{
+	external->push_back(node);
+}
+
+template<typename T, typename X>
+void getLeaves(QuadNode<T>* node, X* external)
+{
+	if (node->isLeaf())
+		external->push_back(node);
+}
+
+template<typename T, typename X>
+void getDepthElements(QuadNode<T>* node, X* external)
+{
+	//if(node->getElement().depth == std::get<1>(*external))
+	//	std::get<0>(*external).push_back(node);
+}
+
+/// Data structure that stores pointers. When one of them is no longer used elsewhere, it's deleted from storage. The custom deleter used requires the element's shared pointer to know its key and the PointersManager.
+template<typename K, typename E>
+class PointersManager
+{
+	std::unordered_map<K, std::weak_ptr<E>> elements;
+
+public:
+	PointersManager() { };
+	~PointersManager() { };
+
+	template<typename... Args>
+	std::shared_ptr<E> emplace(K key, Args&&... args)   // Variadic template constructor. Arguments are forwarded to T's constructor.
+	{
+		E* newPtr = new E(std::forward<Args>(args)...);
+		newPtr->setValues(this, key);
+		std::shared_ptr<E> newElement(newPtr, PointersManager::customDeleter);
+		//std::shared_ptr<E> newElement = std::make_shared<E>(std::forward<Args>(args)..., customDeleter);
+		elements[key] = newElement;
+		return newElement;
+	}
+
+	std::shared_ptr<E> get(K key) { return elements[key].lock(); }
+
+	bool contains(K key) { return elements.find(key) != elements.end(); }
+
+	size_t size() { return elements.size(); }
+
+	static void customDeleter(E* elemPtr)
+	{
+		elemPtr->pointersManager->elements.erase(elemPtr->id);
+		delete elemPtr;
+	}
+};
+
+/// Shared pointer that allows to pass a function (that takes ptr as parameter) that will be called each time an instance is destroyed. Remember that std::shared_ptr has no virtual destructor, so deleting an object of a derived class through a pointer to the base class will only call the base class's destructor.
+/// Container for shared pointers where the elements whose counter becomes 1 (only the instance stored here remains) is deleted from storage.
+template<typename K, typename E>
+class InterfaceForPointersManagerElements
+{
+public:
+	~InterfaceForPointersManagerElements() { }
+
+	void setValues(PointersManager<K, E>* pointersManager, K& key)
+	{
+		this->pointersManager = pointersManager;
+		this->key = key;
+	}
+
+	PointersManager<K, E>* pointersManager;
+	K key;
+};
 
 #endif

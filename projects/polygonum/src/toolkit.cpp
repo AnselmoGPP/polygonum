@@ -50,6 +50,23 @@ float powLinInterp(float base, float exponent)
 	return down + diff * (up - down);
 }
 
+int ipow(int base, unsigned exp)
+{
+	if (!exp) return 1;
+	int result = base;
+	while (1 < exp--) result *= base;
+	return result;
+}
+
+int opposite01(int val) { return (val + 1) % 2; }
+
+uint64_t appendInt(uint64_t first, uint64_t second)
+{
+	return std::pow(10, (int)std::log10(second) + 1) * first + second;
+}
+
+float getSphereArea(float radius) { return 4 * 3.141592653589793238462 * radius * radius; }
+
 // Model Matrix -----------------------------------------------------------------
 
 glm::mat4 getModelMatrix() { return glm::mat4(1.0f); }
@@ -690,5 +707,3 @@ glm::vec3 safeMod(const glm::vec3& a, float b)
 		a.z - ((int)a.z / (int)b) * (int)b
 	);
 }
-
-void printMessage(const char* message) { std::cout << message << std::endl; }

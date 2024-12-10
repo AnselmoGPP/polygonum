@@ -625,7 +625,7 @@ void Renderer::cleanup()
 	//for (size_t i = 0; i < models.size(); i++) 
 	//	models[i].clear();
 	models.clear();
-	textures.clear();
+	//textures.clear();
 	shaders.clear();
 
 	if(globalUBO_vs.totalBytes)  globalUBO_vs.destroyUBO();

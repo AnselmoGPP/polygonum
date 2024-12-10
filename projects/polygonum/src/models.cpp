@@ -65,8 +65,8 @@ ModelData::~ModelData()
 	for (unsigned i = 0; i < shaders.size(); i++)
 		shaders[i]->counter--;
 
-	for (unsigned i = 0; i < textures.size(); i++)
-		textures[i]->counter--;
+	//for (unsigned i = 0; i < textureIds.size(); i++)
+	//	textureIds[i]->counter--;
 }
 
 ModelData::ModelData(ModelData&& other) noexcept

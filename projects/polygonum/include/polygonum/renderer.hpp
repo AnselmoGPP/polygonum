@@ -7,6 +7,7 @@
 //#include <cstdint>			// UINT32_MAX
 //#include <algorithm>			// std::min / std::max
 
+#include "polygonum/toolkit.hpp"
 #include "polygonum/models.hpp"
 #include "polygonum/timer.hpp"
 
@@ -111,7 +112,7 @@ class Renderer
 	std::unordered_map<key64, ModelData> models;   //!< All models (constructed or not). std::unordered_map uses a hash table. Complexity for lookup, insertion, and deletion: O(1) (average) - O(n) (worst-case)
 	vec3<key64> keys;   //!< All keys of all models, distributed per renderpass ad subpass.
 
-	std::list<Texture>			textures;					//!< Set of textures
+	PointersManager<std::string, Texture> textures;			//!< Set of textures
 	std::list<Shader>			shaders;					//!< Set of shaders
 
 	LoadingWorker				worker;

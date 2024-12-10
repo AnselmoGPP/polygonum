@@ -49,9 +49,7 @@ void ResourcesLoader::loadResources(ModelData& model, Renderer& rend)
 		// Load textures
 		for (unsigned i = 0; i < textures.size(); i++)
 		{
-			texIter iter = textures[i]->loadTexture(rend.textures, &rend.e);
-			iter->counter++;
-			model.textures.push_back(iter);
+			model.textures.push_back(textures[i]->loadTexture(rend.textures, &rend.e));
 		}
 	}
 }
@@ -700,7 +698,7 @@ Texture::~Texture()
 TextureLoader::TextureLoader(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode)
 	: id(id), imageFormat(imageFormat), addressMode(addressMode) { };
 
-std::list<Texture>::iterator TextureLoader::loadTexture(std::list<Texture>& loadedTextures, VulkanEnvironment* e)
+std::shared_ptr<Texture> TextureLoader::loadTexture(PointersManager<std::string, Texture>& loadedTextures, VulkanEnvironment* e)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << ": " << this->id << std::endl;
@@ -709,8 +707,8 @@ std::list<Texture>::iterator TextureLoader::loadTexture(std::list<Texture>& load
 	this->e = e;
 	
 	// Look for it in loadedShaders
-	for (auto i = loadedTextures.begin(); i != loadedTextures.end(); i++)
-		if (i->id == id) return i;
+	if (loadedTextures.contains(id))
+		return loadedTextures.get(id);
 	
 	// Load an image
 	unsigned char* pixels;
@@ -724,8 +722,7 @@ std::list<Texture>::iterator TextureLoader::loadTexture(std::list<Texture>& load
 	VkSampler textureSampler                 = createTextureSampler(mipLevels);
 	
 	// Create and save texture object
-	loadedTextures.emplace(loadedTextures.end(), *e, id, std::get<VkImage>(image), std::get<VkDeviceMemory>(image), textureImageView, textureSampler);		//loadedTextures.push_back(texture);
-	return (--loadedTextures.end());
+	return loadedTextures.emplace(id, *e, id, std::get<VkImage>(image), std::get<VkDeviceMemory>(image), textureImageView, textureSampler);		//loadedTextures.push_back(texture);
 }
 
 std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned char* pixels, int32_t texWidth, int32_t texHeight, uint32_t& mipLevels)

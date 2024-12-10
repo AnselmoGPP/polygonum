@@ -252,15 +252,24 @@ Main contents
 
 ### Resources
 
-`VertexData` is a container for vertexes and indices data (`VkBuffer`, `VkDeviceMemory`) of a model. `VertexesLoader` is an ADT used for loading vertices (`loadVertexes()`) from any source. Subclasses define how data is taken from source (`VL_fromFile`, `VL_fromBuffer`). Additionally, modifications at loading-time can be applied to the vertexes (`VerticesModifier`). `ModelData` keeps the vertexes and indices it uses.
+To load a resource (vertexes, shader, texture): Get it from the source (file, buffer...) and copy it to Vulkan memory (`VkBuffer`, `VkDeviceMemory`...).
 
-`Shader` is a container for shader data (`VkShaderModule`). `ShaderLoader` is an ADT used for loading shaders (`loadShader()`) from any source. Subclasses define how data is taken from source (`SL_fromFile`, `SL_fromBuffer`). Additionally, modifications at loading-time can be applied to the shaders (`ShaderModifier`). `Renderer` keeps all the shaders, and `ModelData` objects use the ones they want.
+`VertexData` is a container for vertexes and indices data (`VkBuffer`, `VkDeviceMemory`) of a model.
+- `VertexesLoader` is an ADT used for loading vertices (`loadVertexes()`) from any source. Subclasses define how data is taken from source (`VL_fromFile`, `VL_fromBuffer`).
+- Modifications at loading-time can be applied to the vertexes (`VerticesModifier`). `ModelData` keeps the vertexes and indices it uses.
 
-`Texture` is a container for texture data (`VkImage`, `VkDeviceMemory`, `VkImageView`, `VkSampler`). `TextureLoader` is an ADT used for loading a texture (`loadTexture()`) from any source. Subclasses define how data is taken from source (`TL_fromFile`, `TL_fromBuffer`). `Renderer` keeps all the textures, and `ModelData` objects use the ones they want.
+`Shader` is a container for shader data (`VkShaderModule`).
+- `ShaderLoader` is an ADT used for loading shaders (`loadShader()`) from any source. Subclasses define how data is taken from source (`SL_fromFile`, `SL_fromBuffer`) by defining `getRawData()`.
+- `loadShader()` looks for a shader in `Renderer::shaders`: if found, returns its key; otherwise, loads it, pushes it to `shaders`, and returns the key.
+- `Renderer` keeps all the shaders, and `ModelData` objects use the ones they want.
+- Modifications at loading-time can be applied to the shaders (`ShaderModifier`).
+
+`Texture` is a container for texture data (`VkImage`, `VkDeviceMemory`, `VkImageView`, `VkSampler`).
+- `TextureLoader` is an ADT used for loading a texture (`loadTexture()`) from any source. Subclasses define how data is taken from source (`TL_fromFile`, `TL_fromBuffer`) by defining `getRawData()`.
+- `loadTexture()` looks for a texture in `Renderer::texture`: if found, returns its key; otherwise, loads it, pushes it to `shaders`, and returns the key.
+- `Renderer` keeps all the textures, and `ModelData` objects use the ones they want.
 
 `ResourcesLoader` is used for loading a set of different resources at the same time (vertices + indices, shaders, textures). A `ModelData` object contains one `ResourcesLoader` instance as a pointer. During ModelData object construction, we pass loaders to it (one `VertexesLoader` and some `ShaderLoader` and `TextureLoader`), and they will be used used later (at `Worker::loadingThread` > `ModelData::fullConstruction` > `ResourcesLoader::loadResources`) to load and get the actual resources, after which the `ResourcesLoader` pointer is deleted. `Renderer` contains all the shaders and textures. `loadResources` gets all vertexes and indices (`VertexesLoader::loadVertexes`) and saves them in `ModelData`, and also gets all shaders (`ShadersLoader::loadShader`) and textures (`TextureLoader::loadTexture`) from `Renderer`, or loads them (from file, buffer...) if it doesn't have them, and saves a reference to them in `ModelData`.
-
-What is to load a resource? How are resources loaded? <<<
 
 - `ResourcesLoader`: Encapsulates data required for loading resources (vertices + indices, shaders, textures) and loading methods.
   - `VulkanEnvironment`

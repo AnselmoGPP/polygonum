@@ -3,6 +3,7 @@
 
 #include "polygonum/environment.hpp"
 #include "polygonum/vertex.hpp"
+#include "polygonum/toolkit.hpp"
 
 
 /*
@@ -316,7 +317,7 @@ public:
 // TEXTURE --------------------------------------------------------
 
 /// Container for a texture.
-class Texture
+class Texture : public InterfaceForPointersManagerElements<std::string, Texture>
 {
 public:
 	Texture(VulkanEnvironment& e, const std::string& id, VkImage textureImage, VkDeviceMemory textureImageMemory, VkImageView textureImageView, VkSampler textureSampler);
@@ -333,7 +334,7 @@ public:
 };
 
 /// ADT for loading a texture from any source. Subclasses will define how data is taken from source (getRawData): from file, from buffer, etc.
-class TextureLoader   /// Texture Loader Module
+class TextureLoader
 {
 protected:
 	TextureLoader(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode);
@@ -354,7 +355,7 @@ protected:
 
 public:
 	virtual ~TextureLoader() { };
-	std::list<Texture>::iterator loadTexture(std::list<Texture>& loadedTextures, VulkanEnvironment* e);	//!< Get an iterator to the Texture in loadedTextures list. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
+	std::shared_ptr<Texture> loadTexture(PointersManager<std::string, Texture>& loadedTextures, VulkanEnvironment* e);	//!< Get an iterator to the Texture in loadedTextures list. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
 	virtual TextureLoader* clone() = 0;
 };
 
