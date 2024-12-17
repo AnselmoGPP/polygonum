@@ -327,18 +327,9 @@ Global UBOs (`globalUBO_vs`, `globalUBO_fs`) are defined at `Renderer` construct
 
 **`UBO`**: Container for a composite UBO (UBO containing one or more sub-UBOs, which are useful for instance rendering). It maximum size and number of subUBOs is fixed at construction time. It holds the UBO bytes, `VkBuffer`, and `VkDeviceMemory`. Get a pointer to the beginning (`getDescriptorPtr()`) and fill it with data. Set the number of rendered instances with `setNumActiveDescriptors()`.
 
-
-
-
-Model matrix for Normals: Normals are passed to fragment shader in world coordinates, so they have to be multiplied by the model matrix (MM) first (this MM should not include the translation part, so we just take the upper-left 3x3 part). However, non-uniform scaling can distort normals, so we have to create a specific MM especially tailored for normal vectors: mat3(transpose(inverse(model))) * aNormal.
-
-
-
-
-
 ### TimerSet
 
-It manages time. Methods:
+It manages time. `TimerSet` methods:
 
 - `startTimer`: Start chronometer.
 - `updateTime`: Update time parameters (deltaTime and totalDeltaTime).
@@ -348,38 +339,16 @@ It manages time. Methods:
 - `getTotalDeltaTime`: Get updated totalDeltaTime.
 - `getDate`: Get string with current date and time (example: Mon Jan 31 02:28:35 2022).
 
+Others:
 
-
+- `waitForFPS(Timer& timer, int maxFPS)`: Given a `Timer`, make this thread sleep enough so it fits with `maxFPS`.
+- `sleep(int milliseconds)`: Sleep for X milliseconds.
 
 
 
 
 
 PENDING: Amplify RenderPipeline
-
-
-
-
-
-
-
-- Chrono methods
-  - `startTimer`: Start time counting for the chronometer
-  - `computeDeltaTime`: Get time (seconds) passed since last time you called this method.
-  - `getDeltaTime`: <<< Returns time (seconds) increment between frames (deltaTime)
-  - `getTime`: <<< Get time (seconds) since startTime when computeDeltaTime() was called
-
-- FPS control
-  - `getFPS`: Get FPS (updated in computeDeltaTime())
-  - `setMaxFPS`: Modify the current maximum FPS. Set it to 0 to deactivate FPS control.
-  - `getMaxPossibleFPS`: Get the maximum possible FPS you can get (if we haven't set max FPS, maxPossibleFPS == FPS)
-
-    // Frame counting
-    size_t      getFrameCounter();      ///< Get number of calls made to computeDeltaTime()
-
-    // Bonus methods (less used)
-    long double getTimeNow();           ///< Returns time (seconds) since startTime, at the moment of calling GetTimeNow()
-    std::string getDate();              ///< Get a string with date and time (example: Mon Jan 31 02:28:35 2022)
 
 
 

@@ -5,8 +5,9 @@
 #include "stb_image.h"
 
 #include "polygonum/renderer.hpp"
-#include "polygonum/importer.hpp"
 #include "polygonum/models.hpp"
+#include "polygonum/importer.hpp"
+#include "polygonum/physics.hpp"
 
 
 const VertexType vt_3   ({ 3 * sizeof(float) }, { VK_FORMAT_R32G32B32_SFLOAT });
@@ -62,6 +63,7 @@ void VertexesLoader::loadVertexes(VertexData& result, ResourcesLoader* resources
 	std::vector<uint16_t> rawIndices;
 	
 	getRawData(rawVertices, rawIndices, *resources);		// Get raw data from source
+	applyModifiers(rawVertices);
 	createBuffers(result, rawVertices, rawIndices, e);		// Upload data to Vulkan
 }
 
@@ -69,6 +71,12 @@ void VertexesLoader::createBuffers(VertexData& result, const VertexSet& rawVerti
 {
 	createVertexBuffer(rawVertices, result, e);
 	createIndexBuffer(rawIndices, result, e);
+}
+
+void VertexesLoader::applyModifiers(VertexSet& vertexes)
+{
+	for (VerticesModifier* modifier : modifiers)
+		modifier->modify(vertexes);
 }
 
 void VertexesLoader::createVertexBuffer(const VertexSet& rawVertices, VertexData& result, VulkanEnvironment* e)
@@ -353,7 +361,7 @@ void VL_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*> &mesh
 }
 
 
-VerticesModifier::VerticesModifier(glm::vec3 params)
+VerticesModifier::VerticesModifier(glm::vec4 params)
 	: params(params) { }
 
 VerticesModifier::~VerticesModifier() { }
@@ -361,11 +369,31 @@ VerticesModifier::~VerticesModifier() { }
 //void VerticesModifier::modify(VertexSet& rawVertices) { }
 
 VerticesModifier_Scale::VerticesModifier_Scale(glm::vec3 scale)
-	: VerticesModifier(scale) { }
+	: VerticesModifier(glm::vec4(scale, 0)) { }
 
 void VerticesModifier_Scale::modify(VertexSet& rawVertices)
 {
-	
+	glm::vec3 scale = glm::vec3(params);
+
+	if (scale.x == scale.y && scale.y == scale.z)   // Uniform scaling
+	{
+		for (size_t i = 0; i < rawVertices.size(); ++i)
+			*(glm::vec3*)rawVertices.getElement(i) *= scale;
+	}
+	else   // Non-uniform scaling
+	{
+		glm::mat3 scaleMatrix = glm::mat3(params.x, 0, 0,   0, params.y, 0,   0, 0, params.z);
+		glm::mat3 normalMatrix = glm::transpose(glm::inverse(scaleMatrix));   // Inverse transpose of the scaling matrix for normals
+		glm::vec3* pos;
+
+		for (size_t i = 0; i < rawVertices.size(); ++i)   // Scale points and adjust normals
+		{
+			pos = (glm::vec3*)rawVertices.getElement(i);
+			*pos = scaleMatrix * (*pos);
+			pos++;
+			*pos = glm::normalize(normalMatrix * (*pos));
+		}
+	}
 }
 
 VerticesModifier_Scale* VerticesModifier_Scale::factory(glm::vec3 scale)
@@ -373,26 +401,36 @@ VerticesModifier_Scale* VerticesModifier_Scale::factory(glm::vec3 scale)
 	return new VerticesModifier_Scale(scale);
 }
 
-VerticesModifier_Rotation::VerticesModifier_Rotation(glm::vec3 rotation)
-	: VerticesModifier(rotation) { }
+VerticesModifier_Rotation::VerticesModifier_Rotation(glm::vec4 rotationQuaternion)
+	: VerticesModifier(rotationQuaternion) { }
 
 void VerticesModifier_Rotation::modify(VertexSet& rawVertices)
 {
+	glm::vec3* pos;
 
+	for (size_t i = 0; i < rawVertices.size(); ++i)
+	{
+		pos = (glm::vec3*)rawVertices.getElement(i);
+		*pos = rotatePoint(params, *(glm::vec3*)rawVertices.getElement(i));
+		pos++;
+		*pos = rotatePoint(params, *(glm::vec3*)rawVertices.getElement(i));
+	}
 }
 
-VerticesModifier_Rotation* VerticesModifier_Rotation::factory(glm::vec3 rotation)
+VerticesModifier_Rotation* VerticesModifier_Rotation::factory(glm::vec4 rotation)
 {
 	return new VerticesModifier_Rotation(rotation);
 }
 
 VerticesModifier_Translation::VerticesModifier_Translation(glm::vec3 position)
-	: VerticesModifier(position) { }
+	: VerticesModifier(glm::vec4(position, 0.f)) { }
 
 void VerticesModifier_Translation::modify(VertexSet& rawVertices)
 {
-	for (size_t i = 0; i < rawVertices.size(); i++)
-		*(glm::vec3*)rawVertices.getElement(i) += params;
+	glm::vec3 translation = glm::vec3(params);
+	
+	for (size_t i = 0; i < rawVertices.size(); ++i)
+		*(glm::vec3*)rawVertices.getElement(i) += translation;
 }
 
 VerticesModifier_Translation* VerticesModifier_Translation::factory(glm::vec3 position)
@@ -415,15 +453,161 @@ Shader::~Shader()
 	vkDestroyShaderModule(e.c.device, shaderModule, nullptr); 
 }
 
-ShaderLoader::ShaderLoader(const std::string& id, const std::initializer_list<ShaderModifier>& modifications)
+SMod::SMod(unsigned modificationType, std::initializer_list<std::string> params)
+	: modificationType(modificationType), params(params) { }
+
+bool SMod::applyModification(std::string& shader)
+{
+	bool result = false;
+	
+	switch (modificationType)
+	{
+	case 1:   // - sm_albedo: (FS) Sampler used
+		result = findTwoAndReplaceBetween(shader, "vec4 albedo", ";",
+			"vec4 albedo = texture(texSampler[" + params[0] + "], inUVs)");
+		break;
+
+	case 2:   // sm_specular: (FS) Sampler used
+		result = findTwoAndReplaceBetween(shader, "vec3 specular", ";",
+			"vec3 specular = texture(texSampler[" + params[0] + "], inUVs).xyz");
+		break;
+
+	case 3:   // sm_roughness: (FS) Sampler used
+		result = findTwoAndReplaceBetween(shader, "float roughness", ";",
+			"float roughness = texture(texSampler[" + params[0] + "], inUVs).x");
+		break;
+
+	case 4:   // sm_normal: (VS, FS) Sampler used   <<< doesn't work yet
+		result = findTwoAndReplaceBetween(shader, "vec3 normal", ";",
+			"vec3 normal = planarNormal(texSampler[" + params[0] + "], inUVs, inTB, inNormal, 1)");
+		for (int i = 0; i < 3; i++)
+			if (!findStrAndErase(shader, "//normal: ")) break;
+		findStrAndReplace(shader, "layout(location = 4) flat", "layout(location = 5) flat");
+		break;
+
+	case 5:   // - sm_discardAlpha: (FS) Discard fragments with low alpha
+		result = findStrAndErase(shader, "//discardAlpha: ");
+		break;
+
+	case 6:   // sm_backfaceNormals: (VS) Recalculate normal based on backfacing
+		result = findStrAndErase(shader, "//backfaceNormals: ");
+		break;
+
+	case 7:   // sm_sunfaceNormals: (VS) Recalculate normal based on light facing
+		result = findStrAndErase(shader, "//sunfaceNormals: ");
+		break;
+
+	case 8:   // - sm_verticalNormals: (VS) Make all normals (before MVP transformation) vertical (vec3(0,0,1))
+		result = findStrAndErase(shader, "outNormal = mat3(ubo.normalMatrix) * inNormal;");
+		findStrAndErase(shader, "//verticalNormals: ");
+		break;
+
+	case 9:   // - sm_waving: (VS) Make mesh wave (wind)
+		result = findStrAndErase(shader, "//waving: ");
+		findStrAndReplace(shader, "<speed>", params[0]);
+		findStrAndReplace(shader, "<amplitude>", params[1]);
+		findStrAndReplace(shader, "<minHeight>", params[2]);
+		findStrAndReplace(shader, "<minHeight>", params[2]);
+		break;
+
+	case 10:   // - sm_distDithering: (FS) Apply dithering to distant fragments
+		result = findStrAndErase(shader, "//distDithering: ");
+		findStrAndReplace(shader, "<near>", params[0]);
+		findStrAndReplace(shader, "<far>", params[1]);
+		break;
+
+	case 11:   // - sm_earlyDepthTest: (FS) Apply Early Depth/Fragment Test
+		result = findStrAndErase(shader, "//earlyDepthTest: ");
+		break;
+
+	case 12:   // - sm_dryColor: (FS) Apply dry color filter to albedo depending on fragment height
+		result = findStrAndErase(shader, "//dryColor: ");
+		findStrAndReplace(shader, "<dryColor>", params[0]);
+		findStrAndReplace(shader, "<minHeight>", params[1]);
+		findStrAndReplace(shader, "<maxHeight>", params[2]);
+		break;
+
+	case 13:   // sm_changeHeader: Change header (#include header_path)
+		result = findStrAndReplaceLine(shader, "#include", "#include \"" + params[0] + '\"');
+		break;
+
+	case 0:   // sm_none
+	default:
+		break;
+	}
+	
+	return result;
+}
+
+SMod SMod::none() { return SMod(0); }
+SMod SMod::albedo(std::string index) { return SMod(1, { index }); }
+SMod SMod::specular(std::string index) { return SMod(2, { index }); }
+SMod SMod::roughness(std::string index) { return SMod(3, { index }); }
+SMod SMod::normal() { return SMod(4); }
+SMod SMod::discardAlpha() { return SMod(5); }
+SMod SMod::backfaceNormals() { return SMod(6); }
+SMod SMod::sunfaceNormals() { return SMod(7); }
+SMod SMod::verticalNormals() { return SMod(8); }
+SMod SMod::wave(std::string speed, std::string amplitude, std::string minHeight) { return SMod(9, {speed, amplitude, minHeight}); }
+SMod SMod::distDithering(std::string near, std::string far) { return SMod(10, {near, far}); }
+SMod SMod::earlyDepthTest() { return SMod(11); }
+SMod SMod::dryColor(std::string color, std::string minHeight, std::string maxHeight) { return SMod(12, {color, minHeight, maxHeight}); }
+SMod SMod::changeHeader(std::string path) { return SMod(13, { path }); }
+
+unsigned SMod::getModType() { return modificationType; }
+
+std::vector<std::string> SMod::getParams() { return params; }
+
+bool SMod::findTwoAndReplaceBetween(std::string& text, const std::string& str1, const std::string& str2, const std::string& replacement)
+{
+	size_t pos1 = text.find(str1, 0);
+	size_t pos2 = text.find(str2, pos1);
+	if (pos1 == text.npos || pos2 == text.npos) return false;
+
+	text.replace(pos1, pos2 - pos1, (replacement));
+	return true;
+}
+
+bool SMod::findStrAndErase(std::string& text, const std::string& str)
+{
+	size_t pos = text.find(str, 0);
+	if (pos == text.npos) return false;
+
+	text.erase(pos, str.size());
+	return true;
+}
+
+bool SMod::findStrAndReplace(std::string& text, const std::string& str, const std::string& replacement)
+{
+	size_t pos = text.find(str, 0);
+	if (pos == text.npos) return false;
+
+	text.replace(text.begin() + pos, text.begin() + pos + str.size(), replacement);
+	return true;
+}
+
+bool SMod::findStrAndReplaceLine(std::string& text, const std::string& str, const std::string& replacement)
+{
+	size_t pos = text.find(str, 0);
+	if (pos == text.npos) return false;
+
+	size_t eol = text.find('\n', pos) - 1;
+	if (eol == text.npos) return false;
+	eol++;	// <<< why is this needed? Otherwise, something in the text is messed up (#line)
+
+	text.replace(text.begin() + pos, text.begin() + eol, replacement);
+	return true;
+}
+
+ShaderLoader::ShaderLoader(const std::string& id, const std::initializer_list<SMod>& modifications)
 	: id(id), mods(modifications)
 {
 	if (mods.size())	// if there're modifiers, id has to change. Otherwise, it's possible that 2 different shaders have same name when the original shader is the same.
-		for (ShaderModifier mod : mods)
+		for (SMod mod : mods)
 		{
-			this->id += "_" + std::to_string((int)mod.flag);
+			this->id += "_" + std::to_string((int)mod.getModType());
 			
-			for(const std::string& str : mod.params)
+			for(const std::string& str : mod.getParams())
 				this->id += "_" + str;
 		}
 }
@@ -437,7 +621,7 @@ std::shared_ptr<Shader> ShaderLoader::loadShader(PointersManager<std::string, Sh
 	// Look for it in loadedShaders
 	if (loadedShaders.contains(id))
 		return loadedShaders.get(id);
-	
+
 	// Load shader (if not loaded yet)
 	std::string glslData;
 	getRawData(glslData);
@@ -482,167 +666,30 @@ std::shared_ptr<Shader> ShaderLoader::loadShader(PointersManager<std::string, Sh
 
 void ShaderLoader::applyModifications(std::string& shader)
 {
-	int count = 0;
-	bool found;
-	
-	for (const ShaderModifier& mod : mods)
-	{
-		switch (mod.flag)
-		{
-		case sm_albedo:					// (FS) Sampler used
-			found = findTwoAndReplaceBetween(shader, "vec4 albedo", ";",
-				"vec4 albedo = texture(texSampler[" + std::to_string(count) + "], inUVs)");
-			if (found) count++;
-			break;
-
-		case sm_specular:					// (FS) Sampler used
-			found = findTwoAndReplaceBetween(shader, "vec3 specular", ";",
-				"vec3 specular = texture(texSampler[" + std::to_string(count) + "], inUVs).xyz");
-			if (found) count++;
-			break;
-
-		case sm_roughness:					// (FS) Sampler used
-			found = findTwoAndReplaceBetween(shader, "float roughness", ";",
-				"float roughness = texture(texSampler[" + std::to_string(count) + "], inUVs).x");
-			if (found) count++;
-			break;
-
-		case sm_normal:					// (VS, FS) Sampler used <<< doesn't work yet
-			found = findTwoAndReplaceBetween(shader, "vec3 normal", ";",
-				"vec3 normal = planarNormal(texSampler[" + std::to_string(count) + "], inUVs, inTB, inNormal, 1)");
-			if (found) count++;
-			for (int i = 0; i < 3; i++) if (!findStrAndErase(shader, "//normal: ")) break;
-			findStrAndReplace(shader, "layout(location = 4) flat", "layout(location = 5) flat");
-			std::cout << shader << std::endl;
-			std::cout << "---------------" << std::endl;
-			break;
-			
-		case sm_discardAlpha:				// (FS) Discard fragments with low alpha
-			findStrAndErase(shader, "//discardAlpha: ");
-			break;
-
-		case sm_backfaceNormals:			// (VS) Recalculate normal based on backfacing
-			findStrAndErase(shader, "//backfaceNormals: ");
-			break;
-
-		case sm_sunfaceNormals:				// (VS) Recalculate normal based on light facing
-			findStrAndErase(shader, "//sunfaceNormals: ");
-			break;
-
-		case sm_verticalNormals:			// (VS) Make all normals (before MVP transformation) vertical (vec3(0,0,1))
-			findStrAndErase(shader, "outNormal = mat3(ubo.normalMatrix) * inNormal;");
-			findStrAndErase(shader, "//verticalNormals: ");
-			break;
-
-		case sm_waving_weak:				// (VS) Make mesh wave (wind)
-			findStrAndErase(shader, "//waving: ");
-			findStrAndReplace(shader, "<speed>", "2");
-			findStrAndReplace(shader, "<amplitude>", "0.01");
-			break;
-
-		case sm_waving_strong:				// (VS) Make mesh wave (wind)
-			findStrAndErase(shader, "//waving: ");
-			findStrAndReplace(shader, "<speed>", "3");
-			findStrAndReplace(shader, "<amplitude>", "0.02");
-			break;
-
-		case sm_displace:					// (VS) Move vertex aside a bit (0.2 meter towards x-axis)
-			findStrAndErase(shader, "//displace: ");
-			break;
-
-		case sm_distDithering_near:			// (FS) Apply dithering to distant fragments
-			findStrAndErase(shader, "//distDithering: ");
-			findStrAndReplace(shader, "near, far", "40, 50");
-			break;
-
-		case sm_distDithering_far:			// (FS) Apply dithering to distant fragments
-			findStrAndErase(shader, "//distDithering: ");
-			findStrAndReplace(shader, "near, far", "100, 130");
-			break;
-
-		case sm_earlyDepthTest:				// (FS) Apply Early Depth/Fragment Test
-			findStrAndErase(shader, "//earlyDepthTest: ");
-			break;
-
-		case sm_dryColor:					// (FS) Apply dry color filter to albedo depending on fragment height
-			findStrAndErase(shader, "//dryColor: ");
-			break;
-
-		case sm_changeHeader:				// Change header (#include header_path)
-			findStrAndReplaceLine(shader, "#include", "#include \"" + mod.params[0] + '\"');
-			break;
-
-		case sm_none:
-		default:
-			break;
-		}
-	}
-
-	if (count > 0)
-		findStrAndReplace(shader, "texSampler[1]", "texSampler[" + std::to_string((int)count) + "]");
+	for (auto& mod : mods)
+		mod.applyModification(shader);
 }
 
-bool ShaderLoader::findTwoAndReplaceBetween(std::string& text, const std::string& str1, const std::string& str2, const std::string& replacement)
-{
-	size_t pos1  = text.find(str1, 0);
-	size_t pos2 = text.find(str2, pos1);
-	if (pos1 == text.npos || pos2 == text.npos) return false;
-
-	text.replace(pos1, pos2 - pos1, (replacement));
-	return true;
-}
-
-bool ShaderLoader::findStrAndErase(std::string& text, const std::string& str)
-{
-	size_t pos = text.find(str, 0);
-	if (pos == text.npos) return false;
-
-	text.erase(pos, str.size());
-	return true;
-}
-
-bool ShaderLoader::findStrAndReplace(std::string& text, const std::string& str, const std::string& replacement)
-{
-	size_t pos = text.find(str, 0);
-	if (pos == text.npos) return false;
-
-	text.replace(text.begin() + pos, text.begin() + pos + str.size(), replacement);
-	return true;
-}
-
-bool ShaderLoader::findStrAndReplaceLine(std::string& text, const std::string& str, const std::string& replacement)
-{
-	size_t pos = text.find(str, 0);
-	if (pos == text.npos) return false;
-
-	size_t eol = text.find('\n', pos) - 1;
-	if (eol == text.npos) return false;
-	eol++;	// <<< why is this needed? Otherwise, something in the text is messed up (#line)
-
-	text.replace(text.begin() + pos, text.begin() + eol, replacement);
-	return true;
-}
-
-SL_fromBuffer::SL_fromBuffer(const std::string& id, const std::string& glslText, const std::initializer_list<ShaderModifier>& modifications)
+SL_fromBuffer::SL_fromBuffer(const std::string& id, const std::string& glslText, const std::initializer_list<SMod>& modifications)
 	: ShaderLoader(id, modifications), data(glslText) { }
 
 ShaderLoader* SL_fromBuffer::clone() { return new SL_fromBuffer(*this); }
 
 void SL_fromBuffer::getRawData(std::string& glslData) { glslData = data; }
 
-SL_fromBuffer* SL_fromBuffer::factory(std::string id, const std::string& glslText, std::initializer_list<ShaderModifier> modifications)
+SL_fromBuffer* SL_fromBuffer::factory(std::string id, const std::string& glslText, std::initializer_list<SMod> modifications)
 {
 	return new SL_fromBuffer(id, glslText, modifications);
 }
 
-SL_fromFile::SL_fromFile(const std::string& filePath, std::initializer_list<ShaderModifier>& modifications)
+SL_fromFile::SL_fromFile(const std::string& filePath, std::initializer_list<SMod>& modifications)
 	: ShaderLoader(filePath, modifications), filePath(filePath) { };
 
 ShaderLoader* SL_fromFile::clone() { return new SL_fromFile(*this); }
 
 void SL_fromFile::getRawData(std::string& glslData) { readFile(filePath.c_str(), glslData); }
 
-SL_fromFile* SL_fromFile::factory(std::string filePath, std::initializer_list<ShaderModifier> modifications)
+SL_fromFile* SL_fromFile::factory(std::string filePath, std::initializer_list<SMod> modifications)
 {
 	return new SL_fromFile(filePath, modifications);
 }
@@ -702,7 +749,7 @@ std::shared_ptr<Texture> TextureLoader::loadTexture(PointersManager<std::string,
 	// Look for it in loadedShaders
 	if (loadedTextures.contains(id))
 		return loadedTextures.get(id);
-	
+
 	// Load an image
 	unsigned char* pixels;
 	int32_t texWidth, texHeight;

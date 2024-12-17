@@ -35,12 +35,12 @@ class VertexesLoader;
 	class VL_fromBuffer;
 
 class Shader;
+class SMod;
 class ShaderLoader;
 class SLModule;
 	class SLM_fromFile;
 	class SLM_fromBuffer;
 enum smFlag;
-class ShaderModifier;
 class ShaderIncluder;
 
 class Texture;
@@ -89,14 +89,14 @@ struct VertexData
 	VkDeviceMemory				 indexBufferMemory;		//!< Opaque handle to a device memory object (here, memory for the index buffer).
 };
 
-/// Apply modifications to vertices right after loading them.
+/// Apply modifications to vertices right after loading them. Assumes vertexes start with position and then normals.
 class VerticesModifier
 {
 protected:
-	glm::vec3 params;   // Used for scaling, rotating, or translating
+	glm::vec4 params;   // Used for scaling, rotating, or translating
 
 public:
-	VerticesModifier(glm::vec3 params);
+	VerticesModifier(glm::vec4 params);
 	virtual ~VerticesModifier();
 
 	virtual void modify(VertexSet& rawVertices) = 0;
@@ -108,16 +108,16 @@ public:
 	VerticesModifier_Scale(glm::vec3 scale);
 
 	void modify(VertexSet& rawVertices) override;
-	static VerticesModifier_Scale* factory(glm::vec3 scale);   //!< Factory function
+	static VerticesModifier_Scale* factory(glm::vec3 scale);
 };
 
 class VerticesModifier_Rotation : public VerticesModifier
 {
 public:
-	VerticesModifier_Rotation(glm::vec3 rotation);
+	VerticesModifier_Rotation(glm::vec4 rotationQuaternion);
 
 	void modify(VertexSet& rawVertices) override;
-	static VerticesModifier_Rotation* factory(glm::vec3 rotation);   //!< Factory function
+	static VerticesModifier_Rotation* factory(glm::vec4 rotation);
 };
 
 class VerticesModifier_Translation : public VerticesModifier
@@ -126,7 +126,7 @@ public:
 	VerticesModifier_Translation(glm::vec3 position);
 
 	void modify(VertexSet& rawVertices) override;
-	static VerticesModifier_Translation* factory(glm::vec3 position);   //!< Factory function
+	static VerticesModifier_Translation* factory(glm::vec3 position);
 };
 
 /// ADT for loading vertices from any source. Subclasses will define how data is taken from source (getRawData): from file, from buffer, etc.
@@ -140,6 +140,7 @@ protected:
 	
 	virtual void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources) = 0;   //!< Get vertexes and indices from source. Subclasses define this.
 	void createBuffers(VertexData& result, const VertexSet& rawVertices, const std::vector<uint16_t>& rawIndices, VulkanEnvironment* e);	//!< Upload raw vertex data to Vulkan (i.e., create Vulkan buffers)
+	void applyModifiers(VertexSet& vertexes);
 
 	void createVertexBuffer(const VertexSet& rawVertices, VertexData& result, VulkanEnvironment* e);									//!< Vertex buffer creation.
 	void createIndexBuffer(const std::vector<uint16_t>& rawIndices, VertexData& result, VulkanEnvironment* e);							//!< Index buffer creation
@@ -169,7 +170,7 @@ public:
 	VertexesLoader* clone() override;
 };
 
-/// Call to getRawData process a graphics file (OBJ, ...) and gets the meshes. <<< Problem: This takes all the meshes in each node and stores them together. However, meshes from different nodes have their own indices, all of them in the range [0, number of vertices in the mesh). Since each mesh is an independent object, they cannot be put together without messing up with the indices (they should be stored as different models). 
+/// Call to getRawData process a graphics file (OBJ, ...) and gets the meshes. Assumes vertexes are: position, normal, texture coordinates. <<< Problem: This takes all the meshes in each node and stores them together. However, meshes from different nodes have their own indices, all of them in the range [0, number of vertices in the mesh). Since each mesh is an independent object, they cannot be put together without messing up with the indices (they should be stored as different models). 
 class VL_fromFile : public VertexesLoader
 {
 	VL_fromFile(std::string filePath, std::initializer_list<VerticesModifier*> modifiers);	//!< vertexSize == (3+3+2) * sizeof(float)
@@ -205,51 +206,50 @@ public:
 	const VkShaderModule shaderModule;
 };
 
-/// Shader modifier flags. It defines some changes that can be done to the shader before compilation (preprocessing operations).
-enum smFlag { 
-	sm_albedo, 
-	sm_normal, 
-	sm_specular, 
-	sm_roughness, 
-	sm_backfaceNormals,
-	sm_sunfaceNormals,
-	sm_discardAlpha, 
-	sm_verticalNormals,
-	sm_waving_weak,
-	sm_waving_strong,
-	sm_displace,
-	sm_distDithering_near,   // apply dithering to distant objects
-	sm_distDithering_far,   // apply dithering to distant objects
-	sm_earlyDepthTest,
-	sm_dryColor,
-	sm_changeHeader,
-	sm_none
-};
-
-/// Used by `ShaderLoader` to apply modifications to a shader right after loading it.
-struct ShaderModifier
+/// Shader modification. Change that can be applied to a shader (via applyModification()) before compilation (preprocessing operations). Constructible through a factory method. 
+class SMod
 {
-	ShaderModifier() : flag(sm_none) { }
-	ShaderModifier(smFlag flag) : flag(flag) { }
-	ShaderModifier(smFlag flag, std::initializer_list<std::string> parameters) : flag(flag), params(parameters) { }
+public:
+	bool applyModification(std::string& shader);
+	unsigned getModType();
+	std::vector<std::string> getParams();
 
-	smFlag flag;
-	std::vector<std::string> params;
-};
+	// Factory methods
+	static SMod none();   // nothing changes
+	static SMod albedo(std::string index);   // get albedo map from texture sampler
+	static SMod specular(std::string index);   // get specular map from texture sampler
+	static SMod roughness(std::string index);   // get roughness map from texture sampler
+	static SMod normal();   // get normal map from texture sampler
+	static SMod discardAlpha();   // discard fragments with less than X alpha value
+	static SMod backfaceNormals();   // 
+	static SMod sunfaceNormals();   // 
+	static SMod verticalNormals();   // 
+	static SMod wave(std::string speed, std::string amplitude, std::string minHeight);   // make mesh wave (sine wave)
+	static SMod distDithering(std::string near, std::string far);   // apply dithering to distant objects
+	static SMod earlyDepthTest();   // 
+	static SMod dryColor(std::string color, std::string minHeight, std::string maxHeight);   // 
+	static SMod changeHeader(std::string path);   // 
 
-/// ADT for loading a shader from any source. Subclasses will define how data is taken from source (getRawData): from file, from buffer, etc.
-class ShaderLoader
-{
-	std::vector<ShaderModifier> mods;				//!< Modifications to the shader.
-	void applyModifications(std::string& shader);	//!< Applies modifications defined by "mods".
+private:
+	SMod(unsigned modificationType, std::initializer_list<std::string> params = { });
 
 	bool findStrAndErase(std::string& text, const std::string& str);										//!< Find string and erase it.
 	bool findStrAndReplace(std::string& text, const std::string& str, const std::string& replacement);		//!< Find string and replace it with another.
 	bool findStrAndReplaceLine(std::string& text, const std::string& str, const std::string& replacement);	//!< Find string and replace from beginning of string to end-of-line.
 	bool findTwoAndReplaceBetween(std::string& text, const std::string& str1, const std::string& str2, const std::string& replacement);	//!< Find two sub-strings and replace what is in between the beginning of string 1 and end of string 2.
 
+	unsigned modificationType;
+	std::vector<std::string> params;
+};
+
+/// ADT for loading a shader from any source. Subclasses will define how data is taken from source (getRawData): from file, from buffer, etc.
+class ShaderLoader
+{
+	std::vector<SMod> mods;				//!< Modifications to the shader.
+	void applyModifications(std::string& shader);	//!< Applies modifications defined by "mods".
+
 protected:
-	ShaderLoader(const std::string& id, const std::initializer_list<ShaderModifier>& modifications);
+	ShaderLoader(const std::string& id, const std::initializer_list<SMod>& modifications);
 	virtual void getRawData(std::string& glslData) = 0;
 
 	std::string id;
@@ -264,26 +264,26 @@ public:
 /// Pass the shader as a string at construction time. Call to getRawData will pass that string.
 class SL_fromBuffer : public ShaderLoader
 {
-	SL_fromBuffer(const std::string& id, const std::string& glslText, const std::initializer_list<ShaderModifier>& modifications);
+	SL_fromBuffer(const std::string& id, const std::string& glslText, const std::initializer_list<SMod>& modifications);
 	void getRawData(std::string& glslData) override;
 
 	std::string data;
 
 public:
-	static SL_fromBuffer* factory(std::string id, const std::string& glslText, std::initializer_list<ShaderModifier> modifications = {});
+	static SL_fromBuffer* factory(std::string id, const std::string& glslText, std::initializer_list<SMod> modifications = {});
 	ShaderLoader* clone() override;
 };
 
 /// Pass a text file path at construction time. Call to getRawData gets the shader from that file.
 class SL_fromFile : public ShaderLoader
 {
-	SL_fromFile(const std::string& filePath, std::initializer_list<ShaderModifier>& modifications);
+	SL_fromFile(const std::string& filePath, std::initializer_list<SMod>& modifications);
 	void getRawData(std::string& glslData) override;
 
 	std::string filePath;
 
 public:
-	static SL_fromFile* factory(std::string filePath, std::initializer_list<ShaderModifier> modifications = {});
+	static SL_fromFile* factory(std::string filePath, std::initializer_list<SMod> modifications = {});
 	ShaderLoader* clone() override;
 };
 

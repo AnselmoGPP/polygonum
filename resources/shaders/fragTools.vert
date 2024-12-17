@@ -62,6 +62,7 @@
 //		applyParabolicFog
 //		rand
 //		applyOrderedDithering
+//		getDryColor
 
 
 // Constants ------------------------------------------------------------------------
@@ -155,12 +156,14 @@ float getSqrDist(vec3 a, vec3 b)
 
 float getLength(vec3 a)
 {
-	return sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+	//return sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+	return length(a);
 }
 
 float getSqrLength(vec3 a)
 {
-	return a.x * a.x + a.y * a.y + a.z * a.z;
+	//return a.x * a.x + a.y * a.y + a.z * a.z;
+	return dot(a, a);
 }
 
 // Get the ratio for a given "value" within a range [min, max]. Result's range: [0, 1].
@@ -476,18 +479,16 @@ vec3 SpotLightColor(vec3 albedo, vec3 normal, vec3 specularity, float roughness,
 }
 
 // Apply the lights to a fragment
-vec4 getFragColor(vec3 albedo, vec3 normal, vec3 specularity, float roughness, Light inLight[NUMLIGHTS], int numUsedLights, vec3 fragPos, vec3 camPos)
+vec4 getFragColor(vec3 albedo, vec3 normal, vec3 specularity, float roughness, Light inLight[NUMLIGHTS], vec3 fragPos, vec3 camPos)
 {
 	//albedo      = applyLinearFog(albedo, vec3(.1,.1,.1), 100, 500);
 	//specularity = applyLinearFog(specularity, vec3(0,0,0), 100, 500);
 	//roughness   = applyLinearFog(roughness, 0, 100, 500);
 	
-	int numLights = min(numUsedLights, NUMLIGHTS);
 	vec3 fragDir   = normalize(camPos - fragPos);
-		
 	vec4 result = vec4(0,0,0,1);
 
-	for(int i = 0; i < numLights; i++)		// for each light source
+	for(int i = 0; i < NUMLIGHTS; i++)		// for each light source
 	{
 		if(inLight[i].type < 0.1) continue;
 		else if(inLight[i].type < 1.1) result.xyz += directionalLightColor(albedo, normal, specularity, roughness, light[i], fragDir);
@@ -1101,4 +1102,11 @@ bool applyOrderedDithering(float value, float minValue, float maxValue)
 	
 	if(ratio > thresholdMap[index.x][index.y]) return true;
 	return false;
+}
+
+vec3 getDryColor(vec3 color, float minHeight, float maxHeight, float groundHeight)
+{
+	vec3 increment = vec3(1, 1, 1) - color; 
+	float ratio = 1 - clamp((groundHeight - minHeight) / (maxHeight - minHeight), 0, 1);
+	return color + increment * ratio;
 }

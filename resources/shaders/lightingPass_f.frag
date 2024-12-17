@@ -46,12 +46,5 @@ void main()
 	//TB3 empty;
 	//savePNT(fragPos, normalize(inNormal), empty);
 	
-	outColor = getFragColor(
-		albedo, 
-		normal, 
-		specRough.xyz, 
-		specRough.w * 255,
-		ubo.lights, 1,
-		fragPos,
-		ubo.camPos.xyz );	
+	outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, ubo.lights, fragPos, ubo.camPos.xyz );	
 }

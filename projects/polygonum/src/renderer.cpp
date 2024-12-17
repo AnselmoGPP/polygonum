@@ -833,7 +833,7 @@ void Renderer::createLightingPass(unsigned numLights, std::string vertShaderPath
 
 	std::vector<ShaderLoader*> usedShaders{ 
 		SL_fromFile::factory(vertShaderPath),
-		SL_fromFile::factory(fragShaderPath, { {sm_changeHeader, {fragToolsHeader}} })
+		SL_fromFile::factory(fragShaderPath, { SMod::changeHeader(fragToolsHeader) })
 	};
 
 	std::vector<TextureLoader*> usedTextures{ };
