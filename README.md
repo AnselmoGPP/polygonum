@@ -348,9 +348,6 @@ Others:
 
 
 
-PENDING: Amplify RenderPipeline
-
-
 
 
 

@@ -1,6 +1,8 @@
 #ifndef AUXILIARY_HPP
 #define AUXILIARY_HPP
 
+#include <array>
+
 #include "polygonum/commons.hpp"
 
 /*
@@ -104,6 +106,49 @@ void printVec(const T& vec)
 /// Print string (or any printable object)
 template<typename T>
 void printS(const T& vec) { std::cout << T << std::endl; }
+
+struct Plane
+{
+	Plane();
+	Plane(glm::vec3 normal, float distance);
+
+	float distanceToPoint(const glm::vec3& point) const;   //!< Get distance from a point to this plane.
+
+	glm::vec3 normal;
+	float dist;
+};
+
+struct Sphere
+{
+	Sphere();
+	Sphere(glm::vec3 center, float radius);
+
+	glm::vec3 center;
+	float radius;
+};
+
+/// Axis Aligned Bounding Box (AABB).
+struct AABB
+{
+	AABB();
+	AABB(glm::vec3 min, glm::vec3 max);
+
+	glm::vec3 min, max;
+	//std::array<glm::vec3, 8> corners;
+
+	void setValues(glm::vec3 min, glm::vec3 max);
+	glm::vec3 getMostNormalAlignedCorner(const glm::vec3& planeNormal) const;   //!< AABB corner that is the most aligned with the direction of the plane's normal vector.
+};
+
+/// Contains the 6 planes of a frustum.
+struct FrustumPlanes
+{
+	std::array<Plane, 6> planes;   //!< right, left, top, bottom, near, far
+
+	void setPlanes(const glm::mat4& view, const glm::mat4& proj);   //!< Get frustum planes from a View and Projection matrix.
+	bool isAABBVisible(const AABB& aabb);   //!< Check if an AABB appears in a frustum. Used for frustum culling. True if AABB is inside or intersects the frustum; false otherwise.
+	bool isSphereVisible(const Sphere& sphere);   //!< Check if a sphere appears in a frustum. Used for frustum culling. True if sphere is inside or intersects the frustum; false otherwise.
+};
 
 
 // Vertex sets -----------------------------------------------------------------

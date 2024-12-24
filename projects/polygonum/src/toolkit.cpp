@@ -101,6 +101,125 @@ glm::mat4 getProjMatrix(float fovy, float aspectRatio, float nearViewPlane, floa
 	return proj;
 }
 
+Plane::Plane() : normal(0, 0, 1), dist(0) { }
+
+Plane::Plane(glm::vec3 normal, float distance) : normal(normal), dist(distance) { }
+
+float Plane::distanceToPoint(const glm::vec3& point) const { return glm::dot(normal, point) + dist; }
+
+Sphere::Sphere() : center(0), radius(0) { }
+
+Sphere::Sphere(glm::vec3 center, float radius) : center(center), radius(radius) { }
+
+void FrustumPlanes::setPlanes(const glm::mat4& view, const glm::mat4& proj)
+{
+	// Get planes in camera space
+	glm::mat4 viewProj = proj * view;
+
+	// - Right plane (M3 - M0)
+	planes[0].normal = glm::vec3(viewProj[0][3] - viewProj[0][0], viewProj[1][3] - viewProj[1][0], viewProj[2][3] - viewProj[2][0]);
+	planes[0].dist = viewProj[3][3] - viewProj[3][0];
+
+	// - Left plane (M3 + M0)
+	planes[1].normal = glm::vec3(viewProj[0][3] + viewProj[0][0], viewProj[1][3] + viewProj[1][0], viewProj[2][3] + viewProj[2][0]);
+	planes[1].dist = viewProj[3][3] + viewProj[3][0];
+
+	// - Top plane (M3 - M1)
+	planes[2].normal = glm::vec3(viewProj[0][3] - viewProj[0][1], viewProj[1][3] - viewProj[1][1], viewProj[2][3] - viewProj[2][1]);
+	planes[2].dist = viewProj[3][3] - viewProj[3][1];
+
+	// - Bottom plane (M3 + M1)
+	planes[3].normal = glm::vec3(viewProj[0][3] + viewProj[0][1], viewProj[1][3] + viewProj[1][1], viewProj[2][3] + viewProj[2][1]);
+	planes[3].dist = viewProj[3][3] + viewProj[3][1];
+
+	// - Near plane (M3 + M2)
+	planes[4].normal = glm::vec3(viewProj[0][3] + viewProj[0][2], viewProj[1][3] + viewProj[1][2], viewProj[2][3] + viewProj[2][2]);
+	planes[4].dist = viewProj[3][3] + viewProj[3][2];
+
+	// - Far plane (M3 - M2)
+	planes[5].normal = glm::vec3(viewProj[0][3] - viewProj[0][2], viewProj[1][3] - viewProj[1][2], viewProj[2][3] - viewProj[2][2]);
+	planes[5].dist = viewProj[3][3] - viewProj[3][2];
+
+	// Normalize the planes
+	float length;
+	for (auto& plane : planes)
+	{
+		length = glm::length(plane.normal);
+		plane.normal /= length;
+		plane.dist /= length;
+	}
+}
+
+bool FrustumPlanes::isAABBVisible(const AABB& aabb)
+{
+	glm::vec3 point;
+
+	for (const auto& plane : planes)
+	{
+		point = aabb.getMostNormalAlignedCorner(plane.normal);
+		if (plane.distanceToPoint(point) < 0)
+			return false;   // All corners are on the negative side of a plane, so AABB is completely outside.
+	}
+
+	return true;   // At least one corner is on the positive side of every plane, so AABB is visible/partially visible.
+}
+
+bool FrustumPlanes::isSphereVisible(const Sphere& sphere)
+{
+	for (auto& plane : planes)
+		if (plane.distanceToPoint(sphere.center) < -sphere.radius)
+			return false;   // Sphere is completely outside this plane
+
+	return true;   // Sphere is inside or intersects the frustum
+}
+
+AABB::AABB() { setValues(glm::vec3(0), glm::vec3(0)); }
+
+AABB::AABB(glm::vec3 min, glm::vec3 max)
+{
+	// Fix possible errors
+	if(min.x > max.x)
+	{
+		this->max.x = min.x;
+		this->min.x = max.x;
+	}
+	if (min.y > max.y)
+	{
+		this->max.y = min.y;
+		this->min.y = max.y;
+	}
+	if (min.z > max.z)
+	{
+		this->max.z = min.z;
+		this->min.z = max.z;
+	}
+
+	setValues(min, max);
+}
+
+void AABB::setValues(glm::vec3 min, glm::vec3 max)
+{
+	this->min = min;
+	this->max = max;
+
+	//corners[0] = min;
+	//corners[1] = glm::vec3(max.x, min.y, min.z);
+	//corners[2] = glm::vec3(max.x, max.y, min.z);
+	//corners[3] = glm::vec3(min.x, max.y, min.z);
+	//corners[4] = max;
+	//corners[5] = glm::vec3(min.x, max.y, max.z);
+	//corners[6] = glm::vec3(min.x, min.y, max.z);
+	//corners[7] = glm::vec3(max.x, min.y, max.z);
+}
+
+glm::vec3 AABB::getMostNormalAlignedCorner(const glm::vec3& planeNormal) const
+{
+	return glm::vec3(
+		(planeNormal.x > 0) ? max.x : min.x,
+		(planeNormal.y > 0) ? max.y : min.y,
+		(planeNormal.z > 0) ? max.z : min.z );
+}
+
 
 // Vertex sets -----------------------------------------------------------------
 

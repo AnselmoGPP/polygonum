@@ -1818,12 +1818,6 @@ void RP_DS_PP::createRenderPass()
 	#ifdef DEBUG_ENV_CORE
 		std::cout << "   " << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
-	/*
-		RP1::SP1 (Geometry pass): IA (0), DA (1), CA (4)
-		RP2::SP1 (Lighting pass): IA (4), DA (0), CA (1)
-		RP3::SP1 (Forward pass): IA (0), DA (1), CA (1)
-		RP4::SP1 (Post-processing pass): IA (2), DA (0), CA (1)
-	*/
 
 	// Attachments -------------------------
 

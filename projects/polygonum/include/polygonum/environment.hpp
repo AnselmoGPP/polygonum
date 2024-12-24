@@ -203,15 +203,15 @@ public:
 };
 
 /**
-	@brief Set the system of render passes and framebuffers used.
+	@brief Set the system of render passes, subpasses, and framebuffers used.
 
-	Tells Vulkan the framebuffer attachments that will be used while rendering (color, depth, multisampled images). A render-pass denotes more explicitly how your rendering happens. Specify subpasses and their attachments.
+	It tells Vulkan the framebuffer attachments that will be used while rendering (input, color/output, depth, multisampled images). A render-pass denotes more explicitly how your rendering happens. Specify subpasses and their attachments.
 	- Subpasses : A single render pass can consist of multiple subpasses, which are subsequent rendering operations that depend on the contents of framebuffers in previous passes (example : a sequence of post-processing effects applied one after another). Grouping them into one render pass may give better performance.
 	- Attachment references: Every subpass references one or more of the attachments.
-		- Input attachments: Input images.
-		- Color attachments: Output images.
-		- Depth/stencil attachment: Depth/stencil buffer.
-		- Resolve attachment: Used for resolving the final image from a multisampled image.
+		- Input attachments (IA): Input images.
+		- Color attachments (CA): Output images.
+		- Depth/stencil attachment (DA): Depth/stencil buffer.
+		- Resolve attachment (RA): Used for resolving the final image from a multisampled image.
 */
 class RenderPipeline
 {
@@ -254,7 +254,26 @@ protected:
 	void destroyAttachments() override;
 };
 
-/// Render pipeline containing Deferred shading (lighting pass + geometry pass) + forward shading + post-processing
+/**
+  Render pipeline containing Deferred shading(lighting pass + geometry pass) + forward shading + post - processing
+
+  RP1::SP1 (Geometry pass):
+    IA (0)
+    DA (1): depth
+    CA (4): position, albedo, normal, specRough
+  RP2::SP1 (Lighting pass):
+    IA (4): CAs from RP1
+    DA (0)
+    CA (1): color
+  RP3::SP1 (Forward pass):
+    IA (0):
+    DA (1): depth (from RP1)
+    CA (1): color (from RP2)
+  RP4::SP1 (Post-processing pass):
+    IA (2): color (from RP3), depth (from RP3)
+    DA (0)
+    CA (1): color (swapchain)
+*/
 class RP_DS_PP : public RenderPipeline
 {
 public:
