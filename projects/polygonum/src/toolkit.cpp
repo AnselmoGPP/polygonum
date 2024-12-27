@@ -107,11 +107,102 @@ Plane::Plane(glm::vec3 normal, float distance) : normal(normal), dist(distance) 
 
 float Plane::distanceToPoint(const glm::vec3& point) const { return glm::dot(normal, point) + dist; }
 
-Sphere::Sphere() : center(0), radius(0) { }
+Point::Point() : point(0) { }
+
+Point::Point(glm::vec3 point) : point(point) { }
+
+bool Point::isInFrustum(const Frustum& frustumPlanes) const
+{
+	for (auto& plane : frustumPlanes.planes)
+		if (plane.distanceToPoint(point) < 0)
+			return false;   // Point is outside this plane
+
+	return true;   // Point is inside or intersects the frustum
+}
+
+void Point::setValues(glm::vec3 point) { this->point = point; }
+
+Sphere::Sphere() : BoundingShape(), center(0), radius(0) { }
 
 Sphere::Sphere(glm::vec3 center, float radius) : center(center), radius(radius) { }
 
-void FrustumPlanes::setPlanes(const glm::mat4& view, const glm::mat4& proj)
+bool Sphere::isInFrustum(const Frustum& frustumPlanes) const
+{
+	for (auto& plane : frustumPlanes.planes)
+		if (plane.distanceToPoint(center) < -radius)
+			return false;   // Sphere is completely outside this plane
+
+	return true;   // Sphere is inside or intersects the frustum
+}
+
+void Sphere::setValues(glm::vec3 center, float radius)
+{
+	this->center = center;
+	this->radius = radius;
+}
+
+AABB::AABB() : BoundingShape() { setValues(glm::vec3(0), glm::vec3(0)); }
+
+AABB::AABB(glm::vec3 min, glm::vec3 max) : BoundingShape()
+{
+	// Fix possible errors
+	if (min.x > max.x)
+	{
+		this->max.x = min.x;
+		this->min.x = max.x;
+	}
+	if (min.y > max.y)
+	{
+		this->max.y = min.y;
+		this->min.y = max.y;
+	}
+	if (min.z > max.z)
+	{
+		this->max.z = min.z;
+		this->min.z = max.z;
+	}
+
+	setValues(min, max);
+}
+
+bool AABB::isInFrustum(const Frustum& frustumPlanes) const
+{
+	glm::vec3 point;
+
+	for (const auto& plane : frustumPlanes.planes)
+	{
+		point = getMostNormalAlignedCorner(plane.normal);
+		if (plane.distanceToPoint(point) < 0)
+			return false;   // All corners are on the negative side of a plane, so AABB is completely outside.
+	}
+
+	return true;   // At least one corner is on the positive side of every plane, so AABB is visible/partially visible.
+}
+
+void AABB::setValues(glm::vec3 min, glm::vec3 max)
+{
+	this->min = min;
+	this->max = max;
+
+	//corners[0] = min;
+	//corners[1] = glm::vec3(max.x, min.y, min.z);
+	//corners[2] = glm::vec3(max.x, max.y, min.z);
+	//corners[3] = glm::vec3(min.x, max.y, min.z);
+	//corners[4] = max;
+	//corners[5] = glm::vec3(min.x, max.y, max.z);
+	//corners[6] = glm::vec3(min.x, min.y, max.z);
+	//corners[7] = glm::vec3(max.x, min.y, max.z);
+}
+
+glm::vec3 AABB::getMostNormalAlignedCorner(const glm::vec3& planeNormal) const
+{
+	return glm::vec3(
+		(planeNormal.x > 0) ? max.x : min.x,
+		(planeNormal.y > 0) ? max.y : min.y,
+		(planeNormal.z > 0) ? max.z : min.z);
+}
+
+void Frustum::setPlanes(const glm::mat4& view, const glm::mat4& proj)
 {
 	// Get planes in camera space
 	glm::mat4 viewProj = proj * view;
@@ -150,7 +241,29 @@ void FrustumPlanes::setPlanes(const glm::mat4& view, const glm::mat4& proj)
 	}
 }
 
-bool FrustumPlanes::isAABBVisible(const AABB& aabb)
+bool Frustum::isInFrustum(const glm::vec3& point) const
+{
+	for (auto& plane : planes)
+		if (plane.distanceToPoint(point) < 0)
+			return false;   // Point is outside this plane
+
+	return true;   // Point is inside or intersects the frustum
+}
+
+bool Frustum::isInFrustum(const glm::vec3& point, float distBeyond) const
+{
+	if (planes[0].distanceToPoint(point) < -distBeyond ||
+		planes[1].distanceToPoint(point) < -distBeyond ||
+		planes[2].distanceToPoint(point) < -distBeyond ||
+		planes[3].distanceToPoint(point) < -distBeyond ||
+		planes[4].distanceToPoint(point) < 0 ||
+		planes[5].distanceToPoint(point) < 0
+		) return false;   // Point is outside this plane
+
+	return true;   // Point is inside or intersects the frustum
+}
+
+bool Frustum::isInFrustum(const AABB& aabb) const
 {
 	glm::vec3 point;
 
@@ -164,60 +277,13 @@ bool FrustumPlanes::isAABBVisible(const AABB& aabb)
 	return true;   // At least one corner is on the positive side of every plane, so AABB is visible/partially visible.
 }
 
-bool FrustumPlanes::isSphereVisible(const Sphere& sphere)
+bool Frustum::isInFrustum(const Sphere& sphere) const
 {
 	for (auto& plane : planes)
 		if (plane.distanceToPoint(sphere.center) < -sphere.radius)
 			return false;   // Sphere is completely outside this plane
 
 	return true;   // Sphere is inside or intersects the frustum
-}
-
-AABB::AABB() { setValues(glm::vec3(0), glm::vec3(0)); }
-
-AABB::AABB(glm::vec3 min, glm::vec3 max)
-{
-	// Fix possible errors
-	if(min.x > max.x)
-	{
-		this->max.x = min.x;
-		this->min.x = max.x;
-	}
-	if (min.y > max.y)
-	{
-		this->max.y = min.y;
-		this->min.y = max.y;
-	}
-	if (min.z > max.z)
-	{
-		this->max.z = min.z;
-		this->min.z = max.z;
-	}
-
-	setValues(min, max);
-}
-
-void AABB::setValues(glm::vec3 min, glm::vec3 max)
-{
-	this->min = min;
-	this->max = max;
-
-	//corners[0] = min;
-	//corners[1] = glm::vec3(max.x, min.y, min.z);
-	//corners[2] = glm::vec3(max.x, max.y, min.z);
-	//corners[3] = glm::vec3(min.x, max.y, min.z);
-	//corners[4] = max;
-	//corners[5] = glm::vec3(min.x, max.y, max.z);
-	//corners[6] = glm::vec3(min.x, min.y, max.z);
-	//corners[7] = glm::vec3(max.x, min.y, max.z);
-}
-
-glm::vec3 AABB::getMostNormalAlignedCorner(const glm::vec3& planeNormal) const
-{
-	return glm::vec3(
-		(planeNormal.x > 0) ? max.x : min.x,
-		(planeNormal.y > 0) ? max.y : min.y,
-		(planeNormal.z > 0) ? max.z : min.z );
 }
 
 

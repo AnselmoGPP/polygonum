@@ -136,6 +136,7 @@ struct Material
 	vec3 normal;
 	vec3 spec;
 	float rough;
+	float height;
 };
 
 // Math functions ------------------------------------------------------------------------
@@ -175,8 +176,7 @@ float getRatio(float value, float min, float max)
 // Get the ratio for a given "value" within a range [min, max]. Result's range: [minR, maxR].
 float getRatio(float value, float min, float max, float minR, float maxR)
 {
-	float ratio = clamp((value - min) / (max - min), 0, 1);
-	return minR + ratio * (maxR - minR);
+	return minR + clamp((value - min) / (max - min), 0, 1) * (maxR - minR);
 }
 
 // Get a direction given 2 points.

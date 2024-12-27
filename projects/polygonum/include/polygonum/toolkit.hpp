@@ -107,6 +107,56 @@ void printVec(const T& vec)
 template<typename T>
 void printS(const T& vec) { std::cout << T << std::endl; }
 
+struct Plane;
+struct Frustum;
+struct BoundingShape;
+  struct Sphere;
+  struct AABB;
+
+// ADT for bounding shapes (usually, polygons) used for enveloping objects.
+struct BoundingShape
+{
+	virtual bool isInFrustum(const Frustum& frustumPlanes) const = 0;
+};
+
+// Bounding point
+struct Point : BoundingShape
+{
+	Point();
+	Point(glm::vec3 point);
+
+	bool isInFrustum(const Frustum& frustumPlanes) const override;   //!< Check if a sphere appears in a frustum. Used for frustum culling. True if sphere is inside or intersects the frustum; false otherwise.
+	void setValues(glm::vec3 point);
+
+	glm::vec3 point;
+};
+
+// Bounding sphere
+struct Sphere : BoundingShape
+{
+	Sphere();
+	Sphere(glm::vec3 center, float radius);
+
+	bool isInFrustum(const Frustum& frustumPlanes) const override;   //!< Check if a sphere appears in a frustum. Used for frustum culling. True if sphere is inside or intersects the frustum; false otherwise.
+	void setValues(glm::vec3 center, float radius);
+
+	glm::vec3 center;
+	float radius;
+};
+
+/// Axis Aligned Bounding Box (AABB).
+struct AABB : BoundingShape
+{
+	AABB();
+	AABB(glm::vec3 min, glm::vec3 max);
+
+	bool isInFrustum(const Frustum& frustumPlanes) const override;   //!< Check if an AABB appears in a frustum. Used for frustum culling. True if AABB is inside or intersects the frustum; false otherwise.
+	void setValues(glm::vec3 min, glm::vec3 max);
+	glm::vec3 getMostNormalAlignedCorner(const glm::vec3& planeNormal) const;   //!< AABB corner that is the most aligned with the direction of the plane's normal vector.
+
+	glm::vec3 min, max;
+};
+
 struct Plane
 {
 	Plane();
@@ -118,36 +168,17 @@ struct Plane
 	float dist;
 };
 
-struct Sphere
-{
-	Sphere();
-	Sphere(glm::vec3 center, float radius);
-
-	glm::vec3 center;
-	float radius;
-};
-
-/// Axis Aligned Bounding Box (AABB).
-struct AABB
-{
-	AABB();
-	AABB(glm::vec3 min, glm::vec3 max);
-
-	glm::vec3 min, max;
-	//std::array<glm::vec3, 8> corners;
-
-	void setValues(glm::vec3 min, glm::vec3 max);
-	glm::vec3 getMostNormalAlignedCorner(const glm::vec3& planeNormal) const;   //!< AABB corner that is the most aligned with the direction of the plane's normal vector.
-};
-
-/// Contains the 6 planes of a frustum.
-struct FrustumPlanes
+/// Contains the 6 planes of a frustum, and can check if an object is inside/outside it.
+struct Frustum
 {
 	std::array<Plane, 6> planes;   //!< right, left, top, bottom, near, far
 
 	void setPlanes(const glm::mat4& view, const glm::mat4& proj);   //!< Get frustum planes from a View and Projection matrix.
-	bool isAABBVisible(const AABB& aabb);   //!< Check if an AABB appears in a frustum. Used for frustum culling. True if AABB is inside or intersects the frustum; false otherwise.
-	bool isSphereVisible(const Sphere& sphere);   //!< Check if a sphere appears in a frustum. Used for frustum culling. True if sphere is inside or intersects the frustum; false otherwise.
+
+	bool isInFrustum(const glm::vec3& point) const;   //!< Check if a point appears in a frustum. Used for frustum culling.
+	bool isInFrustum(const glm::vec3& point, float distBeyond) const;   //!< Check if a point appears in a frustum or within a distance beyond it. Used for frustum culling. 
+	bool isInFrustum(const AABB& aabb) const;   //!< Check if an AABB appears in a frustum. Used for frustum culling. True if AABB is inside or intersects the frustum; false otherwise.
+	bool isInFrustum(const Sphere& sphere) const;   //!< Check if a sphere appears in a frustum. Used for frustum culling. True if sphere is inside or intersects the frustum; false otherwise.
 };
 
 
