@@ -152,9 +152,11 @@ struct AABB : BoundingShape
 
 	bool isInFrustum(const Frustum& frustumPlanes) const override;   //!< Check if an AABB appears in a frustum. Used for frustum culling. True if AABB is inside or intersects the frustum; false otherwise.
 	void setValues(glm::vec3 min, glm::vec3 max);
+	void updateAABB(const std::vector<float>& pos, float stride);   //!< Given a set of points, resize current aabb so it can contain them too.
 	glm::vec3 getMostNormalAlignedCorner(const glm::vec3& planeNormal) const;   //!< AABB corner that is the most aligned with the direction of the plane's normal vector.
 
 	glm::vec3 min, max;
+	bool isInitialized;
 };
 
 struct Plane

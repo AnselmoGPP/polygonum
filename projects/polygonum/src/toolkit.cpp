@@ -141,9 +141,10 @@ void Sphere::setValues(glm::vec3 center, float radius)
 	this->radius = radius;
 }
 
-AABB::AABB() : BoundingShape() { setValues(glm::vec3(0), glm::vec3(0)); }
+AABB::AABB() : BoundingShape(), min(0), max(0), isInitialized(false) { }
 
-AABB::AABB(glm::vec3 min, glm::vec3 max) : BoundingShape()
+AABB::AABB(glm::vec3 min, glm::vec3 max)
+	: BoundingShape(), isInitialized(true)
 {
 	// Fix possible errors
 	if (min.x > max.x)
@@ -161,12 +162,12 @@ AABB::AABB(glm::vec3 min, glm::vec3 max) : BoundingShape()
 		this->max.z = min.z;
 		this->min.z = max.z;
 	}
-
-	setValues(min, max);
 }
 
 bool AABB::isInFrustum(const Frustum& frustumPlanes) const
 {
+	if (isInitialized == false) return false;
+
 	glm::vec3 point;
 
 	for (const auto& plane : frustumPlanes.planes)
@@ -184,6 +185,8 @@ void AABB::setValues(glm::vec3 min, glm::vec3 max)
 	this->min = min;
 	this->max = max;
 
+	isInitialized = true;
+
 	//corners[0] = min;
 	//corners[1] = glm::vec3(max.x, min.y, min.z);
 	//corners[2] = glm::vec3(max.x, max.y, min.z);
@@ -200,6 +203,28 @@ glm::vec3 AABB::getMostNormalAlignedCorner(const glm::vec3& planeNormal) const
 		(planeNormal.x > 0) ? max.x : min.x,
 		(planeNormal.y > 0) ? max.y : min.y,
 		(planeNormal.z > 0) ? max.z : min.z);
+}
+
+void AABB::updateAABB(const std::vector<float>& pos, float stride)
+{
+	if (isInitialized == false && pos.size())
+	{
+		min = glm::vec3(pos[0], pos[1], pos[2]);
+		max = glm::vec3(pos[0], pos[1], pos[2]);
+		isInitialized = true;
+	}
+
+	for (size_t i = 0; i < pos.size(); i += stride)
+	{
+		if (pos[i + 0] > max.x) max.x = pos[i + 0];
+		else if (pos[i + 0] < min.x) min.x = pos[i + 0];
+
+		if (pos[i + 1] > max.y) max.y = pos[i + 1];
+		else if (pos[i + 1] < min.y) min.y = pos[i + 1];
+
+		if (pos[i + 2] > max.z) max.z = pos[i + 2];
+		else if (pos[i + 2] < min.z) min.z = pos[i + 2];
+	}
 }
 
 void Frustum::setPlanes(const glm::mat4& view, const glm::mat4& proj)
