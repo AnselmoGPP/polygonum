@@ -35,7 +35,7 @@ void Entity::printInfo()
 		//std::cout << "   " << typeid(pair.second).name() << '\n';
 }
 
-System::System(EntityManager* entityManager)
+System::System(EntitiesManager* entityManager)
 	: typeIndex(typeid(System)), em(entityManager)
 { }
 
@@ -46,16 +46,16 @@ System::~System()
 	#endif
 };
 
-EntityManager::EntityManager() : singletonId(1) { }
+EntitiesManager::EntitiesManager() : singletonId(1) { }
 
-EntityManager::~EntityManager() 
+EntitiesManager::~EntitiesManager()
 { 
 	#ifdef DEBUG_ECS
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
 };
 
-uint32_t EntityManager::getNewId()
+uint32_t EntitiesManager::getNewId()
 {
 	if (lowestUnassignedId < UINT32_MAX) return lowestUnassignedId++;
 	
@@ -67,7 +67,7 @@ uint32_t EntityManager::getNewId()
 	return 0;
 }
 
-void EntityManager::update(float timeStep)
+void EntitiesManager::update(float timeStep)
 {
 	#ifdef DEBUG_ECS
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -77,7 +77,7 @@ void EntityManager::update(float timeStep)
 		s->update(timeStep);
 }
 
-void EntityManager::printInfo()
+void EntitiesManager::printInfo()
 {
 	std::cout << "Entities ----------\n";
 	for (const auto& e : entities)
@@ -88,7 +88,7 @@ void EntityManager::printInfo()
 		std::cout << "   " << s->typeIndex.name() << '\n';
 }
 
-uint32_t EntityManager::addEntity(Entity* entity)
+uint32_t EntitiesManager::addEntity(Entity* entity)
 {
 	#ifdef DEBUG_ECS
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -101,7 +101,7 @@ uint32_t EntityManager::addEntity(Entity* entity)
 	return newId;
 }
 
-std::vector<uint32_t> EntityManager::addEntities(std::vector<Entity*> entities)
+std::vector<uint32_t> EntitiesManager::addEntities(std::vector<Entity*> entities)
 {
 	#ifdef DEBUG_ECS
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -115,7 +115,7 @@ std::vector<uint32_t> EntityManager::addEntities(std::vector<Entity*> entities)
 	return newIds;
 }
 
-void EntityManager::removeEntity(uint32_t entityId)
+void EntitiesManager::removeEntity(uint32_t entityId)
 {
 	#ifdef DEBUG_ECS
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -125,7 +125,7 @@ void EntityManager::removeEntity(uint32_t entityId)
 		entities.erase(entityId);
 }
 
-std::string EntityManager::getName(uint32_t entityId)
+std::string EntitiesManager::getName(uint32_t entityId)
 {
 	return entities[entityId]->name;
 }

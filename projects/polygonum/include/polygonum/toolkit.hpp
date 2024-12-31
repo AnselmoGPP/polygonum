@@ -177,8 +177,7 @@ struct Frustum
 
 	void setPlanes(const glm::mat4& view, const glm::mat4& proj);   //!< Get frustum planes from a View and Projection matrix.
 
-	bool isInFrustum(const glm::vec3& point) const;   //!< Check if a point appears in a frustum. Used for frustum culling.
-	bool isInFrustum(const glm::vec3& point, float distBeyond) const;   //!< Check if a point appears in a frustum or within a distance beyond it. Used for frustum culling. 
+	bool isInFrustum(const glm::vec3& point, float distBeyond = 0) const;   //!< Check if a point appears in a frustum, or within a distance beyond it. Used for frustum culling. 
 	bool isInFrustum(const AABB& aabb) const;   //!< Check if an AABB appears in a frustum. Used for frustum culling. True if AABB is inside or intersects the frustum; false otherwise.
 	bool isInFrustum(const Sphere& sphere) const;   //!< Check if a sphere appears in a frustum. Used for frustum culling. True if sphere is inside or intersects the frustum; false otherwise.
 };

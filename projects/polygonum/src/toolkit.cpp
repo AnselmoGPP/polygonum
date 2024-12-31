@@ -144,7 +144,7 @@ void Sphere::setValues(glm::vec3 center, float radius)
 AABB::AABB() : BoundingShape(), min(0), max(0), isInitialized(false) { }
 
 AABB::AABB(glm::vec3 min, glm::vec3 max)
-	: BoundingShape(), isInitialized(true)
+	: BoundingShape(), min(min), max(max), isInitialized(true)
 {
 	// Fix possible errors
 	if (min.x > max.x)
@@ -266,24 +266,11 @@ void Frustum::setPlanes(const glm::mat4& view, const glm::mat4& proj)
 	}
 }
 
-bool Frustum::isInFrustum(const glm::vec3& point) const
-{
-	for (auto& plane : planes)
-		if (plane.distanceToPoint(point) < 0)
-			return false;   // Point is outside this plane
-
-	return true;   // Point is inside or intersects the frustum
-}
-
 bool Frustum::isInFrustum(const glm::vec3& point, float distBeyond) const
 {
-	if (planes[0].distanceToPoint(point) < -distBeyond ||
-		planes[1].distanceToPoint(point) < -distBeyond ||
-		planes[2].distanceToPoint(point) < -distBeyond ||
-		planes[3].distanceToPoint(point) < -distBeyond ||
-		planes[4].distanceToPoint(point) < 0 ||
-		planes[5].distanceToPoint(point) < 0
-		) return false;   // Point is outside this plane
+	for (auto& plane : planes)
+		if (plane.distanceToPoint(point) < -distBeyond)
+			return false;   // Point is outside this plane
 
 	return true;   // Point is inside or intersects the frustum
 }

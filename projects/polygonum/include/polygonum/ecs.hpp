@@ -10,7 +10,7 @@
 class Entity;
 struct Component;
 class System;
-class EntityManager;
+class EntitiesManager;
 class MainEntityFactory;
 
 
@@ -47,18 +47,17 @@ public:
 class System
 {
 public:
-    System(EntityManager* entityManager = nullptr);
+    System(EntitiesManager* entityManager = nullptr);
     virtual ~System();
 
-    EntityManager* em;
+    EntitiesManager* em;
     std::type_index typeIndex;
 
     virtual void update(float timeStep) = 0;
 };
 
-
 /// Acts as a "database", where you look up entities and get their list of components.
-class EntityManager
+class EntitiesManager
 {
     uint32_t getNewId();
     uint32_t lowestUnassignedId = 1;
@@ -67,8 +66,8 @@ class EntityManager
     std::vector<std::unique_ptr<System>> systems;
 
 public:
-    EntityManager();
-    ~EntityManager();
+    EntitiesManager();
+    ~EntitiesManager();
 
     void update(float timeStep);
     void printInfo();
@@ -80,22 +79,25 @@ public:
 
     template<typename T> std::vector<uint32_t> getEntities();               //!< Get set of entities containing component of type X.
     template<typename T, typename Q> std::vector<uint32_t> getEntities();   //!< Get set of entities containing component of type X and type Y.
-    template<typename T> T* getComp(uint32_t entityId);
+    template<typename T> T* getComp(uint32_t entityId);   //!< Get a certain component from an entity.
     std::string getName(uint32_t entityId);
 
     void removeEntity(uint32_t entityId);
 
+    // Useful ids. Feel free to define new ones here.
     uint32_t singletonId;   // Id of the entity containing all the singleton components (implementation dependent)
+    uint32_t planetId;
+    uint32_t seaId;
 };
 
 
 class MainEntityFactory
 {
-    //EntityManager* entityManager;
+    //EntitiesManager* entitiesManager;
 
 public:
     MainEntityFactory() { };
-    //MainEntityFactory(EntityManager* entityManager) : entityManager(entityManager) { };
+    //MainEntityFactory(EntitiesManager* entityManager) : entitiesManager(entitiesManager) { };
 
     //Entity* createHumanPlayer();
     //Entity* createAIPlayer();
@@ -119,7 +121,7 @@ T* Entity::getComp()
 }
 
 template<typename T>
-void EntityManager::addSystem(T* system)
+void EntitiesManager::addSystem(T* system)
 {
     #ifdef DEBUG_ECS
         std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -131,7 +133,7 @@ void EntityManager::addSystem(T* system)
 }
 
 template<typename T>
-std::vector<uint32_t> EntityManager::getEntities()
+std::vector<uint32_t> EntitiesManager::getEntities()
 {
     std::vector<uint32_t> result;
 
@@ -143,7 +145,7 @@ std::vector<uint32_t> EntityManager::getEntities()
 }
 
 template<typename T, typename Q>
-std::vector<uint32_t> EntityManager::getEntities()
+std::vector<uint32_t> EntitiesManager::getEntities()
 {
     std::vector<uint32_t> result;
 
@@ -155,17 +157,16 @@ std::vector<uint32_t> EntityManager::getEntities()
 }
 
 template<typename T>
-void EntityManager::addComp(uint32_t entityId, T* component)
+void EntitiesManager::addComp(uint32_t entityId, T* component)
 {
     entities[entityId]->addComp(component);
 }
 
 template<typename T>
-T* EntityManager::getComp(uint32_t entityId)
+T* EntitiesManager::getComp(uint32_t entityId)
 {
     auto it = entities.find(entityId);
     return it != entities.end() ? entities[entityId]->getComp<T>() : nullptr;
 }
-
 
 #endif
