@@ -36,6 +36,7 @@
 //#define DEBUG_COMMANDBUFFERS
 //#define DEBUG_RENDERLOOP
 //#define DEBUG_WORKER
+//#define DEBUG_REND_PROFILER
 
 //#define DEBUG_MODELS
 

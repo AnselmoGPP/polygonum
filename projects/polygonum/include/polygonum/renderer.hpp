@@ -102,12 +102,13 @@ class Renderer
 	friend LoadingWorker;
 
 	// Hardcoded parameters
-	const int MAX_FRAMES_IN_FLIGHT = 2;		//!< How many frames should be processed concurrently.
+	const int MAX_FRAMES_IN_FLIGHT = 20;		//!< How many frames should be processed concurrently.
 
 	// Main parameters
 	IOmanager					io;
 	VulkanEnvironment			e;
 	Timer						timer;
+	Timer						profiler;
 
 	std::unordered_map<key64, ModelData> models;   //!< All models (constructed or not). std::unordered_map uses a hash table. Complexity for lookup, insertion, and deletion: O(1) (average) - O(n) (worst-case)
 	vec3<key64> keys;   //!< All keys of all models, distributed per renderpass ad subpass.
@@ -179,11 +180,12 @@ class Renderer
 	*	Synchronization examples: https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples#swapchain-image-acquire-and-present
 	*/
 	void drawFrame();
+	void drawFrame0();
 
 	/// Cleanup after render loop terminates
 	void cleanup();
 
-	// Update uniforms, transformation matrices, add/delete new models/textures, and submit command buffer. Transformation matrices (MVP) will be generated each frame.
+	// Update uniforms, transformation matrices, add/delete new models/textures. Transformation matrices (MVP) will be generated each frame.
 	void updateStates(uint32_t currentImage);
 
 	/// Callback used by the client for updating states of their models

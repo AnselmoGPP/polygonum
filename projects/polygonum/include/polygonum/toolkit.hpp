@@ -273,6 +273,8 @@ float safeMod(int a, int b);
 float safeMod(float a, float b);
 glm::vec3 safeMod(const glm::vec3& a, float b);
 
+float getSlope(const glm::vec3& groundNormal, const glm::vec3& upNormal);
+
 
 // Algorithms -----------------------------------------------------------------
 

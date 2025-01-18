@@ -904,3 +904,8 @@ glm::vec3 safeMod(const glm::vec3& a, float b)
 		a.z - ((int)a.z / (int)b) * (int)b
 	);
 }
+
+float getSlope(const glm::vec3& groundNormal, const glm::vec3& upNormal)
+{
+	return 1.f - glm::dot(groundNormal, upNormal);
+}

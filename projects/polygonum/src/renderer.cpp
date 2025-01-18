@@ -110,63 +110,6 @@ void LoadingWorker::loadingThread()
 		else sleep(waitTime);
 	}
 
-	// ---------------------------------
-/*
-	std::list<ModelData>::iterator mIter;
-	std::list<Shader   >::iterator sIter, sIter2;
-	std::list<Texture  >::iterator tIter, tIter2;
-	bool modelsDeleted = false;
-	size_t rp, sp;								//!< Render pass & subpass indices
-
-	while (runThread)
-	{
-		// DELETE UNUSED RESOURCES <<< This should be done in main thread, not in loading thread because it could be redundant in an scenario of multiple loading threads.
-		#ifdef DEBUG_WORKER
-			std::cout << "   - Delete resources (" << shaders.size() << ", " << textures.size() << ')' << std::endl;
-		#endif
-		
-		if (modelsDeleted)
-		{
-			const std::lock_guard<std::mutex> lock(mutResources);
-
-			// Shaders
-			#ifdef DEBUG_WORKER
-				std::cout << "      - Delete shaders" << std::endl;
-			#endif
-			
-			sIter = shaders.begin();
-			while(sIter != shaders.end())
-			{
-				#ifdef DEBUG_WORKER
-					if (!sIter->counter) std::cout << "         - " << sIter->id << std::endl;
-				#endif
-				
-				sIter2 = sIter++;
-				if (!sIter2->counter) shaders.erase(sIter2);
-			}
-
-			// Textures
-			#ifdef DEBUG_WORKER
-				std::cout << "      - Delete textures" << std::endl;
-			#endif
-			
-			tIter = textures.begin();
-			while (tIter != textures.end())
-			{
-				#ifdef DEBUG_WORKER
-					if (!tIter->counter) std::cout << "         - " << tIter->id << std::endl;
-				#endif
-				
-				tIter2 = tIter++;
-				if (!tIter2->counter) textures.erase(tIter2);
-			}
-
-			modelsDeleted = false;
-		}
-		
-		std::this_thread::sleep_for(std::chrono::milliseconds(waitTime));
-	}
-*/
 	#ifdef DEBUG_WORKER
 		std::cout << "- " << typeid(*this).name() << "::" << __func__ << " (end)" << std::endl;
 	#endif
@@ -210,6 +153,290 @@ Renderer::~Renderer()
 	#ifdef DEBUG_RENDERER
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
+}
+
+/*
+	-Wait for the frame's CB execution (inFlightFences)
+	vkAcquireNextImageKHR (acquire swap chain image)
+	-Wait for the swap chain image's CB execution (imagesInFlight/inFlightFences)
+	Update CB (optional)
+	-Wait for acquiring a swap chain image (imageAvailableSemaphores)
+	vkQueueSubmit (execute CB)
+	-Wait for CB execution (renderFinishedSemaphores)
+	vkQueuePresentKHR (present image)
+
+	waitFor(framesInFlight[currentFrame]);
+	vkAcquireNextImageKHR(imageAvailableSemaphores[currentFrame], imageIndex);
+	waitFor(imagesInFlight[imageIndex]);
+	imagesInFlight[imageIndex] = framesInFlight[currentFrame];
+	updateCB();
+	vkResetFences(framesInFlight[currentFrame])
+	vkQueueSubmit(renderFinishedSemaphores[currentFrame], framesInFlight[currentFrame]); // waitFor(imageAvailableSemaphores[currentFrame])
+	vkQueuePresentKHR(); // waitFor(renderFinishedSemaphores[currentFrame]);
+	currentFrame = nextFrame;
+
+	1. Wait for command buffer execution
+	2. Acquire image from swapchain
+	3. Submit command buffer
+	4. Present result to swapchain
+*/
+void Renderer::drawFrame()
+{
+#if defined(DEBUG_RENDERER) || defined(DEBUG_RENDERLOOP)
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("> Begin drawFrame: ", profiler.updateTime() * 1000.f);
+#endif
+
+	currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;	// By using the modulo operator (%), the frame index loops around after every MAX_FRAMES_IN_FLIGHT enqueued frames.
+
+	// Wait for the frame to be finished (command buffer execution). If VK_TRUE, we wait for all fences; otherwise, we wait for any.
+	vkWaitForFences(e.c.device, 1, &framesInFlight[currentFrame], VK_TRUE, UINT64_MAX);
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkWaitForFences: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// Acquire an image from the swap chain
+	uint32_t imageIndex;		// Swap chain image index (0, 1, 2)
+	VkResult result = vkAcquireNextImageKHR(e.c.device, e.swapChain.swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);		// Swap chain is an extension feature. imageIndex: index to the VkImage in our swapChainImages.
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) 					// VK_ERROR_OUT_OF_DATE_KHR: The swap chain became incompatible with the surface and can no longer be used for rendering. Usually happens after window resize.
+	{
+		std::cout << "VK_ERROR_OUT_OF_DATE_KHR" << std::endl;
+		recreateSwapChain();
+		return;
+	}
+	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)	// VK_SUBOPTIMAL_KHR: The swap chain can still be used to successfully present to the surface, but the surface properties are no longer matched exactly.
+		throw std::runtime_error("Failed to acquire swap chain image!");
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkAcquireNextImageKHR: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// Check if this image is being used. If used, wait. Then, mark it as used by this frame.
+	if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)									// Check if a previous frame is using this image (i.e. there is its fence to wait on)
+		vkWaitForFences(e.c.device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+
+	imagesInFlight[imageIndex] = framesInFlight[currentFrame];							// Mark the image as now being in use by this frame
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkWaitForFences: ", profiler.updateTime() * 1000.f);
+	PRINT("updateStates:");
+#endif
+
+	updateStates(imageIndex);
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("  Copy UBOs: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// Update command buffer
+	if (true)//if (updateCommandBuffer)
+	{
+		profiler.updateTime();
+		vkWaitForFences(e.c.device, 1, &lastFence, VK_TRUE, UINT64_MAX);
+		vkResetFences(e.c.device, 1, &framesInFlight[currentFrame]);	// Reset the fence to the unsignaled state.
+		PRINT(profiler.updateTime() * 1000.f);
+
+		const std::lock_guard<std::mutex> lock(e.mutCommandPool);		// vkQueueWaitIdle(e.c.graphicsQueue) was called before, in drawFrame()
+		vkFreeCommandBuffers(e.c.device, e.commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());	// Any primary command buffer that is in the recording or executable state and has any element of pCommandBuffers recorded into it, becomes invalid.
+		//vkResetCommandPool(e.c.device, e.commandPool, 0);
+		//vkResetCommandBuffer(commandBuffers[currentFrame], 0);
+		createCommandBuffers();
+	}
+	
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("Update command buffer: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// Submit the command buffer
+	VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };			// Which semaphores to wait on before command buffers execution begins.
+	VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };		// Which semaphores to signal once the command buffers have finished execution.
+	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };	// In which stages of the pipeline to wait the semaphore. VK_PIPELINE_STAGE_ ... TOP_OF_PIPE_BIT (ensures that the render passes don't begin until the image is available), COLOR_ATTACHMENT_OUTPUT_BIT (makes the render pass wait for this stage).
+
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.waitSemaphoreCount = 1;
+	submitInfo.pWaitSemaphores = waitSemaphores;					// Semaphores upon which to wait before the CB/s begin execution.
+	submitInfo.pWaitDstStageMask = waitStages;
+	submitInfo.signalSemaphoreCount = 1;
+	submitInfo.pSignalSemaphores = signalSemaphores;				// Semaphores to be signaled once the CB/s have completed execution.
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffers[imageIndex];		// Command buffers to submit for execution (here, the one that binds the swap chain image we just acquired as color attachment).
+
+	//vkResetFences(e.c.device, 1, &framesInFlight[currentFrame]);	// Reset the fence to the unsignaled state.
+
+	{
+		const std::lock_guard<std::mutex> lock(e.mutQueue);
+		if (vkQueueSubmit(e.c.graphicsQueue, 1, &submitInfo, framesInFlight[currentFrame]) != VK_SUCCESS)	// Submit the command buffer to the graphics queue. An array of VkSubmitInfo structs can be taken as argument when workload is much larger, for efficiency.
+			throw std::runtime_error("Failed to submit draw command buffer!");
+
+		lastFence = framesInFlight[currentFrame];
+	}
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkQueueSubmit: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// Note:
+	// Subpass dependencies: Subpasses in a render pass automatically take care of image layout transitions. These transitions are controlled by subpass dependencies (specify memory and execution dependencies between subpasses).
+	// There are two built-in dependencies that take care of the transition at the start and at the end of the render pass, but the former does not occur at the right time. It assumes that the transition occurs at the start of the pipeline, but we haven't acquired the image yet at that point. Two ways to deal with this problem:
+	//		- waitStages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT (ensures that the render passes don't begin until the image is available).
+	//		- waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT (makes the render pass wait for this stage).
+
+	// Presentation (submit the result back to the swap chain to have it eventually show up on the screen).
+	VkPresentInfoKHR presentInfo{};
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.waitSemaphoreCount = 1;
+	presentInfo.pWaitSemaphores = signalSemaphores;
+	VkSwapchainKHR swapChains[] = { e.swapChain.swapChain };
+	presentInfo.swapchainCount = 1;
+	presentInfo.pSwapchains = swapChains;
+	presentInfo.pImageIndices = &imageIndex;
+	presentInfo.pResults = nullptr;			// Optional
+
+	{
+		const std::lock_guard<std::mutex> lock(e.mutQueue);
+		result = vkQueuePresentKHR(e.c.presentQueue, &presentInfo);		// Submit request to present an image to the swap chain. Our triangle may look a bit different because the shader interpolates in linear color space and then converts to sRGB color space.
+		frameCount++;
+	}
+
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || io.framebufferResized)
+	{
+		std::cout << "Out-of-date/Suboptimal KHR or window resized" << std::endl;
+		io.framebufferResized = false;
+		recreateSwapChain();
+	}
+	else if (result != VK_SUCCESS)
+		throw std::runtime_error("Failed to present swap chain image!");
+
+	//vkQueueWaitIdle(e.presentQueue);							// Make the whole graphics pipeline to be used only one frame at a time (instead of using this, we use multiple semaphores for processing frames concurrently).
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkQueuePresentKHR: ", profiler.updateTime() * 1000.f);
+#endif
+}
+
+void Renderer::drawFrame0()
+{
+#if defined(DEBUG_RENDERER) || defined(DEBUG_RENDERLOOP)
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("> Begin drawFrame: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// Wait for the frame to be finished (command buffer execution). If VK_TRUE, we wait for all fences; otherwise, we wait for any.
+	vkWaitForFences(e.c.device, 1, &framesInFlight[currentFrame], VK_TRUE, UINT64_MAX);
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkWaitForFences: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// Acquire an image from the swap chain
+	uint32_t imageIndex;		// Swap chain image index (0, 1, 2)
+	VkResult result = vkAcquireNextImageKHR(e.c.device, e.swapChain.swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);		// Swap chain is an extension feature. imageIndex: index to the VkImage in our swapChainImages.
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) 					// VK_ERROR_OUT_OF_DATE_KHR: The swap chain became incompatible with the surface and can no longer be used for rendering. Usually happens after window resize.
+	{
+		std::cout << "VK_ERROR_OUT_OF_DATE_KHR" << std::endl;
+		recreateSwapChain();
+		return;
+	}
+	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)	// VK_SUBOPTIMAL_KHR: The swap chain can still be used to successfully present to the surface, but the surface properties are no longer matched exactly.
+		throw std::runtime_error("Failed to acquire swap chain image!");
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkAcquireNextImageKHR: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// Check if this image is being used. If used, wait. Then, mark it as used by this frame.
+	if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)									// Check if a previous frame is using this image (i.e. there is its fence to wait on)
+		vkWaitForFences(e.c.device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+
+	imagesInFlight[imageIndex] = framesInFlight[currentFrame];							// Mark the image as now being in use by this frame
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkWaitForFences: ", profiler.updateTime() * 1000.f);
+	PRINT("updateStates:");
+#endif
+
+	updateStates(imageIndex);
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("  Update command buffer: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// Submit the command buffer
+	VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };			// Which semaphores to wait on before command buffers execution begins.
+	VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };		// Which semaphores to signal once the command buffers have finished execution.
+	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };	// In which stages of the pipeline to wait the semaphore. VK_PIPELINE_STAGE_ ... TOP_OF_PIPE_BIT (ensures that the render passes don't begin until the image is available), COLOR_ATTACHMENT_OUTPUT_BIT (makes the render pass wait for this stage).
+
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.waitSemaphoreCount = 1;
+	submitInfo.pWaitSemaphores = waitSemaphores;					// Semaphores upon which to wait before the CB/s begin execution.
+	submitInfo.pWaitDstStageMask = waitStages;
+	submitInfo.signalSemaphoreCount = 1;
+	submitInfo.pSignalSemaphores = signalSemaphores;				// Semaphores to be signaled once the CB/s have completed execution.
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &commandBuffers[imageIndex];		// Command buffers to submit for execution (here, the one that binds the swap chain image we just acquired as color attachment).
+
+	vkResetFences(e.c.device, 1, &framesInFlight[currentFrame]);	// Reset the fence to the unsignaled state.
+
+	{
+		const std::lock_guard<std::mutex> lock(e.mutQueue);
+		if (vkQueueSubmit(e.c.graphicsQueue, 1, &submitInfo, framesInFlight[currentFrame]) != VK_SUCCESS)	// Submit the command buffer to the graphics queue. An array of VkSubmitInfo structs can be taken as argument when workload is much larger, for efficiency.
+			throw std::runtime_error("Failed to submit draw command buffer!");
+
+		lastFence = framesInFlight[currentFrame];
+	}
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkQueueSubmit: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// Note:
+	// Subpass dependencies: Subpasses in a render pass automatically take care of image layout transitions. These transitions are controlled by subpass dependencies (specify memory and execution dependencies between subpasses).
+	// There are two built-in dependencies that take care of the transition at the start and at the end of the render pass, but the former does not occur at the right time. It assumes that the transition occurs at the start of the pipeline, but we haven't acquired the image yet at that point. Two ways to deal with this problem:
+	//		- waitStages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT (ensures that the render passes don't begin until the image is available).
+	//		- waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT (makes the render pass wait for this stage).
+
+	// Presentation (submit the result back to the swap chain to have it eventually show up on the screen).
+	VkPresentInfoKHR presentInfo{};
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.waitSemaphoreCount = 1;
+	presentInfo.pWaitSemaphores = signalSemaphores;
+	VkSwapchainKHR swapChains[] = { e.swapChain.swapChain };
+	presentInfo.swapchainCount = 1;
+	presentInfo.pSwapchains = swapChains;
+	presentInfo.pImageIndices = &imageIndex;
+	presentInfo.pResults = nullptr;			// Optional
+
+	{
+		const std::lock_guard<std::mutex> lock(e.mutQueue);
+		result = vkQueuePresentKHR(e.c.presentQueue, &presentInfo);		// Submit request to present an image to the swap chain. Our triangle may look a bit different because the shader interpolates in linear color space and then converts to sRGB color space.
+		frameCount++;
+	}
+
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || io.framebufferResized)
+	{
+		std::cout << "Out-of-date/Suboptimal KHR or window resized" << std::endl;
+		io.framebufferResized = false;
+		recreateSwapChain();
+	}
+	else if (result != VK_SUCCESS)
+		throw std::runtime_error("Failed to present swap chain image!");
+
+	currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;	// By using the modulo operator (%), the frame index loops around after every MAX_FRAMES_IN_FLIGHT enqueued frames.
+
+	//vkQueueWaitIdle(e.presentQueue);							// Make the whole graphics pipeline to be used only one frame at a time (instead of using this, we use multiple semaphores for processing frames concurrently).
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkQueuePresentKHR: ", profiler.updateTime() * 1000.f);
+#endif
 }
 
 // (24)
@@ -351,6 +578,7 @@ void Renderer::renderLoop()
 	worker.start();
 
 	timer.startTimer();
+	profiler.startTimer();
 
 	while (!io.getWindowShouldClose())
 	{
@@ -378,120 +606,6 @@ void Renderer::renderLoop()
 	#ifdef DEBUG_RENDERER
 		std::cout << typeid(*this).name() << "::" << __func__ << " end" << std::endl;
 	#endif
-}
-
-/*
-	-Wait for the frame's CB execution (inFlightFences)
-	vkAcquireNextImageKHR (acquire swap chain image)
-	-Wait for the swap chain image's CB execution (imagesInFlight/inFlightFences)
-	Update CB (optional)
-	-Wait for acquiring a swap chain image (imageAvailableSemaphores)
-	vkQueueSubmit (execute CB)
-	-Wait for CB execution (renderFinishedSemaphores)
-	vkQueuePresentKHR (present image)
-	
-	waitFor(framesInFlight[currentFrame]);
-	vkAcquireNextImageKHR(imageAvailableSemaphores[currentFrame], imageIndex);
-	waitFor(imagesInFlight[imageIndex]);
-	imagesInFlight[imageIndex] = framesInFlight[currentFrame];
-	updateCB();
-	vkResetFences(framesInFlight[currentFrame])
-	vkQueueSubmit(renderFinishedSemaphores[currentFrame], framesInFlight[currentFrame]); // waitFor(imageAvailableSemaphores[currentFrame])
-	vkQueuePresentKHR(); // waitFor(renderFinishedSemaphores[currentFrame]);
-	currentFrame = nextFrame;
-
-	1. Wait for command buffer execution
-	2. Acquire image from swapchain
-	3. Submit command buffer
-	4. Present result to swapchain
-*/
-void Renderer::drawFrame()
-{
-	#if defined(DEBUG_RENDERER) || defined(DEBUG_RENDERLOOP)
-		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
-	#endif
-	
-	// Wait for the frame to be finished (command buffer execution). If VK_TRUE, we wait for all fences; otherwise, we wait for any.
-	vkWaitForFences(e.c.device, 1, &framesInFlight[currentFrame], VK_TRUE, UINT64_MAX);
-
-	// Acquire an image from the swap chain
-	uint32_t imageIndex;		// Swap chain image index (0, 1, 2)
-	VkResult result = vkAcquireNextImageKHR(e.c.device, e.swapChain.swapChain, UINT64_MAX, imageAvailableSemaphores[currentFrame], VK_NULL_HANDLE, &imageIndex);		// Swap chain is an extension feature. imageIndex: index to the VkImage in our swapChainImages.
-	if (result == VK_ERROR_OUT_OF_DATE_KHR) 					// VK_ERROR_OUT_OF_DATE_KHR: The swap chain became incompatible with the surface and can no longer be used for rendering. Usually happens after window resize.
-	{ 
-		std::cout << "VK_ERROR_OUT_OF_DATE_KHR" << std::endl;
-		recreateSwapChain(); 
-		return; 
-	}
-	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)	// VK_SUBOPTIMAL_KHR: The swap chain can still be used to successfully present to the surface, but the surface properties are no longer matched exactly.
-		throw std::runtime_error("Failed to acquire swap chain image!");
-
-	// Check if this image is being used. If used, wait. Then, mark it as used by this frame.
-	if (imagesInFlight[imageIndex] != VK_NULL_HANDLE)									// Check if a previous frame is using this image (i.e. there is its fence to wait on)
-		vkWaitForFences(e.c.device, 1, &imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
-	imagesInFlight[imageIndex] = framesInFlight[currentFrame];							// Mark the image as now being in use by this frame
-
-	updateStates(imageIndex);
-
-	// Submit the command buffer
-	VkSubmitInfo submitInfo{};
-	VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[currentFrame] };			// Which semaphores to wait on before execution begins.
-	VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };		// Which semaphores to signal once the command buffers have finished execution.
-	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };	// In which stages of the pipeline to wait the semaphore. VK_PIPELINE_STAGE_ ... TOP_OF_PIPE_BIT (ensures that the render passes don't begin until the image is available), COLOR_ATTACHMENT_OUTPUT_BIT (makes the render pass wait for this stage).
-	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submitInfo.waitSemaphoreCount = 1;
-	submitInfo.pWaitSemaphores = waitSemaphores;					// Semaphores upon which to wait before the CB/s begin execution.
-	submitInfo.pWaitDstStageMask = waitStages;
-	submitInfo.signalSemaphoreCount = 1;
-	submitInfo.pSignalSemaphores = signalSemaphores;				// Semaphores to be signaled once the CB/s have completed execution.
-	submitInfo.commandBufferCount = 1;
-	submitInfo.pCommandBuffers = &commandBuffers[imageIndex];		// Command buffers to submit for execution (here, the one that binds the swap chain image we just acquired as color attachment).
-
-	vkResetFences(e.c.device, 1, &framesInFlight[currentFrame]);	// Reset the fence to the unsignaled state.
-
-	{
-		const std::lock_guard<std::mutex> lock(e.mutQueue);
-		if (vkQueueSubmit(e.c.graphicsQueue, 1, &submitInfo, framesInFlight[currentFrame]) != VK_SUCCESS)	// Submit the command buffer to the graphics queue. An array of VkSubmitInfo structs can be taken as argument when workload is much larger, for efficiency.
-			throw std::runtime_error("Failed to submit draw command buffer!");
-
-		lastFence = framesInFlight[currentFrame];
-	}
-
-	// Note:
-	// Subpass dependencies: Subpasses in a render pass automatically take care of image layout transitions. These transitions are controlled by subpass dependencies (specify memory and execution dependencies between subpasses).
-	// There are two built-in dependencies that take care of the transition at the start and at the end of the render pass, but the former does not occur at the right time. It assumes that the transition occurs at the start of the pipeline, but we haven't acquired the image yet at that point. Two ways to deal with this problem:
-	//		- waitStages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT (ensures that the render passes don't begin until the image is available).
-	//		- waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT (makes the render pass wait for this stage).
-
-	// Presentation (submit the result back to the swap chain to have it eventually show up on the screen).
-	VkPresentInfoKHR presentInfo{};
-	presentInfo.sType				= VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	presentInfo.waitSemaphoreCount	= 1;
-	presentInfo.pWaitSemaphores		= signalSemaphores;
-	VkSwapchainKHR swapChains[]		= { e.swapChain.swapChain };
-	presentInfo.swapchainCount		= 1;
-	presentInfo.pSwapchains			= swapChains;
-	presentInfo.pImageIndices		= &imageIndex;
-	presentInfo.pResults			= nullptr;			// Optional
-
-	{
-		const std::lock_guard<std::mutex> lock(e.mutQueue);
-		result = vkQueuePresentKHR(e.c.presentQueue, &presentInfo);		// Submit request to present an image to the swap chain. Our triangle may look a bit different because the shader interpolates in linear color space and then converts to sRGB color space.
-		frameCount++;
-	}
-
-	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || io.framebufferResized) 
-	{
-		std::cout << "Out-of-date/Suboptimal KHR or window resized" << std::endl;
-		io.framebufferResized = false;
-		recreateSwapChain();
-	}
-	else if (result != VK_SUCCESS)
-		throw std::runtime_error("Failed to present swap chain image!");
-	
-	currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;	// By using the modulo operator (%), the frame index loops around after every MAX_FRAMES_IN_FLIGHT enqueued frames.
-
-	//vkQueueWaitIdle(e.presentQueue);							// Make the whole graphics pipeline to be used only one frame at a time (instead of using this, we use multiple semaphores for processing frames concurrently).
 }
 
 void Renderer::recreateSwapChain()
@@ -721,8 +835,17 @@ void Renderer::updateStates(uint32_t currentImage)
 	
 	timer.updateTime();
 	waitForFPS(timer, maxFPS);
+	timer.reUpdateTime();
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("  waitForFPS: ", profiler.updateTime() * 1000.f);
+#endif
 
 	userUpdate(*this);		// Update model matrices and other things (user defined)
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("  userUpdate: ", profiler.updateTime() * 1000.f);
+#endif
 
 	// - MOVE MODELS
 	/*
@@ -804,26 +927,7 @@ void Renderer::updateStates(uint32_t currentImage)
 				vkUnmapMemory(e.c.device, model->fsUBO.uboMemories[currentImage]);
 			}
 		}
-
-	// - UPDATE COMMAND BUFFER
-	#ifdef DEBUG_RENDERLOOP
-		std::cout << "Update command buffer" << std::endl;
-	#endif
-
-	if (updateCommandBuffer)
-	{
-		{
-			//const std::lock_guard<std::mutex> lock(e.mutQueue);
-			//vkQueueWaitIdle(e.c.graphicsQueue);
-		}
-		vkWaitForFences(e.c.device, 1, &lastFence, VK_TRUE, UINT64_MAX);
-		
-		const std::lock_guard<std::mutex> lock(e.mutCommandPool);		// vkQueueWaitIdle(e.c.graphicsQueue) was called before, in drawFrame()
-		vkFreeCommandBuffers(e.c.device, e.commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());	// Any primary command buffer that is in the recording or executable state and has any element of pCommandBuffers recorded into it, becomes invalid.
-		createCommandBuffers();
-	}
 }
-
 
 void Renderer::createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader)
 {

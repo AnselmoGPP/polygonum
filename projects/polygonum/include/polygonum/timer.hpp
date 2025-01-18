@@ -29,8 +29,8 @@ public:
     Timer();   //!< Starts chronometer (calls startTimer())
 
     void startTimer();   //!< Restart chronometer (startTime)
-    void updateTime();   //!< Update time parameters with respect to currentTime.
-    void reUpdateTime();   //!< Re-update time parameters as if updateTime was not called before.
+    long double updateTime();   //!< Update time parameters with respect to currentTime. Returns deltaTime.
+    long double reUpdateTime();   //!< Re-update time parameters as if updateTime was not called before. Returns deltaTime.
 
     long double getDeltaTime() const;
     long double getTotalDeltaTime() const;

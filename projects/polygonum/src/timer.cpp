@@ -34,7 +34,7 @@ void Timer::startTimer()
     //std::this_thread::sleep_for(std::chrono::microseconds(1000));   // Avoids deltaTime == 0 (i.e. currentTime == lastTime)
 }
 
-void Timer::updateTime()
+long double Timer::updateTime()
 {
     prevTime = currentTime;
     currentTime = std::chrono::high_resolution_clock::now();
@@ -42,13 +42,17 @@ void Timer::updateTime()
     totalDeltaTime = std::chrono::duration<long double, std::chrono::seconds::period>(currentTime - startTime).count();
     //   time = std::chrono::duration_cast<std::chrono::microseconds>(currentTime - startTime).count() / 1000000.l;
     //   time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    return deltaTime;
 }
 
-void Timer::reUpdateTime()
+long double Timer::reUpdateTime()
 {
     currentTime = std::chrono::high_resolution_clock::now();
     deltaTime = std::chrono::duration<long double, std::chrono::seconds::period>(currentTime - prevTime).count();
     totalDeltaTime = std::chrono::duration<long double, std::chrono::seconds::period>(currentTime - startTime).count();
+
+    return deltaTime;
 }
 
 long double Timer::getDeltaTime() const { return deltaTime; }

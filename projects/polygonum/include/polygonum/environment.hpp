@@ -296,6 +296,7 @@ protected:
 class VulkanEnvironment
 {
 	IOmanager& io;
+	const uint32_t ADDITIONAL_SWAPCHAIN_IMAGES = 2;
 
 public:
 	VulkanEnvironment(IOmanager& io);

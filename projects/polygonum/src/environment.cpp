@@ -756,7 +756,7 @@ void VulkanEnvironment::createSwapChain()
 	VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);	// Presentation modes
 	VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);		// Basic surface capabilities
 
-	uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1;		// How many images in the swap chain? We choose the minimum required + 1 (this way, we won't have to wait sometimes on the driver to complete internal operations before we can acquire another image to render to.
+	uint32_t imageCount = swapChainSupport.capabilities.minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES;		// How many images in the swap chain? We choose the minimum required + 1 (this way, we won't have to wait sometimes on the driver to complete internal operations before we can acquire another image to render to.
 
 	if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount)	// Don't exceed max. number of images (if maxImageCount == 0, there is no maximum)
 		imageCount = swapChainSupport.capabilities.maxImageCount;

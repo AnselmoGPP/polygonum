@@ -26,6 +26,11 @@ Entity::~Entity()
 	#endif
 }
 
+Entity* Entity::newEntity(std::string name)
+{
+	return new Entity(name);
+}
+
 void Entity::printInfo()
 {
 	std::cout << name << '(' << typeid(Entity).name() << ")\n";
@@ -99,20 +104,6 @@ uint32_t EntitiesManager::addEntity(Entity* entity)
 		entities[newId] = std::unique_ptr<Entity>(entity);
 
 	return newId;
-}
-
-std::vector<uint32_t> EntitiesManager::addEntities(std::vector<Entity*> entities)
-{
-	#ifdef DEBUG_ECS
-		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
-	#endif
-
-	std::vector<uint32_t> newIds;
-
-	for (auto& entity : entities)
-		newIds.push_back(addEntity(entity));
-
-	return newIds;
 }
 
 void EntitiesManager::removeEntity(uint32_t entityId)

@@ -131,14 +131,55 @@ It manages the graphics engine and serves as its interface. Calling `renderLoop`
     1. Take a swap-chain image and use it as attachment in the framebuffer
     2. `update states`
       1. User updates models data via callback
-	  2. Pass updated UBOs to the GPU
+      2. Pass updated UBOs to the GPU
       3. Update command buffers, if necessary
-    3. Execute command buffers
-    4. Return the image to the swap chain for presentation
+    3. Command buffers execution (submit command buffer to graphics queue for execution)
+    4. Presentation to swapchain (submit swapchain image and to the presentation queue for screen rendering)
   3. Repeat
 4. Worker terminates
 5. `vkDeviceWaitIdle`: Wait for `VkDevice` to finish operations (drawing and presentation).
 6. `cleanup`
+
+**Semaphores and fences**:
+
+Images: Swapchain images where rendering goes.
+Frames: Number of computable frames.
+
+- `vector<VkSemaphore> imageAvailableSemaphores` (one per frame in flight): Signals that an image has been acquired from the swap chain and is ready for rendering. Each frame has a semaphore for concurrent processing. Allows multiple frames to be in-flight while still bounding the amount of work that piles up.
+- `vector<VkSemaphore> renderFinishedSemaphores` (one per frame in flight): Signals that rendering has finished (CB has been executed) and presentation can happen. Each frame has a semaphore for concurrent processing. Allows multiple frames to be in-flight while still bounding the amount of work that piles up.
+- `vector<VkFence> framesInFlight` (one per frame in flight): Similar to semaphores, but fences actually wait in our own code. Used to perform CPU-GPU synchronization.
+- `vector<VkFence> imagesInFlight` (one per swap chain image): Maps frames in flight by their fences. Tracks for each swapchain image if a frame in flight is currently using it.
+
+**`createSyncObjects`**:
+1. Resize vectors: To `MAX_FRAMES_IN_FLIGHT` (2+2) (`imageAvailableSemaphores`, `renderFinishedSemaphores`, `framesInFlight`) or `swapChain.images.size()` (2) (`imagesInFlight`).
+2. Create: `vkCreateSemaphore` (`imageAvailableSemaphores`, `renderFinishedSemaphores`) and `vkCreateFence` (`framesInFlight`).
+3. `lastFence = framesInFlight[currentFrame]`
+
+**`drawFrame`** in more detail:
+
+1. `currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT`
+2. `vkWaitForFences`: Wait for the frame to be finished (command buffer execution) (waits for `framesInFlight[currentFrame]`).
+3. `vkAcquireNextImageKHR`: Acquire an image from the swap chain (we specified the number of swapchain images in `VulkanEnvironment::createSwapChain`, usually 2+1). It occupies a semaphore (`imageAvailableSemaphores[currentFrame]`). If an error happens, it will call `recreateSwapChain` (window resize) or crash (failed acquire an image). Updates `imageIndex`.
+4. `vkWaitForFences`: Wait if this image is used (waits for `imagesInFlight[imageIndex]`).
+5. Mark the image as now being in use by this frame (`imagesInFlight[imageIndex] = framesInFlight[currentFrame]`).
+6. `updateStates(imageIndex)`: user model updates, pass UBOs to GPU, and update command buffers.
+7. `vkResetFences`: Reset `framesInFlight[currentFrame]`.
+8. `vkQueueSubmit`: Submit `commandBuffers[imageIndex]` to the graphics queue. It occupies `framesInFlight[currentFrame]`. It will wait (on pipeline stage `VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT`) on `imageAvailableSemaphores[currentFrame]` before executing command buffer, and will signal `renderFinishedSemaphores[currentFrame]` once it finishes execution. 
+9. `lastFence = framesInFlight[currentFrame];`
+10. `vkQueuePresentKHR`: Submit the swapchain image (`imageIndex`) to the presentation queue. It will wait on `renderFinishedSemaphores[currentFrame]` before requesting presentation. If an error happens, it will call `recreateSwapChain` (window resize?) or crash (failed to present).
+
+1. `currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT`
+2. `vkWaitForFences(framesInFlight[currentFrame])`
+3. `vkAcquireNextImageKHR`: Occupies (`imageAvailableSemaphores[currentFrame]`). Updates `imageIndex`.
+4. `vkWaitForFences(imagesInFlight[imageIndex])`
+5. `imagesInFlight[imageIndex] = framesInFlight[currentFrame]`
+6. `updateStates(imageIndex)`
+7. `vkResetFences(framesInFlight[currentFrame])`
+8. `vkQueueSubmit`: Submit `commandBuffers[imageIndex]` to the graphics queue. Occupies `framesInFlight[currentFrame]`. Waits (on pipeline stage `VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT`) on `imageAvailableSemaphores[currentFrame]` before executing command buffer. Signals `renderFinishedSemaphores[currentFrame]` once it finishes execution. 
+9. `lastFence = framesInFlight[currentFrame];`
+10. `vkQueuePresentKHR`: Submit swapchain image (`imageIndex`) to the presentation queue. Waits on `renderFinishedSemaphores[currentFrame]` before requesting presentation.
+
+In createCommandBuffer: `vkWaitForFences(lastFence)`
 
 Main contents:
 

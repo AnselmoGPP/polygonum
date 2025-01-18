@@ -28,14 +28,17 @@ struct Component
 /// An ID associated with a set of components.
 class Entity
 {
+    Entity(std::string name);
+
     std::unordered_map<std::type_index, std::unique_ptr<Component>> components;
 
 public:
-    Entity(std::string name);
     ~Entity();
 
-    template<typename T> void addComp(T* component);
-    template<typename T> T* getComp();
+    static Entity* newEntity(std::string name);
+    template <typename T, typename... Args> void addComponent(Args&&... args);
+    template <typename T, typename K, typename... Args> void addComponent(Args&&... args);
+    template<typename T> T* getComponent();
     void printInfo();
 
     const Entity* resourceHandle;
@@ -72,14 +75,12 @@ public:
     void update(float timeStep);
     void printInfo();
 
-    uint32_t addEntity(Entity* entity);                                     //!< Add new entity by defining its components.
-    std::vector<uint32_t> addEntities(std::vector<Entity*> entities);       //!< Add many new entities
-    template<typename T> void addComp(uint32_t entityId, T* component);
-    template<typename T> void addSystem(T* system);                         //!< Add new system
+    uint32_t addEntity(Entity* entity);   //!< Add new entity by defining its components.
+    template<typename T, typename... Args> void addSystem(Args&&... args);   //!< Add new system
 
     template<typename T> std::vector<uint32_t> getEntities();               //!< Get set of entities containing component of type X.
     template<typename T, typename Q> std::vector<uint32_t> getEntities();   //!< Get set of entities containing component of type X and type Y.
-    template<typename T> T* getComp(uint32_t entityId);   //!< Get a certain component from an entity.
+    template<typename T> T* getComponent(uint32_t entityId);   //!< Get a certain component from an entity.
     std::string getName(uint32_t entityId);
 
     void removeEntity(uint32_t entityId);
@@ -107,29 +108,36 @@ public:
 
 // Templates definitions ----------
 
-template<typename T>
-void Entity::addComp(T* component)
+template <typename T, typename... Args>
+void Entity::addComponent(Args&&... args)
 {
-    components[std::type_index(typeid(T))] = std::unique_ptr<T>(component);
+    components[std::type_index(typeid(T))] = std::make_unique<T>(std::forward<Args>(args)...);
+}
+
+template <typename T, typename K, typename... Args>
+void Entity::addComponent(Args&&... args)
+{
+    components[std::type_index(typeid(T))] = std::unique_ptr<T>((T*) new K(std::forward<Args>(args)...));
 }
 
 template<typename T>
-T* Entity::getComp()
+T* Entity::getComponent()
 {
     auto it = components.find(std::type_index(typeid(T)));
     return it != components.end() ? static_cast<T*>(it->second.get()) : nullptr;
 }
 
-template<typename T>
-void EntitiesManager::addSystem(T* system)
+template<typename T, typename... Args>
+void EntitiesManager::addSystem(Args&&... args)
 {
     #ifdef DEBUG_ECS
         std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
     #endif
-
-    system->em = this;
-    system->typeIndex = typeid(T);
-    systems.push_back(std::unique_ptr<T>(system));
+    
+    std::unique_ptr<T> systemPtr = std::make_unique<T>(std::forward<Args>(args)...);
+    systemPtr->em = this;
+    systemPtr->typeIndex = typeid(T);
+    systems.push_back(std::move(systemPtr));
 }
 
 template<typename T>
@@ -138,7 +146,7 @@ std::vector<uint32_t> EntitiesManager::getEntities()
     std::vector<uint32_t> result;
 
     for (auto& it : entities)
-        if (getComp<T>(it.first))
+        if (getComponent<T>(it.first))
             result.push_back(it.first);
 
     return result;
@@ -150,23 +158,17 @@ std::vector<uint32_t> EntitiesManager::getEntities()
     std::vector<uint32_t> result;
 
     for (auto& it : entities)
-        if (getComp<T>(it.first) && getComp<Q>(it.first))
+        if (getComponent<T>(it.first) && getComponent<Q>(it.first))
             result.push_back(it.first);
 
     return result;
 }
 
 template<typename T>
-void EntitiesManager::addComp(uint32_t entityId, T* component)
-{
-    entities[entityId]->addComp(component);
-}
-
-template<typename T>
-T* EntitiesManager::getComp(uint32_t entityId)
+T* EntitiesManager::getComponent(uint32_t entityId)
 {
     auto it = entities.find(entityId);
-    return it != entities.end() ? entities[entityId]->getComp<T>() : nullptr;
+    return it != entities.end() ? entities[entityId]->getComponent<T>() : nullptr;
 }
 
 #endif
