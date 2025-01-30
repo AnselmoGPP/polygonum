@@ -3,9 +3,19 @@
 
 #include <optional>					// std::optional<uint32_t> (Wrapper that contains no value until you assign something to it. Contains member has_value())
 #include <mutex>
+#include <queue>
+#include <cstdint>
+//#include <cstdlib>			// EXIT_SUCCESS, EXIT_FAILURE
+//#include <cstdint>			// UINT32_MAX
+//#include <algorithm>			// std::min / std::max
 
+#include "polygonum/toolkit.hpp"
+#include "polygonum/models.hpp"
+#include "polygonum/commons.hpp"
 #include "polygonum/input.hpp"
 
+
+// Macros & names ----------
 
 #define VAL_LAYERS					// Enable Validation layers
 
@@ -14,7 +24,6 @@ const bool enableValidationLayers = true;
 #else
 const bool enableValidationLayers = false;
 #endif
-
 
 // Prototypes ----------
 
@@ -27,11 +36,21 @@ struct Image;
 struct SwapChain;
 struct DeviceData;
 
+class  Subpass;
+class  RenderPass;
+class  CommandData;
+
 class RenderPipeline;
 class RP_DS;
 class RP_DS_PP;
 
-/// Common function. Creates a Vulkan buffer (VkBuffer and VkDeviceMemory).Used as friend in modelData, UBO and Texture.
+class LoadingWorker;
+class ModelsManager;
+class Renderer;
+
+// Common functions ----------
+
+/// Creates a Vulkan buffer (VkBuffer and VkDeviceMemory).Used as friend in modelData, UBO and Texture.
 void createBuffer(VulkanEnvironment* e, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
 
 
@@ -69,8 +88,20 @@ struct Image
 
 struct SwapChain
 {
-	SwapChain();
+	void createSwapChain(VulkanCore& core);
+	void createSwapChainImageViews(VulkanCore& core);   //!< Creates a basic image view for every image in the swap chain so that we can use them as color targets later on.
+	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
+	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
+	VkExtent2D chooseSwapExtent(IOmanager& io, const VkSurfaceCapabilitiesKHR& capabilities);
+	void cleanupSwapChain(VulkanEnvironment& env, LoadingWorker& worker, IOmanager& io, ModelsManager& models);   //!< Used in recreateSwapChain()
+
+	const uint32_t additionalSwapChainImages;
+
+public:
+	SwapChain(VulkanCore& core, uint32_t additionalSwapChainImages);
+	void recreateSwapChain(VulkanEnvironment& env, LoadingWorker& worker, IOmanager& io, ModelsManager& models);   //!< Used in drawFrame(). The window surface may change, making the swap chain no longer compatible with it (example: window resizing). Here, we catch these events (when acquiring/submitting an image from/to the swap chain) and recreate the swap chain.
 	void destroy(VkDevice device);
+	size_t imagesCount();
 
 	VkSwapchainKHR								swapChain;		//!< Swap chain object.
 	std::vector<VkImage>						images;			//!< List. Opaque handle to an image object.
@@ -118,7 +149,6 @@ private:
 	VkFormat findSupportedFormat(VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 };
 
-
 class VulkanCore
 {
 public:
@@ -126,6 +156,8 @@ public:
 
 	const bool add_MSAA = false;					//!< Shader MSAA (MultiSample AntiAliasing). 
 	const bool add_SS   = false;					//!< Sample shading. This can solve some problems from shader MSAA (example: only smoothens out edges of geometry but not the interior filling) (https://www.khronos.org/registry/vulkan/specs/1.0/html/vkspec.html#primsrast-sampleshading).
+
+	IOmanager& io;
 
 	VkInstance					instance;			//!< Opaque handle to an instance object. There is no global state in Vulkan and all per-application state is stored here.
 	VkDebugUtilsMessengerEXT	debugMessenger;		//!< Opaque handle to a debug messenger object (the debug callback is part of it).
@@ -141,12 +173,12 @@ public:
 
 	int memAllocObjects;							//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount). Incremented each vkAllocateMemory call; decremented each vkFreeMemory call.
 
+	VkImageView	createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
 	SwapChainSupportDetails	querySwapChainSupport();
 	QueueFamilyIndices findQueueFamilies();
 	void destroy();
 
 private:
-	IOmanager& io;
 
 	const std::vector<const char*> requiredValidationLayers = { "VK_LAYER_KHRONOS_validation" };
 	const std::vector<const char*> requiredDeviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };	//!< Swap chain: Queue of images that are waiting to be presented to the screen. Our application will acquire such an image to draw to it, and then return it to the queue. Its general purpose is to synchronize the presentation of images with the refresh rate of the screen.
@@ -172,7 +204,6 @@ private:
 	bool checkDeviceExtensionSupport(VkPhysicalDevice device);
 	SwapChainSupportDetails	querySwapChainSupport(VkPhysicalDevice device);
 };
-
 
 class Subpass
 {
@@ -293,48 +324,260 @@ protected:
 	void destroyAttachments() override;
 };
 
-class VulkanEnvironment
+class CommandData
 {
-	IOmanager& io;
-	const uint32_t ADDITIONAL_SWAPCHAIN_IMAGES = 2;
+	uint32_t lastFrame;   //!< Frame to process next. Different frames can be processed concurrently.
+	const size_t swapChainImagesCount;
+	const size_t maxFramesInFlight;
+	std::mutex mutGetNextFrame;
+
+	VulkanCore* core;
+
+	void createSynchronizers(VulkanCore* core, size_t numSwapchainImages, size_t numFrames);   //!< Create semaphores and fences for synchronizing the events occuring in each frame (drawFrame()).
+	VkCommandBuffer	beginSingleTimeCommands(uint32_t frameIndex);
+	void endSingleTimeCommands(uint32_t frameIndex, VkCommandBuffer commandBuffer);// <<< commandBuffer as argument?
+	bool hasStencilComponent(VkFormat format);
+	void clearDepthBuffer(VkCommandBuffer commandBuffer, const SwapChain& swapChain);   //!< [Not used] Used for clearing depth buffer between sets of draw commands in order to apply Painter's algorithm.
 
 public:
-	VulkanEnvironment(IOmanager& io);
+	CommandData(VulkanCore* core, size_t swapChainImagesCount, size_t maxFramesInFlight);
+
+	std::vector<VkCommandPool> commandPools;   //!< commandPools[frame]. Opaque handle to a command pool object. It manages the memory that is used to store the buffers, and command buffers are allocated from them. One per frame (for better performance).
+	std::vector<std::vector<VkCommandBuffer>> commandBuffers;			//!< commandBuffers[frame][swapchain images]
+
+	std::vector<VkSemaphore> imageAvailableSemaphores;	//!< [frame]. Signals that an image has been acquired from the swap chain and is ready for rendering (CB execution). Each frame has a semaphore for concurrent processing. Allows multiple frames to be in-flight while still bounding the amount of work that piles up. One for each possible frame in flight.
+	std::vector<VkSemaphore> renderFinishedSemaphores;	//!< [frame]. Signals that rendering has finished (CB has been executed) and is ready for presentation. Each frame has a semaphore for concurrent processing. Allows multiple frames to be in-flight while still bounding the amount of work that piles up. One for each possible frame in flight.
+	std::vector<VkFence> framesInFlight;   //!< [frame]. Fence occupied during rendering (CB execution).
+	std::vector<VkFence> imagesInFlight;   //!< [swapChain image]. Copy of the last fence used for this image. Maps frames in flight by their fences. Tracks for each swap chain image if a frame in flight is currently using it. One per swap chain image.
+
+	std::mutex mutQueue;					//!< Controls that vkQueueSubmit is not used in two threads simultaneously (Environment -> endSingleTimeCommands(), and Renderer -> createCommandBuffers)
+	std::vector<std::mutex> mutCommandPool;   //!< [frame]. The same command pool cannot be used simultaneously in 2 different threads. Problem: It is used at command buffer creation (Renderer, 1st thread, at updateCB), and beginSingleTimeCommands and endSingleTimeCommands (Environment, 2nd thread, indirectly used in loadAndCreateTexture & fullConstruction), and indirectly sometimes (command buffer).
+	std::vector<std::mutex> mutFrame;   //!< [frame]. This prevents two threads from drawing (acquire-update-submit-present) for the same frame.
+
+	bool updateCommandBuffer;
+	size_t commandsCount;				//!< Number of drawing commands sent to the command buffer. For debugging purposes.
+
+	/*
+		@brief Allocates command buffers and record drawing commands in them.
+
+		Commands issued depends upon: SwapChainImages · Layer · Model · numRenders
+		Bindings: pipeline > vertex buffer > indices > descriptor set > draw
+		Render same model with different descriptors (used here):
+		<ul>
+			<li>You technically don't have multiple uniform buffers; you just have one. But you can use the offset(s) provided to vkCmdBindDescriptorSets to shift where in that buffer the next rendering command(s) will get their data from. Basically, you rebind your descriptor sets, but with different pDynamicOffset array values.</li>
+			<li>Your pipeline layout has to explicitly declare those descriptors as being dynamic descriptors. And every time you bind the set, you'll need to provide the offset into the buffer used by that descriptor.</li>
+			<li>More: https://stackoverflow.com/questions/45425603/vulkan-is-there-a-way-to-draw-multiple-objects-in-different-locations-like-in-d </li>
+		</ul>
+
+		Another option: Instance rendering allows to perform a single draw call. As I understood, UBO can be passed in the following ways:
+		<ul>
+			<li>In a non-dynamic descriptor (problem: shader has to contain the declaration of one UBO for each instance).</li>
+			<li>As a buffer's attribute (problem: it is non-modifyable).</li>
+			<li>In a dynamic descriptor (solves both previous problems), but requires many draw calls (defeats the whole purpose of instance rendering).</li>
+			<li>https://stackoverflow.com/questions/54619507/whats-the-correct-way-to-implement-instanced-rendering-in-vulkan </li>
+			<li>https://www.reddit.com/r/vulkan/comments/hhoktq/rendering_multiple_objects/ </li>
+		</ul>
+	*/
+	void createCommandBuffers(ModelsManager& models, std::shared_ptr<RenderPipeline> renderPipeline, size_t swapChainImagesCount, size_t frameIndex);
+	void createCommandPool(VulkanCore* core, size_t numFrames);
+	uint32_t getNextFrame();   //!< Increment currentFrame by one, but loop around when reaching "maxFramesInFlight".
+
+	// Single time commands
+	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
+	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size, VulkanEnvironment* e);
+	void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+	void generateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
+
+	// Cleanup
+	void freeCommandBuffers();
+	void destroyCommandPool();
+	void destroySynchronizers();
+};
+
+class VulkanEnvironment
+{
+	//const uint32_t additionalSwapChainImages;   //!< Tota number of swapchain images = swapChain_capabilities_minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES
+	//const uint32_t maxFramesInFlight;   //!< How many frames should be processed concurrently.
+
+	IOmanager& io;
+
+public:
+	VulkanEnvironment(IOmanager& io, size_t additionalSwapChainImages, size_t maxFramesInFlight);
 	~VulkanEnvironment();
 
 	VulkanCore c;
 
 	void			createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
 	uint32_t		findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-	void			transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);	//!< Submit a pipeline barrier. It specifies when a transition happens: when the pipeline finishes (source) and the next one starts (destination). No command may start before it finishes transitioning. Commands come at the top of the pipeline (first stage), shaders are executed in order, and commands retire at the bottom of the pipeline (last stage), when execution finishes. This barrier will wait for everything to finish and block any work from starting.
-	VkCommandBuffer	beginSingleTimeCommands();
-	void			endSingleTimeCommands(VkCommandBuffer commandBuffer);
-	VkImageView		createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
 
 	void			recreate_RenderPipeline_SwapChain();
 	void			cleanup_RenderPipeline_SwapChain();
 	void			cleanup();
 
 	// Main member variables:
-	VkCommandPool commandPool;				//!< Opaque handle to a command pool object. It manages the memory that is used to store the buffers, and command buffers are allocated from them. 
-
-	std::shared_ptr<RenderPipeline> rp;		//!< Render pipeline
 	SwapChain swapChain;					// Final color. Swapchain elements.
-
-	std::mutex mutQueue;					//!< Controls that vkQueueSubmit is not used in two threads simultaneously (Environment -> endSingleTimeCommands(), and Renderer -> createCommandBuffers)
-	std::mutex mutCommandPool;				//!< Command pool cannot be used simultaneously in 2 different threads. Problem: It is used at command buffer creation (Renderer, 1st thread, at updateCB), and beginSingleTimeCommands and endSingleTimeCommands (Environment, 2nd thread, indirectly used in loadAndCreateTexture & fullConstruction), and indirectly sometimes (command buffer).
-
-private:
-	void createSwapChain();
-	void createSwapChainImageViews();
-
-	void createCommandPool();
-
-	// Helper methods:
-	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
-	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
-	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
-	bool hasStencilComponent(VkFormat format);
+	CommandData commands;
+	std::shared_ptr<RenderPipeline> rp;		//!< Render pipeline
 };
+
+enum Task { none, construct, delet };   //!< Used in LoadingWorker.
+
+/// Reponsible for the loading thread and its processes.
+class LoadingWorker
+{
+	std::queue<std::pair<key64, Task>> tasks;   //!< FIFO queue
+	std::unordered_map<key64, ModelData> modelTP;   //!< Model To Process: A model is moved here temporarily for processing. After processing, it's tranferred to its final destination.
+
+	//std::unordered_map<key64, ModelData>& models;
+	//std::list<Texture>& textures;
+	//std::list<Shader>& shaders;
+
+	//bool&					updateCommandBuffer;
+
+	int						waitTime;				//!< Time (milliseconds) the loading-thread wait till next check.
+	bool					runThread;				//!< Signals whether the secondary thread (loadingThread) should be running.
+	std::thread				thread_loadModels;		//!< Thread for loading new models. Initiated in the constructor. Finished if glfwWindowShouldClose
+
+	/**
+		@brief Load and delete models (including their shaders and textures)
+
+		<ul> Process:
+			<li>  Initializes and moves models from modelsToLoad to models </li>
+			<li>  Deletes models from modelsToDelete </li>
+				<li> Deletes shaders and textures with counter == 0 </li>
+		</ul>
+	*/
+	void thread_loadData(Renderer* renderer, ModelsManager* models, CommandData* commandData);
+	void extractModel(ModelsManager& models, key64 key);   //!< Extract model from "models" to "modelTP"
+	void returnModel(ModelsManager& models, key64 key);   //!< Extract model from "modelTP" to "models"
+
+public:
+	LoadingWorker(int waitTime);
+	~LoadingWorker();
+
+	std::mutex mutModels;   //!< for Renderer::models
+	std::mutex mutTasks;   //!< for LoadingWorker::tasks
+
+	std::mutex mutModelTP;
+
+	std::mutex mutLoad;			//!< for Renderer::modelsToLoad
+	std::mutex mutDelete;		//!< for Renderer::modelsToDelete
+	std::mutex mutResources;	//!< for Renderer::shaders & Renderer::textures
+
+	void start(Renderer* renderer, ModelsManager* models, CommandData* commandData);
+	void stop();
+	void newTask(key64 key, Task task);
+};
+
+/// Used for the user to specify what primitive type represents the vertex data. 
+//enum primitiveTopology {
+//	point		= VK_PRIMITIVE_TOPOLOGY_POINT_LIST,
+//	line		= VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
+//	triangle	= VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+//};
+
+// LOOK Restart the Renderer object after finishing the render loop
+/**
+*   @brief Responsible for making the rendering (render loop). Manages models, textures, input, camera...
+*
+*	It creates a VulkanEnvironment and, when the user wants, a ModelData (newModel()).
+*/
+class Renderer
+{
+	const uint32_t ADDITIONAL_SWAPCHAIN_IMAGES = 1;   //!< Total number of swapchain images = swapChain_capabilities_minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES
+	const uint32_t MAX_FRAMES_IN_FLIGHT = 4;   //!< How many frames should be processed concurrently.
+
+	friend ResourcesLoader;
+	friend LoadingWorker;
+
+	// Main parameters
+	IOmanager io;
+	VulkanEnvironment e;
+	Timer timer, profiler;
+	ModelsManager models;
+	PointersManager<std::string, Texture> textures;			//!< Set of textures
+	PointersManager<std::string, Shader> shaders;			//!< Set of shaders
+	LoadingWorker worker;
+
+	// Member variables:
+	size_t						renderedFramesCount;		//!< Number of frames rendered
+	int							maxFPS;						//!< Maximum FPS (= 30 by default).
+
+	key64						lightingPass;				//!< Optional (createLighting())
+	key64						postprocessingPass;			//!< Optional (createPostprocessing())
+
+	// Main methods:
+
+	/**
+	*	Acquire image from swap chain, execute command buffer with that image as attachment in the framebuffer, and return the image to the swap chain for presentation.
+	*	This method performs 3 operations asynchronously (the function call returns before the operations are finished, with undefined order of execution):
+	*	<ul>
+	*		<li>vkAcquireNextImageKHR: Acquire an image from the swap chain (imageAvailableSemaphores)</li>
+	*		<li>vkQueueSubmit: Execute the command buffer with that image as attachment in the framebuffer (renderFinishedSemaphores, inFlightFences)</li>
+	*		<li>vkQueuePresentKHR: Return the image to the swap chain for presentation</li>
+	*	</ul>
+	*	Each of the operations depend on the previous one finishing, so we need to synchronize the swap chain events.
+	*	Two ways: semaphores (mainly designed to synchronize within or across command queues. Best fit here) and fences (mainly designed to synchronize your application itself with rendering operation).
+	*	Synchronization examples: https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples#swapchain-image-acquire-and-present
+	*/
+	/// Draw a frame: Wait for previous command buffer execution, acquire image from swapchain, update states and command buffer, submit command buffer for execution, and present result for display on screen.
+	void drawFrame();
+
+	/// Cleanup after render loop terminates
+	void cleanup();
+
+	// Update uniforms, transformation matrices, add/delete new models/textures. Transformation matrices (MVP) will be generated each frame.
+	void updateStates(uint32_t currentImage);
+
+	/// Callback used by the client for updating states of their models
+	void(*userUpdate) (Renderer& rend);
+
+public:
+	// LOOK what if firstModel.size() == 0
+	/// Constructor. Requires a callback for updating model matrix, adding models, deleting models, etc.
+	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOinfo globalUBO_vs, UBOinfo globalUBO_fs);
+	~Renderer();
+
+	UBO globalUBO_vs;	//!< Max. number of active instances
+	UBO globalUBO_fs;
+
+	void renderLoop();	//!< Create command buffer and start render loop.
+
+	/// Create (partially) a new model in the list modelsToLoad. Used for rendering a model.
+	key64 newModel(ModelDataInfo& modelInfo);
+
+	/// Move model from list models (or modelsToLoad) to list modelsToDelete. If the model is being fully constructed (by the worker), it waits until it finishes. Note: When the app closes, it destroys Renderer. Thus, don't use this method at app-closing (like in an object destructor): if Renderer is destroyed first, the app may crash.
+	void deleteModel(key64 key);
+
+	ModelData* getModel(key64 key);
+
+	void setInstances(key64 key, size_t numberOfRenders);
+	void setInstances(std::vector<key64>& keys, size_t numberOfRenders);
+
+	void setMaxFPS(int maxFPS);
+
+	/// Make a model the last to be drawn within its own layer. Useful for transparent objects.
+	//void toLastDraw(modelIter model) { /* <<< NOT WORKING */ };
+
+	void createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader);
+	void updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights);
+	void createPostprocessingPass(std::string vertShaderPath, std::string fragShaderPath);
+	void updatePostprocessingPass();
+
+	// Getters
+	Timer& getTimer();		//!< Returns the timer object (provides access to time data).
+	size_t		getRendersCount(key64 key);
+	size_t		getFrameCount();
+	size_t		getFPS();
+	size_t		getModelsCount();
+	size_t		getCommandsCount();
+	size_t		loadedShaders();	//!< Returns number of shaders in Renderer:shaders
+	size_t		loadedTextures();	//!< Returns number of textures in Renderer:textures
+	IOmanager& getIO();			//!< Get access to the IO manager
+	int			getMaxMemoryAllocationCount();			//!< Max. number of valid memory objects
+	int			getMemAllocObjects();					//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount)
+};
+
+
 
 #endif

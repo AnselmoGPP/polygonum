@@ -1,8 +1,8 @@
 #ifndef TEXTURE_HPP
 #define TEXTURE_HPP
 
-#include "polygonum/environment.hpp"
-#include "polygonum/vertex.hpp"
+//#include "polygonum/environment.hpp"
+//#include "polygonum/vertex.hpp"
 #include "polygonum/toolkit.hpp"
 
 
@@ -144,7 +144,6 @@ protected:
 
 	void createVertexBuffer(const VertexSet& rawVertices, VertexData& result, VulkanEnvironment* e);									//!< Vertex buffer creation.
 	void createIndexBuffer(const std::vector<uint16_t>& rawIndices, VertexData& result, VulkanEnvironment* e);							//!< Index buffer creation
-	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size, VulkanEnvironment* e);
 
 	glm::vec3 getVertexTangent(const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3, const glm::vec2 uv1, const glm::vec2 uv2, const glm::vec2 uv3);
 
@@ -342,9 +341,6 @@ protected:
 	std::pair<VkImage, VkDeviceMemory> createTextureImage(unsigned char* pixels, int32_t texWidth, int32_t texHeight, uint32_t& mipLevels);
 	VkImageView                        createTextureImageView(VkImage textureImage, uint32_t mipLevels);
 	VkSampler                          createTextureSampler(uint32_t mipLevels);
-
-	void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
-	void generateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
 
 	VulkanEnvironment* e;
 	std::string id;

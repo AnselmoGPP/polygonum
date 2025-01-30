@@ -2,6 +2,7 @@
 #define AUXILIARY_HPP
 
 #include <array>
+#include <chrono>
 
 #include "polygonum/commons.hpp"
 
@@ -10,6 +11,7 @@
   - MVP Matrix
   - Vertex sets
   - Maths
+  - Timer
   - Algorithms
   - Data structures
 */
@@ -95,12 +97,21 @@ void printVec(const T& vec)
 {
     //const float* pSource = (const float*)glm::value_ptr(matrix);
     glm::length_t length = vec.length();
-    float output;
 
     for (int i = 0; i < length; i++)
         std::cout << ((abs(vec[i]) < 0.0001) ? 0 : vec[i]) << "  ";
 
     std::cout << std::endl;
+}
+
+/// Print the contents of a T[3] array. Useful for debugging
+template<typename T>
+void printVec(const T& vec, unsigned length)
+{
+	for (int i = 0; i < length; i++)
+		std::cout << ((abs(vec[i]) < 0.0001) ? 0 : vec[i]) << "  ";
+
+	std::cout << std::endl;
 }
 
 /// Print string (or any printable object)
@@ -274,6 +285,40 @@ float safeMod(float a, float b);
 glm::vec3 safeMod(const glm::vec3& a, float b);
 
 float getSlope(const glm::vec3& groundNormal, const glm::vec3& upNormal);
+
+
+// Timer -----------------------------------------------------------------
+
+/**
+*   Class for getting delta time and counting. Useful for getting frame's delta time and counting frames.
+*       <ul>
+*           <li>Delta time: Delta time between the last 2 consecutive calls to updateTime.</li>
+*           <li>Total delta time: Delta time between startTime and the last call to updateTime.</li>
+*       </ul>
+*/
+class Timer
+{
+	std::chrono::high_resolution_clock::time_point startTime;   //!< Time at startTimer call
+	std::chrono::high_resolution_clock::time_point currentTime;   //!< Time at last updateTime call
+	std::chrono::high_resolution_clock::time_point prevTime;   //!< Time at second last updateTime call
+	long double deltaTime;   //!< Delta time between two consecutive calls to updateTime.
+	long double totalDeltaTime;   //!< Delta time between startTimer and updateTime.
+
+public:
+	Timer();   //!< Starts chronometer (calls startTimer())
+
+	void startTimer();   //!< Restart chronometer (startTime)
+	long double updateTime();   //!< Update time parameters with respect to currentTime. Returns deltaTime.
+	long double reUpdateTime();   //!< Re-update time parameters as if updateTime was not called before. Returns deltaTime.
+
+	long double getDeltaTime() const;
+	long double getTotalDeltaTime() const;
+	std::string getDate();   //!< Get a string with current date and time (example: Mon Jan 31 02:28:35 2022)
+};
+
+void sleep(int milliseconds);
+
+void waitForFPS(Timer& timer, int maxFPS);
 
 
 // Algorithms -----------------------------------------------------------------

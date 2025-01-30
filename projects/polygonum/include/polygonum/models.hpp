@@ -12,7 +12,8 @@
 
 
 class Renderer;
-
+class VulkanEnvironment;
+class RenderPipeline;
 
 struct ModelDataInfo
 {
@@ -132,6 +133,19 @@ public:
 	bool						 fullyConstructed;		//!< Object fully constructed (i.e. model loaded into Vulkan).
 	bool						 ready;					//!< Object ready for rendering (i.e., it's fully constructed and in Renderer::models)
 	std::string					 name;					//!< For debugging purposes.
+};
+
+class ModelsManager
+{
+public:
+	ModelsManager(const std::shared_ptr<RenderPipeline>& renderPipeline);
+
+	std::unordered_map<key64, ModelData> data;   //!< All models (constructed or not). std::unordered_map uses a hash table. Complexity for lookup, insertion, and deletion: O(1) (average) - O(n) (worst-case)
+	vec3<key64> keys;   //!< keys[render pass][subpass][keys]. All keys of all models, distributed per renderpass ad subpass.
+
+	void distributeKeys();
+	key64 getNewKey();
+	key64 newKey;
 };
 
 #endif

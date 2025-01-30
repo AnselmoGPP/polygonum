@@ -4,7 +4,7 @@
 #define STB_IMAGE_IMPLEMENTATION		// Import textures
 #include "stb_image.h"
 
-#include "polygonum/renderer.hpp"
+#include "polygonum/environment.hpp"
 #include "polygonum/models.hpp"
 #include "polygonum/importer.hpp"
 #include "polygonum/physics.hpp"
@@ -127,7 +127,7 @@ void VertexesLoader::createVertexBuffer(const VertexSet& rawVertices, VertexData
 	result.vertexCount = rawVertices.getNumVertex();
 
 	// Move the vertex data to the device local buffer
-	copyBuffer(stagingBuffer, result.vertexBuffer, bufferSize, e);
+	e->commands.copyBuffer(stagingBuffer, result.vertexBuffer, bufferSize, e);
 
 	// Clean up
 	vkDestroyBuffer(e->c.device, stagingBuffer, nullptr);
@@ -174,38 +174,12 @@ void VertexesLoader::createIndexBuffer(const std::vector<uint16_t>& rawIndices, 
 		result.indexBufferMemory);
 
 	// Move the vertex data to the device local buffer
-	copyBuffer(stagingBuffer, result.indexBuffer, bufferSize, e);
+	e->commands.copyBuffer(stagingBuffer, result.indexBuffer, bufferSize, e);
 
 	// Clean up
 	vkDestroyBuffer(e->c.device, stagingBuffer, nullptr);
 	vkFreeMemory(e->c.device, stagingBufferMemory, nullptr);
 	e->c.memAllocObjects--;
-}
-
-/**
-	@brief Copies some amount of data (size) from srcBuffer into dstBuffer. Used in createVertexBuffer() and createIndexBuffer().
-
-	Memory transfer operations are executed using command buffers (like drawing commands), so we allocate a temporary command buffer. You may wish to create a separate command pool for these kinds of short-lived buffers, because the implementation could apply memory allocation optimizations. You should use the VK_COMMAND_POOL_CREATE_TRANSIENT_BIT flag during command pool generation in that case.
-*/
-void VertexesLoader::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size, VulkanEnvironment* e)
-{
-	#ifdef DEBUG_RESOURCES
-		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
-	#endif
-
-	const std::lock_guard<std::mutex> lock(e->mutCommandPool);
-	
-	VkCommandBuffer commandBuffer = e->beginSingleTimeCommands();
-
-	// Specify buffers and the size of the contents you will transfer (it's not possible to specify VK_WHOLE_SIZE here, unlike vkMapMemory command).
-	VkBufferCopy copyRegion{};
-	copyRegion.size = size;
-	copyRegion.srcOffset = 0;	// Optional
-	copyRegion.dstOffset = 0;	// Optional
-	
-	vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
-
-	e->endSingleTimeCommands(commandBuffer);
 }
 
 glm::vec3 VertexesLoader::getVertexTangent(const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3, const glm::vec2 uv1, const glm::vec2 uv2, const glm::vec2 uv3)
@@ -809,11 +783,11 @@ std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned ch
 		textureImageMemory);
 
 	// Copy the staging buffer to the texture image
-	e->transitionImageLayout(textureImage, imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);					// Transition the texture image to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-	copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));											// Execute the buffer to image copy operation
+	e->commands.transitionImageLayout(textureImage, imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);					// Transition the texture image to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+	e->commands.copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));											// Execute the buffer to image copy operation
 	// Transitioned to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL while generating mipmaps
 	// transitionImageLayout(textureImage, imageFormat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, mipLevels);	// To be able to start sampling from the texture image in the shader, we need one last transition to prepare it for shader access
-	generateMipmaps(textureImage, imageFormat, texWidth, texHeight, mipLevels);
+	e->commands.generateMipmaps(textureImage, imageFormat, texWidth, texHeight, mipLevels);
 
 	// Cleanup the staging buffer and its memory
 	vkDestroyBuffer(e->c.device, stagingBuffer, nullptr);
@@ -829,7 +803,7 @@ VkImageView TextureLoader::createTextureImageView(VkImage textureImage, uint32_t
 		std::cout << "   " << __func__ << std::endl;
 	#endif
 
-	return e->createImageView(textureImage, imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
+	return e->c.createImageView(textureImage, imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
 }
 
 VkSampler TextureLoader::createTextureSampler(uint32_t mipLevels)
@@ -893,136 +867,6 @@ VkSampler TextureLoader::createTextureSampler(uint32_t mipLevels)
 	*	else
 	*		color = readTexture(uv, minFilter);
 	*/
-}
-
-void TextureLoader::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
-{
-	const std::lock_guard<std::mutex> lock(e->mutCommandPool);
-
-	VkCommandBuffer commandBuffer = e->beginSingleTimeCommands();
-
-	// Specify which part of the buffer is going to be copied to which part of the image
-	VkBufferImageCopy region{};
-	region.bufferOffset = 0;							// Byte offset in the buffer at which the pixel values start
-	region.bufferRowLength = 0;							// How the pixels are laid out in memory. 0 indicates that the pixels are thightly packed. Otherwise, you could have some padding bytes between rows of the image, for example. 
-	region.bufferImageHeight = 0;							// How the pixels are laid out in memory. 0 indicates that the pixels are thightly packed. Otherwise, you could have some padding bytes between rows of the image, for example.
-	region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;	// imageSubresource indicate to which part of the image we want to copy the pixels
-	region.imageSubresource.mipLevel = 0;
-	region.imageSubresource.baseArrayLayer = 0;
-	region.imageSubresource.layerCount = 1;
-	region.imageOffset = { 0, 0, 0 };					// Indicate to which part of the image we want to copy the pixels
-	region.imageExtent = { width, height, 1 };			// Indicate to which part of the image we want to copy the pixels
-
-	// Enqueue buffer to image copy operations
-	vkCmdCopyBufferToImage(
-		commandBuffer,
-		buffer,
-		image,
-		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,			// Layout the image is currently using
-		1,
-		&region);
-
-	e->endSingleTimeCommands(commandBuffer);
-}
-
-void TextureLoader::generateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels)
-{
-	// Check if the image format supports linear blitting. We are using vkCmdBlitImage, but it's not guaranteed to be supported on all platforms because it requires our texture image format to support linear filtering, so we check it with vkGetPhysicalDeviceFormatProperties.
-	VkFormatProperties formatProperties;
-	vkGetPhysicalDeviceFormatProperties(e->c.physicalDevice, imageFormat, &formatProperties);
-	if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
-	{
-		throw std::runtime_error("Texture image format does not support linear blitting!");
-		// Two alternatives:
-		//		- Implement a function that searches common texture image formats for one that does support linear blitting.
-		//		- Implement the mipmap generation in software with a library like stb_image_resize. Each mip level can then be loaded into the image in the same way that you loaded the original image.
-		// It's uncommon to generate the mipmap levels at runtime anyway. Usually they are pregenerated and stored in the texture file alongside the base level to improve loading speed. <<<<<
-	}
-	
-	const std::lock_guard<std::mutex> lock(e->mutCommandPool);
-
-	VkCommandBuffer commandBuffer = e->beginSingleTimeCommands();
-
-	// Specify the barriers
-	VkImageMemoryBarrier barrier{};
-	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-	barrier.image = image;
-	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-	barrier.subresourceRange.baseArrayLayer = 0;
-	barrier.subresourceRange.layerCount = 1;
-	barrier.subresourceRange.levelCount = 1;
-
-	int32_t mipWidth = texWidth;
-	int32_t mipHeight = texHeight;
-
-	for (uint32_t i = 1; i < mipLevels; i++)	// This loop records each of the VkCmdBlitImage commands. The source mip level is i - 1 and the destination mip level is i.
-	{
-		// 1. Record a barrier (we transition level i - 1 to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL. This transition will wait for level i - 1 to be filled, either from the previous blit command, or from vkCmdCopyBufferToImage. The current blit command will wait on this transition).
-		barrier.subresourceRange.baseMipLevel = i - 1;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;	// We transition level i - 1 to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL. This transition will wait for level i - 1 to be filled, either from the previous blit command, or from vkCmdCopyBufferToImage. The current blit command will wait on this transition.
-		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-
-		vkCmdPipelineBarrier(commandBuffer,
-			VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
-			0, nullptr,
-			0, nullptr,
-			1, &barrier);
-
-		// 2. Record a blit command. Beware if you are using a dedicated transfer queue: vkCmdBlitImage must be submitted to a queue with graphics capability.		
-		VkImageBlit blit{};										// Specify the regions that will be used in the blit operation
-		blit.srcOffsets[0] = { 0, 0, 0 };						// srcOffsets determine the 3D regions ...
-		blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };		// ... that data will be blitted from.
-		blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		blit.srcSubresource.mipLevel = i - 1;
-		blit.srcSubresource.baseArrayLayer = 0;
-		blit.srcSubresource.layerCount = 1;
-		blit.dstOffsets[0] = { 0, 0, 0 };																	// dstOffsets determine the 3D region ...
-		blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1,  mipHeight > 1 ? mipHeight / 2 : 1,  1 };	// ... that data will be blitted to.
-		blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		blit.dstSubresource.mipLevel = i;
-		blit.dstSubresource.baseArrayLayer = 0;
-		blit.dstSubresource.layerCount = 1;
-
-		vkCmdBlitImage(commandBuffer,
-			image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,		// The textureImage is used for both the srcImage and dstImage parameter ...
-			image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,		// ...  because we're blitting between different levels of the same image.
-			1, &blit,
-			VK_FILTER_LINEAR);									// Enable interpolation
-
-		// 3. Record a barrier (This barrier transitions mip level i - 1 to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL. This transition waits on the current blit command to finish. All sampling operations will wait on this transition to finish).
-		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-		vkCmdPipelineBarrier(commandBuffer,
-			VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
-			0, nullptr,
-			0, nullptr,
-			1, &barrier);
-
-		if (mipWidth > 1) mipWidth /= 2;
-		if (mipHeight > 1) mipHeight /= 2;
-	}
-
-	barrier.subresourceRange.baseMipLevel = mipLevels - 1;
-	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-	barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-	// n. Record a barrier (This barrier transitions the last mip level from VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL. This wasn't handled by the loop, since the last mip level is never blitted from).
-	vkCmdPipelineBarrier(commandBuffer,
-		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
-		0, nullptr,
-		0, nullptr,
-		1, &barrier);
-
-	e->endSingleTimeCommands(commandBuffer);
 }
 
 TL_fromBuffer::TL_fromBuffer(const std::string& id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat, VkSamplerAddressMode addressMode)

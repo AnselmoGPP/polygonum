@@ -2,8 +2,19 @@
 #include <map>				// std::multimap<key, value>
 #include <set>				// std::set<uint32_t>
 //#include <memory>			// std::unique_ptr, std::shared_ptr (used instead of RAII)
+#include <stdexcept>
+#include <array>
 
 #include "polygonum/environment.hpp"
+//#include "polygonum/models.hpp"
+//#include "polygonum/timer.hpp"
+//#include "polygonum/input.hpp"
+//#include "polygonum/toolkit.hpp"
+
+#include "polygonum/toolkit.hpp"
+#include "polygonum/models.hpp"
+#include "polygonum/timer.hpp"
+#include "polygonum/input.hpp"
 
 
 bool QueueFamilyIndices::isComplete()
@@ -22,8 +33,12 @@ void Image::destroy(VulkanEnvironment* e)
 	if(sampler) vkDestroySampler(e->c.device, sampler, nullptr);
 }
 
-SwapChain::SwapChain()
-	: swapChain(nullptr), imageFormat(VK_FORMAT_UNDEFINED), extent(VkExtent2D{0,0}) { }
+SwapChain::SwapChain(VulkanCore& core, uint32_t additionalSwapChainImages)
+	: swapChain(nullptr), imageFormat(VK_FORMAT_UNDEFINED), extent(VkExtent2D{0,0}), additionalSwapChainImages(additionalSwapChainImages)
+{
+	createSwapChain(core);
+	createSwapChainImageViews(core);
+}
 
 void SwapChain::destroy(VkDevice device)
 {
@@ -34,6 +49,8 @@ void SwapChain::destroy(VkDevice device)
 	// Swap chain
 	vkDestroySwapchainKHR(device, swapChain, nullptr);
 }
+
+size_t SwapChain::imagesCount() { return images.size(); }
 
 void DeviceData::fillWithDeviceData(VkPhysicalDevice physicalDevice)
 {
@@ -111,6 +128,145 @@ void DeviceData::printData()
 		<< "   depthFormat: " << depthFormat << '\n';
 }
 
+CommandData::CommandData(VulkanCore* core, size_t swapChainImagesCount, size_t maxFramesInFlight) :
+	lastFrame(0),
+	swapChainImagesCount(swapChainImagesCount),
+	maxFramesInFlight(maxFramesInFlight),
+	core(core),
+	commandPools(maxFramesInFlight),
+	commandBuffers(maxFramesInFlight),
+	mutCommandPool(maxFramesInFlight),
+	mutFrame(maxFramesInFlight),
+	updateCommandBuffer(false),
+	commandsCount(0)
+{
+#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+
+	createSynchronizers(core, swapChainImagesCount, maxFramesInFlight);
+	createCommandPool(core, maxFramesInFlight);
+}
+
+void CommandData::createSynchronizers(VulkanCore* core, size_t numSwapchainImages, size_t numFrames)
+{
+	// Create synchronization objects (semaphores and fences for synchronizing the events occuring in each frame at drawFrame()).
+	imageAvailableSemaphores.resize(numFrames);
+	renderFinishedSemaphores.resize(numFrames);
+	framesInFlight.resize(numFrames);
+	imagesInFlight.resize(numSwapchainImages, VK_NULL_HANDLE);
+
+	VkSemaphoreCreateInfo semaphoreInfo{};
+	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+	VkFenceCreateInfo fenceInfo{};
+	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;						// Reset to signaled state (CB finished execution)
+
+	for (size_t i = 0; i < numFrames; i++)
+		if (vkCreateSemaphore(core->device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
+			vkCreateSemaphore(core->device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
+			vkCreateFence(core->device, &fenceInfo, nullptr, &framesInFlight[i]) != VK_SUCCESS)
+			throw std::runtime_error("Failed to create synchronization objects for a frame!");
+}
+
+void CommandData::createCommandBuffers(ModelsManager& models, std::shared_ptr<RenderPipeline> renderPipeline, size_t swapChainImagesCount, size_t frameIndex)
+{
+#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
+	std::cout << typeid(*this).name() << "::" << __func__ << "(" << frameIndex << ") BEGIN" << std::endl;
+#endif
+
+	commandsCount = 0;
+	VkDeviceSize offsets[] = { 0 };
+
+	// Commmand buffer allocation
+	std::vector<VkCommandBuffer>& commandBufferSet = commandBuffers[frameIndex];
+	commandBufferSet.resize(swapChainImagesCount);
+
+	VkCommandBufferAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	allocInfo.commandPool = commandPools[frameIndex];
+	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;   // VK_COMMAND_BUFFER_LEVEL_ ... PRIMARY (can be submitted to a queue for execution, but cannot be called from other command buffers), SECONDARY (cannot be submitted directly, but can be called from primary command buffers - useful for reusing common operations from primary command buffers).
+	allocInfo.commandBufferCount = (uint32_t)commandBufferSet.size();   // Number of buffers to allocate.
+
+	//const std::lock_guard<std::mutex> lock(e.mutCommandPool);	// already called before calling createCommandBuffers() 
+
+	if (vkAllocateCommandBuffers(core->device, &allocInfo, commandBufferSet.data()) != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate command buffers!");
+
+	// Start command buffer recording (one per swapChainImage)
+	ModelData* model;
+
+	for (size_t i = 0; i < commandBufferSet.size(); i++)		// for each SWAPCHAIN IMAGE
+	{
+#ifdef DEBUG_COMMANDBUFFERS
+	std::cout << "  Command buffer " << i << std::endl;
+#endif
+
+		// Start command buffer recording
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.flags = 0;			// [Optional] VK_COMMAND_BUFFER_USAGE_ ... ONE_TIME_SUBMIT_BIT (the command buffer will be rerecorded right after executing it once), RENDER_PASS_CONTINUE_BIT (secondary command buffer that will be entirely within a single render pass), SIMULTANEOUS_USE_BIT (the command buffer can be resubmitted while it is also already pending execution).
+		beginInfo.pInheritanceInfo = nullptr;		// [Optional] Only relevant for secondary command buffers. It specifies which state to inherit from the calling primary command buffers.
+
+		if (vkBeginCommandBuffer(commandBufferSet[i], &beginInfo) != VK_SUCCESS)		// If a command buffer was already recorded once, this call resets it. It's not possible to append commands to a buffer at a later time.
+			throw std::runtime_error("Failed to begin recording command buffer!");
+
+		for (size_t rp = 0; rp < models.keys.size(); rp++)		// for each RENDER PASS (color pass, post-processing...)
+		{
+#ifdef DEBUG_COMMANDBUFFERS
+	std::cout << "    Render pass " << rp << std::endl;
+#endif
+
+			vkCmdBeginRenderPass(commandBufferSet[i], &renderPipeline->renderPasses[rp].renderPassInfos[i], VK_SUBPASS_CONTENTS_INLINE);	// Start RENDER PASS. VK_SUBPASS_CONTENTS_INLINE (the render pass commands will be embedded in the primary command buffer itself and no secondary command buffers will be executed), VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS (the render pass commands will be executed from secondary command buffers).
+			//vkCmdNextSubpass(commandBufferSet[i], VK_SUBPASS_CONTENTS_INLINE);						// Start SUBPASS
+
+			for (size_t sp = 0; sp < models.keys[rp].size(); sp++)		// for each SUB-PASS
+			{
+				if (sp > 0) vkCmdNextSubpass(commandBufferSet[i], VK_SUBPASS_CONTENTS_INLINE);   // Start SUBPASS
+				//clearDepthBuffer(commandBufferSet[i]);		// Already done in createRenderPass() (loadOp). Previously used for implementing layers (Painter's algorithm).
+
+				for (key64 key : models.keys[rp][sp])		// for each MODEL
+				{
+#ifdef DEBUG_COMMANDBUFFERS
+	std::cout << "        Model: " << models.data[key].name << std::endl;
+#endif
+
+					model = &models.data[key];
+					if (model->getActiveInstancesCount() == 0) continue;
+
+					vkCmdBindPipeline(commandBufferSet[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->graphicsPipeline);	// Second parameter: Specifies if the pipeline object is a graphics or compute pipeline.
+					vkCmdBindVertexBuffers(commandBufferSet[i], 0, 1, &model->vert.vertexBuffer, offsets);
+
+					if (model->vert.indexCount)		// has indices (it doesn't if data represents points)
+						vkCmdBindIndexBuffer(commandBufferSet[i], model->vert.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+
+					if (model->descriptorSets.size())	// has descriptor set (UBOs, textures, input attachments)
+						vkCmdBindDescriptorSets(commandBufferSet[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->pipelineLayout, 0, 1, &model->descriptorSets[i], 0, 0);
+
+					if (model->vert.indexCount)		// has indices
+						vkCmdDrawIndexed(commandBufferSet[i], static_cast<uint32_t>(model->vert.indexCount), model->getActiveInstancesCount(), 0, 0, 0);
+					else
+						vkCmdDraw(commandBufferSet[i], model->vert.vertexCount, model->getActiveInstancesCount(), 0, 0);
+
+					commandsCount++;
+				}
+			}
+
+			vkCmdEndRenderPass(commandBufferSet[i]);
+		}
+
+		if (vkEndCommandBuffer(commandBufferSet[i]) != VK_SUCCESS)
+			throw std::runtime_error("Failed to record command buffer!");
+	}
+
+	updateCommandBuffer = false;
+
+#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
+	std::cout << typeid(*this).name() << "::" << __func__ << " END" << std::endl;
+#endif
+}
+
 //VkSwapchainKHR							swapChain;				//!< Swap chain object.
 //std::vector<VkImage>						swapChainImages;		//!< List. Opaque handle to an image object.
 //std::vector<VkImageView>					swapChainImageViews;	//!< List. Opaque handle to an image view object. It allows to use VkImage in the render pipeline. It's a view into an image; it describes how to access the image and which part of the image to access.
@@ -134,8 +290,11 @@ VulkanCore::VulkanCore(IOmanager& io)
 	createLogicalDevice();
 }
 
-VulkanEnvironment::VulkanEnvironment(IOmanager& io)
-	: c(io), io(io)
+VulkanEnvironment::VulkanEnvironment(IOmanager& io, size_t additionalSwapChainImages, size_t maxFramesInFlight)	:
+	io(io),
+	c(io),
+	swapChain(c, additionalSwapChainImages),
+	commands(&c, swapChain.images.size(), maxFramesInFlight)
 {
 	#ifdef DEBUG_ENV_CORE
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -143,11 +302,6 @@ VulkanEnvironment::VulkanEnvironment(IOmanager& io)
 	
 	//if (c.msaaSamples > 1) rw = std::make_shared<RW_MSAA_PP>(*this);
 	//else rw = std::make_shared<RW_PP>(*this);
-	
-	createSwapChain();
-	createSwapChainImageViews();
-
-	createCommandPool();
 	
 	rp = std::make_shared<RP_DS_PP>(*this);
 	rp->createRenderPipeline();
@@ -743,20 +897,20 @@ void VulkanCore::createLogicalDevice()
 
 // (6)
 /// Set up and create the swap chain.
-void VulkanEnvironment::createSwapChain()
+void SwapChain::createSwapChain(VulkanCore& core)
 {
 	#ifdef DEBUG_ENV_CORE
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
 
 	// Get some properties
-	SwapChainSupportDetails swapChainSupport = c.querySwapChainSupport();
+	SwapChainSupportDetails swapChainSupport = core.querySwapChainSupport();
 
 	VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);	// Surface formats (pixel format, color space)
 	VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);	// Presentation modes
-	VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);		// Basic surface capabilities
+	VkExtent2D extent = chooseSwapExtent(core.io, swapChainSupport.capabilities);		// Basic surface capabilities
 
-	uint32_t imageCount = swapChainSupport.capabilities.minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES;		// How many images in the swap chain? We choose the minimum required + 1 (this way, we won't have to wait sometimes on the driver to complete internal operations before we can acquire another image to render to.
+	uint32_t imageCount = swapChainSupport.capabilities.minImageCount + additionalSwapChainImages;		// How many images in the swap chain? We choose the minimum required + 1 (this way, we won't have to wait sometimes on the driver to complete internal operations before we can acquire another image to render to.
 
 	if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount)	// Don't exceed max. number of images (if maxImageCount == 0, there is no maximum)
 		imageCount = swapChainSupport.capabilities.maxImageCount;
@@ -764,7 +918,7 @@ void VulkanEnvironment::createSwapChain()
 	// Configure the swap chain
 	VkSwapchainCreateInfoKHR createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-	createInfo.surface = c.surface;
+	createInfo.surface = core.surface;
 	createInfo.minImageCount = imageCount;
 	createInfo.imageFormat = surfaceFormat.format;
 	createInfo.imageColorSpace = surfaceFormat.colorSpace;
@@ -772,7 +926,7 @@ void VulkanEnvironment::createSwapChain()
 	createInfo.imageArrayLayers = 1;								// Number of layers each image consists of (always 1, except for stereoscopic 3D applications)
 	createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;	// Kind of operations we'll use the images in the swap chain for. VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT let us render directly to the swap chain. VK_IMAGE_USAGE_TRANSFER_DST_BIT let us render images to a separate image ifrst to perform operations like post-processing and use memory operation to transfer the rendered image to a swap chain image. 
 
-	QueueFamilyIndices indices = c.findQueueFamilies();
+	QueueFamilyIndices indices = core.findQueueFamilies();
 	uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
 
 	if (indices.graphicsFamily != indices.presentFamily)			// Specify how to handle swap chain images that will be used across multiple queue families. This will be the case if the graphics queue family is different from the presentation queue (draws on the images in the swap chain from the graphics queue and submits them on the presentation queue).
@@ -795,25 +949,25 @@ void VulkanEnvironment::createSwapChain()
 	createInfo.oldSwapchain = VK_NULL_HANDLE;									// It's possible that your swap chain becomes invalid/unoptimized while the application is running (example: window resize), so your swap chain will need to be recreated from scratch and a reference to the old one must be specified in this field.
 
 	// Create swap chain
-	if (vkCreateSwapchainKHR(c.device, &createInfo, nullptr, &swapChain.swapChain) != VK_SUCCESS)
+	if (vkCreateSwapchainKHR(core.device, &createInfo, nullptr, &swapChain) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create swap chain!");
 
 	// Retrieve the handles
-	vkGetSwapchainImagesKHR(c.device, swapChain.swapChain, &imageCount, nullptr);
-	swapChain.images.resize(imageCount);
-	vkGetSwapchainImagesKHR(c.device, swapChain.swapChain, &imageCount, swapChain.images.data());
+	vkGetSwapchainImagesKHR(core.device, swapChain, &imageCount, nullptr);
+	images.resize(imageCount);
+	vkGetSwapchainImagesKHR(core.device, swapChain, &imageCount, images.data());
 	
 	#ifdef DEBUG_ENV_INFO
 		std::cout << "   Swap chain images: " << swapChain.images.size() << std::endl;
 	#endif
 
 	// Save format and extent for future use
-	swapChain.imageFormat = surfaceFormat.format;
-	swapChain.extent = extent;
+	imageFormat = surfaceFormat.format;
+	this->extent = extent;
 }
 
 /// Chooses the surface format (color depth) for the swap chain.
-VkSurfaceFormatKHR VulkanEnvironment::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
+VkSurfaceFormatKHR SwapChain::chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats)
 {
 	// Return our favourite surface format, if it exists
 	for (const auto& availableFormat : availableFormats)
@@ -830,7 +984,7 @@ VkSurfaceFormatKHR VulkanEnvironment::chooseSwapSurfaceFormat(const std::vector<
 
 /// Chooses the swap extent (resolution of images in swap chain) for the swap chain.
 /** The swap extent is set here. The swap extent is the resolution (in pixels) of the swap chain images, which is almost always equal to the resolution of the window where we are drawing (use {WIDHT, HEIGHT}), except when you're using a high DPI display (then, use glfwGetFramebufferSize). */
-VkExtent2D VulkanEnvironment::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities)
+VkExtent2D SwapChain::chooseSwapExtent(IOmanager& io, const VkSurfaceCapabilitiesKHR& capabilities)
 {
 	// If width and height is set to the maximum value of UINT32_MAX, it indicates that the surface size will be determined by the extent of a swapchain targeting the surface. 
 	if (capabilities.currentExtent.width != UINT32_MAX)
@@ -851,6 +1005,31 @@ VkExtent2D VulkanEnvironment::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& c
 	}
 }
 
+void SwapChain::cleanupSwapChain(VulkanEnvironment& env, LoadingWorker& worker, IOmanager& io, ModelsManager& models)
+{
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+
+	{
+		const std::lock_guard<std::mutex> lock(env.commands.mutQueue);
+		vkQueueWaitIdle(env.c.graphicsQueue);
+	}
+
+	env.commands.freeCommandBuffers();
+
+	// Models
+	{
+		const std::lock_guard<std::mutex> lock(worker.mutModels);
+
+		for (auto it = models.data.begin(); it != models.data.end(); it++)
+			it->second.cleanup_Pipeline_Descriptors();
+	}
+
+	// Environment
+	env.cleanup_RenderPipeline_SwapChain();
+}
+
 /**
 *	@brief Chooses the presentation mode (conditions for "swapping" images to the screen) for the swap chain.
 * 
@@ -863,7 +1042,7 @@ VkExtent2D VulkanEnvironment::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& c
 		</ul>
 	This functions will choose VK_PRESENT_MODE_MAILBOX_KHR if available. Otherwise, it will choose VK_PRESENT_MODE_FIFO_KHR.
 */
-VkPresentModeKHR VulkanEnvironment::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes)
+VkPresentModeKHR SwapChain::chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes)
 {
 	// Choose VK_PRESENT_MODE_MAILBOX_KHR if available
 	for (const auto& mode : availablePresentModes)
@@ -874,18 +1053,55 @@ VkPresentModeKHR VulkanEnvironment::chooseSwapPresentMode(const std::vector<VkPr
 	return VK_PRESENT_MODE_FIFO_KHR;
 }
 
-// (7)
-/// Creates a basic image view for every image in the swap chain so that we can use them as color targets later on.
-void VulkanEnvironment::createSwapChainImageViews()
+void SwapChain::createSwapChainImageViews(VulkanCore& core)
 {
 	#ifdef DEBUG_ENV_CORE
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
 
-	swapChain.views.resize(swapChain.images.size());
+	views.resize(images.size());
 
-	for (uint32_t i = 0; i < swapChain.images.size(); i++)
-		swapChain.views[i] = createImageView(swapChain.images[i], swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	for (uint32_t i = 0; i < images.size(); i++)
+		views[i] = core.createImageView(images[i], imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+}
+
+void SwapChain::recreateSwapChain(VulkanEnvironment& env, LoadingWorker& worker, IOmanager& io, ModelsManager& models)
+{
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+
+	// Get window size
+	int width = 0, height = 0;
+	//io.getFramebufferSize(&width, &height);
+	while (width == 0 || height == 0) // <<<
+	{
+		io.getFramebufferSize(&width, &height);
+		io.waitEvents();
+	}
+	std::cout << "New window size: " << width << ", " << height << std::endl;
+
+	vkDeviceWaitIdle(env.c.device);   // We shouldn't touch resources that may be in use.
+
+	// Cleanup swapChain:
+	cleanupSwapChain(env, worker, io, models);
+
+	// Recreate swapChain:
+	//    - Environment
+	env.recreate_RenderPipeline_SwapChain();
+
+	//    - Each model
+	const std::lock_guard<std::mutex> lock(worker.mutModels);
+
+
+	for (auto it = models.data.begin(); it != models.data.end(); it++)
+		it->second.recreate_Pipeline_Descriptors();
+
+	//    - Renderer
+	uint32_t frameIndex = env.commands.getNextFrame();
+	const std::lock_guard<std::mutex> lock2(env.commands.mutCommandPool[frameIndex]);
+	env.commands.createCommandBuffers(models, env.rp, env.swapChain.imagesCount(), frameIndex);   // Command buffers directly depend on the swap chain images.
+	env.commands.imagesInFlight.resize(env.swapChain.imagesCount(), VK_NULL_HANDLE);
 }
 
 void VulkanEnvironment::createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory)
@@ -927,7 +1143,7 @@ void VulkanEnvironment::createImage(uint32_t width, uint32_t height, uint32_t mi
 	vkBindImageMemory(c.device, image, imageMemory, 0);
 }
 
-VkImageView VulkanEnvironment::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels)
+VkImageView VulkanCore::createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels)
 {
 	VkImageViewCreateInfo viewInfo{};
 	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -947,10 +1163,43 @@ VkImageView VulkanEnvironment::createImageView(VkImage image, VkFormat format, V
 	// Note about stereographic 3D applications: For them, you would create a swap chain with multiple layers, and then create multiple image views for each image (one for left eye and another for right eye).
 
 	VkImageView imageView;
-	if (vkCreateImageView(c.device, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
+	if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create texture image view!");
 
 	return imageView;
+}
+
+uint32_t CommandData::getNextFrame()
+{
+	const std::lock_guard<std::mutex> lock(mutGetNextFrame);
+
+	lastFrame = (lastFrame + 1) % maxFramesInFlight;   // By using the modulo operator (%), the frame index loops around after every MAX_FRAMES_IN_FLIGHT enqueued frames.
+	return lastFrame;
+}
+
+void CommandData::freeCommandBuffers()
+{
+	for (uint32_t i = 0; i < commandBuffers.size(); i++)
+	{
+		const std::lock_guard<std::mutex> lock(mutCommandPool[i]);
+		vkFreeCommandBuffers(core->device, commandPools[i], static_cast<uint32_t>(commandBuffers[i].size()), commandBuffers[i].data());
+	}
+}
+
+void CommandData::destroyCommandPool()
+{
+	for (VkCommandPool& commandPool : commandPools)
+		vkDestroyCommandPool(core->device, commandPool, nullptr);
+}
+
+void CommandData::destroySynchronizers()
+{
+	for (size_t i = 0; i < framesInFlight.size(); i++)   // Semaphores (render & image available) & fences (in flight)
+	{
+		vkDestroySemaphore(core->device, renderFinishedSemaphores[i], nullptr);
+		vkDestroySemaphore(core->device, imageAvailableSemaphores[i], nullptr);
+		vkDestroyFence(core->device, framesInFlight[i], nullptr);
+	}
 }
 
 /**
@@ -980,13 +1229,13 @@ uint32_t VulkanEnvironment::findMemoryType(uint32_t typeFilter, VkMemoryProperty
 
 // (11) <<<
 /// Commands in Vulkan (drawing, memory transfers, etc.) are not executed directly using function calls, you have to record all of the operations you want to perform in command buffer objects. After setting up the drawing commands, just tell Vulkan to execute them in the main loop.
-void VulkanEnvironment::createCommandPool()
+void CommandData::createCommandPool(VulkanCore* core, size_t numFrames)
 {
-	#ifdef DEBUG_ENV_CORE
-		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
-	#endif
+#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
+	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
+#endif
 
-	QueueFamilyIndices queueFamilyIndices = c.findQueueFamilies();	// <<< wrapped method
+	QueueFamilyIndices queueFamilyIndices = core->findQueueFamilies();	// <<< wrapped method
 
 	// Command buffers are executed by submitting them on one of the device queues we retrieved (graphics queue, presentation queue, etc.). Each command pool can only allocate command buffers that are submitted on a single type of queue.
 	VkCommandPoolCreateInfo poolInfo{};
@@ -994,15 +1243,29 @@ void VulkanEnvironment::createCommandPool()
 	poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
 	poolInfo.flags = 0;	// [Optional]  VK_COMMAND_POOL_CREATE_ ... TRANSIENT_BIT (command buffers are rerecorded with new commands very often - may change memory allocation behavior), RESET_COMMAND_BUFFER_BIT (command buffers can be rerecorded individually, instead of reseting all of them together). Not necessary if we just record the command buffers at the beginning of the program and then execute them many times in the main loop.
 
-	if (vkCreateCommandPool(c.device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create command pool!");
+	commandPools.resize(numFrames);
+
+	for(VkCommandPool& commandPool : commandPools)
+		if (vkCreateCommandPool(core->device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS)
+			throw std::runtime_error("Failed to create command pool!");
+
+#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
+	std::cout << typeid(*this).name() << "::" << __func__ << " END" << std::endl;
+#endif
 }
 
-void VulkanEnvironment::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels)
+void CommandData::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels)
 {
-	const std::lock_guard<std::mutex> lock(mutCommandPool);
+#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
+	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
+#endif
 
-	VkCommandBuffer commandBuffer = beginSingleTimeCommands();
+	size_t frameIndex = getNextFrame();
+	const std::lock_guard<std::mutex> lock(mutFrame[frameIndex]);
+	
+	const std::lock_guard<std::mutex> lock2(mutCommandPool[frameIndex]);
+
+	VkCommandBuffer commandBuffer = beginSingleTimeCommands(frameIndex);
 
 	VkImageMemoryBarrier barrier{};			// One of the most common way to perform layout transitions is using an image memory barrier. A pipeline barrier like that is generally used to synchronize access to resources, like ensuring that a write to a buffer completes before reading from it, but it can also be used to transition image layouts and transfer queue family ownership when VK_SHARING_MODE_EXCLUSIVE is used. There is an equivalent buffer memory barrier to do this for buffers.
 	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1066,8 +1329,8 @@ void VulkanEnvironment::transitionImageLayout(VkImage image, VkFormat format, Vk
 		0, nullptr,			// Array of pipeline barriers of type buffer memory barriers
 		1, &barrier);		// Array of pipeline barriers of type image memory barriers
 
-	endSingleTimeCommands(commandBuffer);
-
+	endSingleTimeCommands(frameIndex, commandBuffer);
+	
 	/*
 		Note:
 		The pipeline stages that you are allowed to specify before and after the barrier depend on how you use the resource before and after the barrier.
@@ -1098,10 +1361,199 @@ void VulkanEnvironment::transitionImageLayout(VkImage image, VkFormat format, Vk
 		record commands into, and add a flushSetupCommands to execute the commands that have been recorded so far. It's best to do this after the texture mapping works
 		to check if the texture resources are still set up correctly.
 	*/
+
+#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
+	std::cout << typeid(*this).name() << "::" << __func__ << " END" << std::endl;
+#endif
+}
+
+/**
+	@brief Copies some amount of data (size) from srcBuffer into dstBuffer. Used in createVertexBuffer() and createIndexBuffer().
+
+	Memory transfer operations are executed using command buffers (like drawing commands), so we allocate a temporary command buffer. You may wish to create a separate command pool for these kinds of short-lived buffers, because the implementation could apply memory allocation optimizations. You should use the VK_COMMAND_POOL_CREATE_TRANSIENT_BIT flag during command pool generation in that case.
+*/
+void CommandData::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size, VulkanEnvironment* e)
+{
+#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
+	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
+#endif
+
+	size_t frameIndex = getNextFrame();
+	const std::lock_guard<std::mutex> lock(mutFrame[frameIndex]);
+	
+	const std::lock_guard<std::mutex> lock2(mutCommandPool[frameIndex]);
+
+	VkCommandBuffer commandBuffer = beginSingleTimeCommands(frameIndex);
+
+	// Specify buffers and the size of the contents you will transfer (it's not possible to specify VK_WHOLE_SIZE here, unlike vkMapMemory command).
+	VkBufferCopy copyRegion{};
+	copyRegion.size = size;
+	copyRegion.srcOffset = 0;	// Optional
+	copyRegion.dstOffset = 0;	// Optional
+
+	vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+
+	endSingleTimeCommands(frameIndex, commandBuffer);
+	
+#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
+	std::cout << typeid(*this).name() << "::" << __func__ << " END" << std::endl;
+#endif
+}
+
+void CommandData::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
+{
+#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
+	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
+#endif
+
+	size_t frameIndex = getNextFrame();
+	const std::lock_guard<std::mutex> lock(mutFrame[frameIndex]);
+	
+	const std::lock_guard<std::mutex> lock2(mutCommandPool[frameIndex]);
+
+	VkCommandBuffer commandBuffer = beginSingleTimeCommands(frameIndex);
+
+	// Specify which part of the buffer is going to be copied to which part of the image
+	VkBufferImageCopy region{};
+	region.bufferOffset = 0;							// Byte offset in the buffer at which the pixel values start
+	region.bufferRowLength = 0;							// How the pixels are laid out in memory. 0 indicates that the pixels are thightly packed. Otherwise, you could have some padding bytes between rows of the image, for example. 
+	region.bufferImageHeight = 0;							// How the pixels are laid out in memory. 0 indicates that the pixels are thightly packed. Otherwise, you could have some padding bytes between rows of the image, for example.
+	region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;	// imageSubresource indicate to which part of the image we want to copy the pixels
+	region.imageSubresource.mipLevel = 0;
+	region.imageSubresource.baseArrayLayer = 0;
+	region.imageSubresource.layerCount = 1;
+	region.imageOffset = { 0, 0, 0 };					// Indicate to which part of the image we want to copy the pixels
+	region.imageExtent = { width, height, 1 };			// Indicate to which part of the image we want to copy the pixels
+
+	// Enqueue buffer to image copy operations
+	vkCmdCopyBufferToImage(
+		commandBuffer,
+		buffer,
+		image,
+		VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,			// Layout the image is currently using
+		1,
+		&region);
+
+	endSingleTimeCommands(frameIndex, commandBuffer);
+	
+#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
+	std::cout << typeid(*this).name() << "::" << __func__ << " END" << std::endl;
+#endif
+}
+
+void CommandData::generateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels)
+{
+#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
+	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
+#endif
+
+	// Check if the image format supports linear blitting. We are using vkCmdBlitImage, but it's not guaranteed to be supported on all platforms because it requires our texture image format to support linear filtering, so we check it with vkGetPhysicalDeviceFormatProperties.
+	VkFormatProperties formatProperties;
+	vkGetPhysicalDeviceFormatProperties(core->physicalDevice, imageFormat, &formatProperties);
+	if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
+	{
+		throw std::runtime_error("Texture image format does not support linear blitting!");
+		// Two alternatives:
+		//		- Implement a function that searches common texture image formats for one that does support linear blitting.
+		//		- Implement the mipmap generation in software with a library like stb_image_resize. Each mip level can then be loaded into the image in the same way that you loaded the original image.
+		// It's uncommon to generate the mipmap levels at runtime anyway. Usually they are pregenerated and stored in the texture file alongside the base level to improve loading speed. <<<<<
+	}
+
+	size_t frameIndex = getNextFrame();
+	const std::lock_guard<std::mutex> lock(mutFrame[frameIndex]);
+	
+	const std::lock_guard<std::mutex> lock2(mutCommandPool[frameIndex]);
+
+	VkCommandBuffer commandBuffer = beginSingleTimeCommands(frameIndex);
+
+	// Specify the barriers
+	VkImageMemoryBarrier barrier{};
+	barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	barrier.image = image;
+	barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	barrier.subresourceRange.baseArrayLayer = 0;
+	barrier.subresourceRange.layerCount = 1;
+	barrier.subresourceRange.levelCount = 1;
+
+	int32_t mipWidth = texWidth;
+	int32_t mipHeight = texHeight;
+
+	for (uint32_t i = 1; i < mipLevels; i++)	// This loop records each of the VkCmdBlitImage commands. The source mip level is i - 1 and the destination mip level is i.
+	{
+		// 1. Record a barrier (we transition level i - 1 to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL. This transition will wait for level i - 1 to be filled, either from the previous blit command, or from vkCmdCopyBufferToImage. The current blit command will wait on this transition).
+		barrier.subresourceRange.baseMipLevel = i - 1;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;	// We transition level i - 1 to VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL. This transition will wait for level i - 1 to be filled, either from the previous blit command, or from vkCmdCopyBufferToImage. The current blit command will wait on this transition.
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+		vkCmdPipelineBarrier(commandBuffer,
+			VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier);
+
+		// 2. Record a blit command. Beware if you are using a dedicated transfer queue: vkCmdBlitImage must be submitted to a queue with graphics capability.		
+		VkImageBlit blit{};										// Specify the regions that will be used in the blit operation
+		blit.srcOffsets[0] = { 0, 0, 0 };						// srcOffsets determine the 3D regions ...
+		blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };		// ... that data will be blitted from.
+		blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		blit.srcSubresource.mipLevel = i - 1;
+		blit.srcSubresource.baseArrayLayer = 0;
+		blit.srcSubresource.layerCount = 1;
+		blit.dstOffsets[0] = { 0, 0, 0 };																	// dstOffsets determine the 3D region ...
+		blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1,  mipHeight > 1 ? mipHeight / 2 : 1,  1 };	// ... that data will be blitted to.
+		blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		blit.dstSubresource.mipLevel = i;
+		blit.dstSubresource.baseArrayLayer = 0;
+		blit.dstSubresource.layerCount = 1;
+
+		vkCmdBlitImage(commandBuffer,
+			image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,		// The textureImage is used for both the srcImage and dstImage parameter ...
+			image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,		// ...  because we're blitting between different levels of the same image.
+			1, &blit,
+			VK_FILTER_LINEAR);									// Enable interpolation
+
+		// 3. Record a barrier (This barrier transitions mip level i - 1 to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL. This transition waits on the current blit command to finish. All sampling operations will wait on this transition to finish).
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+		vkCmdPipelineBarrier(commandBuffer,
+			VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+			0, nullptr,
+			0, nullptr,
+			1, &barrier);
+
+		if (mipWidth > 1) mipWidth /= 2;
+		if (mipHeight > 1) mipHeight /= 2;
+	}
+
+	barrier.subresourceRange.baseMipLevel = mipLevels - 1;
+	barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+	barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+	// n. Record a barrier (This barrier transitions the last mip level from VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL. This wasn't handled by the loop, since the last mip level is never blitted from).
+	vkCmdPipelineBarrier(commandBuffer,
+		VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0,
+		0, nullptr,
+		0, nullptr,
+		1, &barrier);
+
+	endSingleTimeCommands(frameIndex, commandBuffer);
+	
+#if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
+	std::cout << typeid(*this).name() << "::" << __func__ << " END" << std::endl;
+#endif
 }
 
 /// Tells if the chosen depth format contains a stencil component.
-bool VulkanEnvironment::hasStencilComponent(VkFormat format)
+bool CommandData::hasStencilComponent(VkFormat format)
 {
 	return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 }
@@ -1111,18 +1563,24 @@ bool VulkanEnvironment::hasStencilComponent(VkFormat format)
 *	Command buffers generated using beginSingleTimeCommands (allocation, start recording) and endSingleTimeCommands (end recording, submit) are freed once its execution completes.
 *	@return Returns a Vulkan command buffer object.
 */
-VkCommandBuffer VulkanEnvironment::beginSingleTimeCommands()
+VkCommandBuffer CommandData::beginSingleTimeCommands(uint32_t frameIndex)
 {
+	// <<< Current fences make this functions wait until object is submitted
+	// <<< Do we have to coordinate this with main fences?
+	// It used the commandPool. Now it needs one of the command pools, so a frameIndex should be generated, and thus, the corresponding fence should be used.
+	// Why a fence from renderer is not used here now? 
+	// When are the functions containing these methods used? Under what circumstances?
+
 	// Allocate the command buffer.
 	VkCommandBufferAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	allocInfo.commandPool = commandPool;
+	allocInfo.commandPool = commandPools[frameIndex];
 	allocInfo.commandBufferCount = 1;
-	
+
 	VkCommandBuffer commandBuffer;
-	vkAllocateCommandBuffers(c.device, &allocInfo, &commandBuffer);
-	
+	vkAllocateCommandBuffers(core->device, &allocInfo, &commandBuffer);
+
 	// Start recording the command buffer.
 	VkCommandBufferBeginInfo beginInfo{};
 	beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1136,41 +1594,48 @@ VkCommandBuffer VulkanEnvironment::beginSingleTimeCommands()
 /**
 *	Stop recording a command buffer and submit it to the queue. Used together with beginSingleTimeCommands().
 */
-void VulkanEnvironment::endSingleTimeCommands(VkCommandBuffer commandBuffer)
+void CommandData::endSingleTimeCommands(uint32_t frameIndex, VkCommandBuffer commandBuffer)
 {
 	vkEndCommandBuffer(commandBuffer);		// Stop recording (this command buffer only contains the copy command, so we can stop recording now).
-
+	
 	// Execute the command buffer (only contains the copy command) to complete the transfer of buffers.
-	VkSubmitInfo submitInfo{};
+	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+	VkSemaphore waitSemaphores[] = { imageAvailableSemaphores[frameIndex] };
+	VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[frameIndex] };
+
+	VkSubmitInfo submitInfo{};   // No semaphores needed because an image isn't acquired nor rendered to.
 	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &commandBuffer;
 
-	VkFenceCreateInfo fenceInfo{};
-	fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	//fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;						// Reset to signaled state (CB finished execution)
+	//VkFenceCreateInfo fenceInfo{};
+	//fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	////fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;   // Reset to signaled state (CB finished execution)
 
-	VkFence singleTimeFence;
-	vkCreateFence(c.device, &fenceInfo, nullptr, &singleTimeFence);
-	//vkResetFences(c.device, 1, &singleTimeFence);							// Reset to unsignaled state (CB didn't finish execution).
-	
+	//VkFence singleTimeFence;
+	//vkCreateFence(core->device, &fenceInfo, nullptr, &singleTimeFence);
+	////vkResetFences(c.device, 1, &singleTimeFence);							// Reset to unsignaled state (CB didn't finish execution).
+
+	vkWaitForFences(core->device, 1, &framesInFlight[frameIndex], VK_TRUE, UINT64_MAX);	// Wait for signaled state
+	vkResetFences(core->device, 1, &framesInFlight[frameIndex]);						// Reset to unsignaled state (CB didn't finish execution).
+
 	{
 		const std::lock_guard<std::mutex> lock(mutQueue);
-		vkQueueSubmit(c.graphicsQueue, 1, &submitInfo, singleTimeFence);	// VK_NULL_HANDLE);
+		vkQueueSubmit(core->graphicsQueue, 1, &submitInfo, framesInFlight[frameIndex]);	// VK_NULL_HANDLE);
 		//vkQueueWaitIdle(c.graphicsQueue);									// Wait to this transfer to complete. Two ways to do this: vkQueueWaitIdle (Wait for the transfer queue to become idle. Execute one transfer at a time) or vkWaitForFences (Use a fence. Allows to schedule multiple transfers simultaneously and wait for all of them complete. It may give the driver more opportunities to optimize).
 	}
+	std::cout << ">>> " << __func__ << std::endl;
+	vkWaitForFences(core->device, 1, &framesInFlight[frameIndex], VK_TRUE, UINT64_MAX);	// Wait for signaled state
+	//vkDestroyFence(core->device, framesInFlight[frameIndex], nullptr);
 
-	vkWaitForFences(c.device, 1, &singleTimeFence, VK_TRUE, UINT64_MAX);	// Wait for signaled state
-	vkDestroyFence(c.device, singleTimeFence, nullptr);
-	
 	// Clean up the command buffer used.
-	vkFreeCommandBuffers(c.device, commandPool, 1, &commandBuffer);
+	vkFreeCommandBuffers(core->device, commandPools[frameIndex], 1, &commandBuffer);
 }
 
 void VulkanEnvironment::recreate_RenderPipeline_SwapChain()
 {
-	createSwapChain();					// Recreate the swap chain.
-	createSwapChainImageViews();		// Recreate image views because they are based directly on the swap chain images.
+	swapChain.createSwapChain(c);					// Recreate the swap chain.
+	swapChain.createSwapChainImageViews(c);		// Recreate image views because they are based directly on the swap chain images.
 	
 	rp->createRenderPipeline();
 }
@@ -1198,7 +1663,7 @@ void VulkanCore::DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtils
 
 void VulkanEnvironment::cleanup()
 {
-	vkDestroyCommandPool(c.device, commandPool, nullptr);
+	commands.destroyCommandPool();
 	cleanup_RenderPipeline_SwapChain();
 	c.destroy();
 }
@@ -1329,7 +1794,7 @@ void RenderPass::createFramebuffers(VulkanEnvironment& e)
 
 void RenderPass::createRenderPassInfo(VulkanEnvironment& e)
 {
-	renderPassInfos.resize(e.swapChain.images.size());
+	renderPassInfos.resize(e.swapChain.imagesCount());
 
 	for (unsigned i = 0; i < renderPassInfos.size(); i++)
 	{
@@ -1362,7 +1827,7 @@ RP_DS::RP_DS(VulkanEnvironment& e) : RenderPipeline(e)
 
 	// Attachments -------------------------
 
-	std::vector<std::vector<std::vector<VkImageView*>>> allAttachments(e.swapChain.images.size());	// Attachments per swapchain image, per render pass.
+	std::vector<std::vector<std::vector<VkImageView*>>> allAttachments(e.swapChain.imagesCount());	// Attachments per swapchain image, per render pass.
 	for (unsigned i = 0; i < allAttachments.size(); i++)
 		allAttachments[i] = {
 			std::vector<VkImageView*>{ &position.view, &albedo.view, &normal.view, &specRoug.view, &depth.view },			// RP1. Color attachment differs for every swap chain image, but the same depth image can be used by all of them because only a single subpass is running at the same time due to our semaphores.
@@ -1370,7 +1835,7 @@ RP_DS::RP_DS(VulkanEnvironment& e) : RenderPipeline(e)
 	};
 
 	for (unsigned i = 0; i < renderPasses.size(); i++)
-		for (unsigned j = 0; j < e.swapChain.images.size(); j++)
+		for (unsigned j = 0; j < e.swapChain.imagesCount(); j++)
 			renderPasses[i].attachments.push_back(allAttachments[j][i]);
 
 	// clearValues -------------------------
@@ -1664,7 +2129,7 @@ void RP_DS::createImageResources()
 		position.image,
 		position.memory);
 
-	position.view = e.createImageView(position.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	position.view = e.c.createImageView(position.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
 	if (vkCreateSampler(e.c.device, &samplerInfo, nullptr, &position.sampler) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create resolve color sampler!");
@@ -1683,7 +2148,7 @@ void RP_DS::createImageResources()
 		albedo.image,
 		albedo.memory);
 
-	albedo.view = e.createImageView(albedo.image, e.swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	albedo.view = e.c.createImageView(albedo.image, e.swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
 	if (vkCreateSampler(e.c.device, &samplerInfo, nullptr, &albedo.sampler) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create resolve color sampler!");
@@ -1702,7 +2167,7 @@ void RP_DS::createImageResources()
 		normal.image,
 		normal.memory);
 
-	normal.view = e.createImageView(normal.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	normal.view = e.c.createImageView(normal.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
 	if (vkCreateSampler(e.c.device, &samplerInfo, nullptr, &normal.sampler) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create resolve color sampler!");
@@ -1721,7 +2186,7 @@ void RP_DS::createImageResources()
 		specRoug.image,
 		specRoug.memory);
 
-	specRoug.view = e.createImageView(specRoug.image, e.swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	specRoug.view = e.c.createImageView(specRoug.image, e.swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
 	if (vkCreateSampler(e.c.device, &samplerInfo, nullptr, &specRoug.sampler) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create resolve color sampler!");
@@ -1739,10 +2204,10 @@ void RP_DS::createImageResources()
 		depth.image,
 		depth.memory);
 
-	depth.view = e.createImageView(depth.image, e.c.deviceData.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
+	depth.view = e.c.createImageView(depth.image, e.c.deviceData.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 
 	// Explicitly transition the layout of the image to a depth attachment (there is no need of doing this because we take care of this in the render pass, but this is here for completeness).
-	e.transitionImageLayout(depth.image, e.c.deviceData.depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
+	e.commands.transitionImageLayout(depth.image, e.c.deviceData.depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
 
 	if (vkCreateSampler(e.c.device, &samplerInfo, nullptr, &depth.sampler) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create depth sampler!");
@@ -1767,7 +2232,7 @@ RP_DS_PP::RP_DS_PP(VulkanEnvironment& e) : RenderPipeline(e)
 	};
 
 	// Attachments (order convention: input attachments, depth attachment, color attachments)
-	std::vector<std::vector<std::vector<VkImageView*>>> allAttachments(e.swapChain.images.size());	// Attachments per swapchain image, per render pass.
+	std::vector<std::vector<std::vector<VkImageView*>>> allAttachments(e.swapChain.imagesCount());	// Attachments per swapchain image, per render pass.
 	for (unsigned i = 0; i < allAttachments.size(); i++)
 		allAttachments[i] = {
 			std::vector<VkImageView*>{ &depth.view, &position.view, &albedo.view, &normal.view, &specRoug.view },	// RP1. Color attachment differs for every swap chain image, but the same depth image can be used by all of them because only a single subpass is running at the same time due to our semaphores.
@@ -1777,7 +2242,7 @@ RP_DS_PP::RP_DS_PP(VulkanEnvironment& e) : RenderPipeline(e)
 		};
 	
 	for (unsigned i = 0; i < renderPasses.size(); i++)
-		for (unsigned j = 0; j < e.swapChain.images.size(); j++)
+		for (unsigned j = 0; j < e.swapChain.imagesCount(); j++)
 			renderPasses[i].attachments.push_back(allAttachments[j][i]);
 
 	// clearValues -------------------------
@@ -2058,7 +2523,7 @@ void RP_DS_PP::createImageResources()
 		position.image,
 		position.memory);
 
-	position.view = e.createImageView(position.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	position.view = e.c.createImageView(position.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
 	if (vkCreateSampler(e.c.device, &samplerInfo, nullptr, &position.sampler) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create resolve color sampler!");
@@ -2077,7 +2542,7 @@ void RP_DS_PP::createImageResources()
 		albedo.image,
 		albedo.memory);
 
-	albedo.view = e.createImageView(albedo.image, e.swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	albedo.view = e.c.createImageView(albedo.image, e.swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
 	if (vkCreateSampler(e.c.device, &samplerInfo, nullptr, &albedo.sampler) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create resolve color sampler!");
@@ -2096,7 +2561,7 @@ void RP_DS_PP::createImageResources()
 		normal.image,
 		normal.memory);
 
-	normal.view = e.createImageView(normal.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	normal.view = e.c.createImageView(normal.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
 	if (vkCreateSampler(e.c.device, &samplerInfo, nullptr, &normal.sampler) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create resolve color sampler!");
@@ -2115,7 +2580,7 @@ void RP_DS_PP::createImageResources()
 		specRoug.image,
 		specRoug.memory);
 
-	specRoug.view = e.createImageView(specRoug.image, e.swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	specRoug.view = e.c.createImageView(specRoug.image, e.swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
 	if (vkCreateSampler(e.c.device, &samplerInfo, nullptr, &specRoug.sampler) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create resolve color sampler!");
@@ -2133,10 +2598,10 @@ void RP_DS_PP::createImageResources()
 		depth.image,
 		depth.memory);
 
-	depth.view = e.createImageView(depth.image, e.c.deviceData.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
+	depth.view = e.c.createImageView(depth.image, e.c.deviceData.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
 
 	// Explicitly transition the layout of the image to a depth attachment (there is no need of doing this because we take care of this in the render pass, but this is here for completeness).
-	e.transitionImageLayout(depth.image, e.c.deviceData.depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
+	e.commands.transitionImageLayout(depth.image, e.c.deviceData.depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
 
 	if (vkCreateSampler(e.c.device, &samplerInfo, nullptr, &depth.sampler) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create depth sampler!");
@@ -2155,7 +2620,7 @@ void RP_DS_PP::createImageResources()
 		color.image,
 		color.memory);
 
-	color.view = e.createImageView(color.image, e.swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	color.view = e.c.createImageView(color.image, e.swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 
 	if (vkCreateSampler(e.c.device, &samplerInfo, nullptr, &color.sampler) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create resolve color sampler!");
@@ -2170,3 +2635,666 @@ void RP_DS_PP::destroyAttachments()
 	depth.destroy(&e);
 	color.destroy(&e);
 }
+
+// LoadingWorker ---------------------------------------------------------------------
+
+LoadingWorker::LoadingWorker(int waitTime)
+	: waitTime(waitTime), runThread(false) { }
+
+LoadingWorker::~LoadingWorker()
+{
+#ifdef DEBUG_WORKER
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+}
+
+void LoadingWorker::start(Renderer* renderer, ModelsManager* models, CommandData* commandData)
+{
+	runThread = true;
+	thread_loadModels = std::thread(&LoadingWorker::thread_loadData, this, renderer, models, commandData);
+}
+
+void LoadingWorker::stop()
+{
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+
+	runThread = false;
+	if (thread_loadModels.joinable()) thread_loadModels.join();
+}
+
+void LoadingWorker::newTask(key64 key, Task task)
+{
+	tasks.push(std::pair(key, task));
+}
+
+void LoadingWorker::extractModel(ModelsManager& models, key64 key)
+{
+	const std::lock_guard<std::mutex> lock(mutModels);
+
+	models.data[key].ready = false;
+
+	auto node = models.data.extract(key);   // auto = std::unordered_map<key64, ModelData>::node_type
+	if (node.empty() == false)
+		modelTP.insert(std::move(node));
+}
+
+void LoadingWorker::returnModel(ModelsManager& models, key64 key)
+{
+	const std::lock_guard<std::mutex> lock(mutModels);
+
+	auto node = modelTP.extract(key);   // auto = std::unordered_map<key64, ModelData>::node_type
+	if (node.empty() == false)
+		models.data.insert(std::move(node));
+
+	if (models.data[key].fullyConstructed)
+		models.data[key].ready = true;
+}
+
+void LoadingWorker::thread_loadData(Renderer* renderer, ModelsManager* models, CommandData* commandData)
+{
+#ifdef DEBUG_WORKER
+	std::cout << "- " << typeid(*this).name() << "::" << __func__ << " (begin)" << std::endl;
+	std::cout << "- Loading thread ID: " << std::this_thread::get_id() << std::endl;
+#endif
+
+	key64 key;
+	Task task;
+
+	while (runThread)
+	{
+#ifdef DEBUG_WORKER
+		std::cout << "- New iteration -----" << std::endl;
+#endif
+
+		if (tasks.size())
+		{
+			key = tasks.front().first;
+			task = tasks.front().second;
+			tasks.pop();
+
+			switch (task)
+			{
+			case construct:
+				//extractModel(key);
+				//modelTP.begin()->second.fullConstruction(shaders, textures, mutResources);
+				//returnModel(key);
+				//updateCommandBuffer = true;
+				models->data[key].fullConstruction(*renderer);
+				models->data[key].ready = true;
+				commandData->updateCommandBuffer = true;
+				break;
+
+			case delet:
+				extractModel(*models, key);
+				modelTP.clear();
+				commandData->updateCommandBuffer = true;
+				break;
+
+			default:
+				break;
+			}
+		}
+		else sleep(waitTime);
+	}
+
+#ifdef DEBUG_WORKER
+	std::cout << "- " << typeid(*this).name() << "::" << __func__ << " (end)" << std::endl;
+#endif
+}
+
+
+// Renderer ---------------------------------------------------------------------
+
+Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOinfo globalUBO_vs, UBOinfo globalUBO_fs)
+	: io(width, height),
+	e(io, ADDITIONAL_SWAPCHAIN_IMAGES, MAX_FRAMES_IN_FLIGHT),
+	models(e.rp),
+	userUpdate(graphicsUpdate),
+	renderedFramesCount(0),
+	maxFPS(30),
+	globalUBO_vs(&e, globalUBO_vs),
+	globalUBO_fs(&e, globalUBO_fs),
+	worker(500)
+{
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+	std::cout << "Main thread ID: " << std::this_thread::get_id() << std::endl;
+	std::cout << "   Hardware concurrency: " << (unsigned int)std::thread::hardware_concurrency << std::endl;
+#endif
+
+	// Create UBOs
+	if (this->globalUBO_vs.totalBytes) this->globalUBO_vs.createUBO();
+	if (this->globalUBO_fs.totalBytes) this->globalUBO_fs.createUBO();
+}
+
+Renderer::~Renderer()
+{
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+}
+
+void Renderer::drawFrame()
+{
+	/*
+		1. Wait for vkQueueSubmit(graphicsQueue) finish commands execution (framesInFlight).
+		2. Acquire a swapchain image (vkAcquireNextImageKHR) and signal semaphore (imageAvailable) once it's acquired.
+		3. Wait if image is used (imagesInFlight), and mark it as used by this frame (imagesInFlight = framesInFlight).
+		4. Update states.
+		5. Update command buffer.
+		6. Submit command buffer (vkQueueSubmit(graphicsQueue)) for execution. Synchronizers: fence (framesInFlight), waitSemaphore (imageAvailable), signalSemaphore (renderFinished).
+		7. Present image for display on screen (vkQueuePresentKHR(presentQueue)). Synchronizers: waitSemaphore (renderFinished).
+	*/
+
+#if defined(DEBUG_RENDERER) || defined(DEBUG_RENDERLOOP)
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("- Begin drawFrame: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// 0. Ensure drawFrame() is not executed for the same frame in different threads simultaneously.
+	size_t frameIndex = e.commands.getNextFrame();
+
+	const std::lock_guard<std::mutex> lock(e.commands.mutFrame[frameIndex]);
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("lock_guard(mutFrame): ", profiler.updateTime() * 1000.f);
+#endif
+
+	// 1. Wait for a previous command buffer execution (i.e., the frame to be finished). If VK_TRUE, wait for all fences; otherwise, wait for any.
+	vkWaitForFences(e.c.device, 1, &e.commands.framesInFlight[frameIndex], VK_TRUE, UINT64_MAX);
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkWaitForFences: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// 2. Acquire the next available swapchain image. Semaphore will be signal once it's acquired.
+	uint32_t imageIndex;		// Swap chain image index (0, 1, 2)
+	VkResult result = vkAcquireNextImageKHR(e.c.device, e.swapChain.swapChain, UINT64_MAX, e.commands.imageAvailableSemaphores[frameIndex], VK_NULL_HANDLE, &imageIndex);		// Swap chain is an extension feature. imageIndex: index to the VkImage in our swapChainImages.
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) 					// VK_ERROR_OUT_OF_DATE_KHR: The swap chain became incompatible with the surface and can no longer be used for rendering. Usually happens after window resize.
+	{
+		std::cout << "VK_ERROR_OUT_OF_DATE_KHR" << std::endl;
+		e.swapChain.recreateSwapChain(e, worker, io, models);
+		return;
+	}
+	else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR)	// VK_SUBOPTIMAL_KHR: The swap chain can still be used to successfully present to the surface, but the surface properties are no longer matched exactly.
+		throw std::runtime_error("Failed to acquire swap chain image!");
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkAcquireNextImageKHR: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// 3. Check if this image is being used. If used, wait. Then, mark it as used by this frame.
+	if (e.commands.imagesInFlight[imageIndex] != VK_NULL_HANDLE)   // Check if a previous frame is using this image (i.e. there is its fence to wait on)
+	{
+		//if(e.commands.framesInFlight[frameIndex] != e.commands.imagesInFlight[imageIndex]);
+		//	const std::lock_guard<std::mutex> lock(e.commands.mutFrame[frameIndex]);// <<< FIX
+		vkWaitForFences(e.c.device, 1, &e.commands.imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+	}
+
+	e.commands.imagesInFlight[imageIndex] = e.commands.framesInFlight[frameIndex];   // Mark the image as now being in use by this frame
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkWaitForFences: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// 4. Update states (user updates & UBOs)
+	updateStates(imageIndex);
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("  Copy UBOs: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// 5. Update command buffer.
+	if (true)//if (updateCommandBuffer)
+	{
+		//vkWaitForFences(e.c.device, 1, &lastFence, VK_TRUE, UINT64_MAX);
+		vkResetFences(e.c.device, 1, &e.commands.framesInFlight[frameIndex]);	// Reset the fence to the unsignaled state.
+
+		const std::lock_guard<std::mutex> lock(e.commands.mutCommandPool[frameIndex]);		// vkQueueWaitIdle(e.c.graphicsQueue) was called before, in drawFrame()
+		//vkFreeCommandBuffers(e.c.device, e.commandPools[frameIndex], static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());	// Any primary command buffer that is in the recording or executable state and has any element of pCommandBuffers recorded into it, becomes invalid.
+		vkResetCommandPool(e.c.device, e.commands.commandPools[frameIndex], 0);
+		//vkResetCommandBuffer(commandBuffers[frameIndex], 0);
+		e.commands.createCommandBuffers(models, e.rp, e.swapChain.imagesCount(), frameIndex);
+	}
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("Update command buffer: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// 6. Submit command buffer to the graphics queue for commands execution (rendering).
+	VkSemaphore waitSemaphores[] = { e.commands.imageAvailableSemaphores[frameIndex] };   // Which semaphores to wait on before command buffers execution begins.
+	VkSemaphore signalSemaphores[] = { e.commands.renderFinishedSemaphores[frameIndex] };   // Which semaphores to signal once the command buffers have finished execution.
+	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };   // In which stages of the pipeline to wait the semaphore. VK_PIPELINE_STAGE_ ... TOP_OF_PIPE_BIT (ensures that the render passes don't begin until the image is available), COLOR_ATTACHMENT_OUTPUT_BIT (makes the render pass wait for this stage).
+
+	VkSubmitInfo submitInfo{};
+	submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submitInfo.waitSemaphoreCount = 1;
+	submitInfo.pWaitSemaphores = waitSemaphores;					// Semaphores upon which to wait before the CB/s begin execution.
+	submitInfo.pWaitDstStageMask = waitStages;
+	submitInfo.signalSemaphoreCount = 1;
+	submitInfo.pSignalSemaphores = signalSemaphores;				// Semaphores to be signaled once the CB/s have completed execution.
+	submitInfo.commandBufferCount = 1;
+	submitInfo.pCommandBuffers = &e.commands.commandBuffers[frameIndex][imageIndex];   // Command buffers to submit for execution (here, the one that binds the swap chain image we just acquired as color attachment).
+
+	//vkResetFences(e.c.device, 1, &framesInFlight[currentFrame]);	// Reset the fence to the unsignaled state.
+
+	{
+		const std::lock_guard<std::mutex> lock(e.commands.mutQueue);
+		if (vkQueueSubmit(e.c.graphicsQueue, 1, &submitInfo, e.commands.framesInFlight[frameIndex]) != VK_SUCCESS)	// Submit the command buffer to the graphics queue. An array of VkSubmitInfo structs can be taken as argument when workload is much larger, for efficiency.
+			throw std::runtime_error("Failed to submit draw command buffer!");
+	}
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkQueueSubmit: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// Note:
+	// Subpass dependencies: Subpasses in a render pass automatically take care of image layout transitions. These transitions are controlled by subpass dependencies (specify memory and execution dependencies between subpasses).
+	// There are two built-in dependencies that take care of the transition at the start and at the end of the render pass, but the former does not occur at the right time. It assumes that the transition occurs at the start of the pipeline, but we haven't acquired the image yet at that point. Two ways to deal with this problem:
+	//		- waitStages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT (ensures that the render passes don't begin until the image is available).
+	//		- waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT (makes the render pass wait for this stage).
+
+	// 7. Presentation: Submit the result back to the swap chain to have it eventually show up on the screen.
+	VkPresentInfoKHR presentInfo{};
+	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	presentInfo.waitSemaphoreCount = 1;
+	presentInfo.pWaitSemaphores = signalSemaphores;
+	VkSwapchainKHR swapChains[] = { e.swapChain.swapChain };
+	presentInfo.swapchainCount = 1;
+	presentInfo.pSwapchains = swapChains;
+	presentInfo.pImageIndices = &imageIndex;
+	presentInfo.pResults = nullptr;			// Optional
+
+	{
+		const std::lock_guard<std::mutex> lock(e.commands.mutQueue);
+		result = vkQueuePresentKHR(e.c.presentQueue, &presentInfo);		// Submit request to present an image to the swap chain. Our triangle may look a bit different because the shader interpolates in linear color space and then converts to sRGB color space.
+		renderedFramesCount++;
+	}
+
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || io.framebufferResized)
+	{
+		std::cout << "Out-of-date/Suboptimal KHR or window resized" << std::endl;
+		io.framebufferResized = false;
+		e.swapChain.recreateSwapChain(e, worker, io, models);
+	}
+	else if (result != VK_SUCCESS)
+		throw std::runtime_error("Failed to present swap chain image!");
+
+	//vkQueueWaitIdle(e.presentQueue);   // Make the whole graphics pipeline to be used only one frame at a time (instead of using this, we use multiple semaphores for processing frames concurrently).
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("vkQueuePresentKHR: ", profiler.updateTime() * 1000.f);
+#endif
+}
+
+void Renderer::renderLoop()
+{
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << " begin" << std::endl;
+#endif
+
+	e.commands.createCommandBuffers(models, e.rp, e.swapChain.imagesCount(), e.commands.getNextFrame());
+	//createSyncObjects();
+	worker.start(this, &models, &e.commands);
+
+	timer.startTimer();
+	profiler.startTimer();
+
+	while (!io.getWindowShouldClose())
+	{
+#ifdef DEBUG_RENDERLOOP
+		std::cout << "Render loop 1/2 ----------" << std::endl;
+#endif
+
+		io.pollEvents();	// Check for events (processes only those events that have already been received and then returns immediately)
+		drawFrame();
+
+		if (io.getKey(GLFW_KEY_ESCAPE) == GLFW_PRESS)
+			io.setWindowShouldClose(true);
+
+#ifdef DEBUG_RENDERLOOP
+		std::cout << "Render loop 2/2 ----------" << std::endl;
+#endif
+	}
+
+	worker.stop();
+
+	vkDeviceWaitIdle(e.c.device);	// Waits for the logical device to finish operations. Needed for cleaning up once drawing and presentation operations (drawFrame) have finished. Use vkQueueWaitIdle for waiting for operations in a specific command queue to be finished.
+
+	cleanup();
+
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << " end" << std::endl;
+#endif
+}
+
+void CommandData::clearDepthBuffer(VkCommandBuffer commandBuffer, const SwapChain& swapChain)
+{
+	VkClearAttachment attachmentToClear;
+	attachmentToClear.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+	attachmentToClear.clearValue.depthStencil = { 1.0f, 0 };
+
+	VkClearRect rectangleToClear;
+	rectangleToClear.rect.offset = { 0, 0 };
+	rectangleToClear.rect.extent = swapChain.extent;
+	rectangleToClear.baseArrayLayer = 0;
+	rectangleToClear.layerCount = 1;
+
+	vkCmdClearAttachments(commandBuffer, 1, &attachmentToClear, 1, &rectangleToClear);
+}
+
+void Renderer::cleanup()
+{
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << " (1/2)" << std::endl;
+#endif
+
+	// Cleanup renderer
+	//cleanupSwapChain();
+
+	// Renderer
+	{
+		const std::lock_guard<std::mutex> lock(e.commands.mutQueue);
+		vkQueueWaitIdle(e.c.graphicsQueue);
+	}
+
+	e.commands.freeCommandBuffers();
+
+	e.commands.destroySynchronizers();
+
+	// Cleanup models, textures and shaders
+	// const std::lock_guard<std::mutex> lock(worker.mutModels);	// Not necessary (worker stopped loading thread)
+
+	models.data.clear();
+
+	if (globalUBO_vs.totalBytes)  globalUBO_vs.destroyUBO();
+	if (globalUBO_fs.totalBytes) globalUBO_fs.destroyUBO();
+
+	// Cleanup environment
+	e.cleanup();
+
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << " (2/2)" << std::endl;
+#endif
+}
+
+key64 Renderer::newModel(ModelDataInfo& modelInfo)
+{
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << ": " << modelInfo.name << std::endl;
+#endif
+
+	if (modelInfo.renderPassIndex < models.keys.size() && modelInfo.subpassIndex < models.keys[modelInfo.renderPassIndex].size())
+	{
+		std::pair<std::unordered_map<key64, ModelData>::iterator, bool> result =
+			models.data.emplace(std::make_pair(models.getNewKey(), ModelData(&e, modelInfo)));   // Save model object into model list
+
+		worker.newTask(result.first->first, construct);   // Schedule task: Construct model
+
+		return result.first->first;
+	}
+
+	std::cout << "The renderpass/subpass specified for this model (" << modelInfo.name << ": " << modelInfo.renderPassIndex << '/' << modelInfo.subpassIndex << ") doesn't fit the render pipeline" << std::endl;
+	return 0;
+}
+
+void Renderer::deleteModel(key64 key)	// <<< splice an element only knowing the iterator (no need to check lists)?
+{
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+
+	worker.newTask(key, delet);
+}
+
+ModelData* Renderer::getModel(key64 key)
+{
+	if (models.data.find(key) != models.data.end())
+		return &models.data[key];
+	else
+		return nullptr;
+}
+
+void Renderer::setInstances(key64 key, size_t numberOfRenders)
+{
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+
+	const std::lock_guard<std::mutex> lock(worker.mutModels);
+
+	if (models.data.find(key) != models.data.end())
+		if (models.data[key].setActiveInstancesCount(numberOfRenders))
+			e.commands.updateCommandBuffer = true;		// We flag commandBuffer for update assuming that our model is in list "model"
+}
+
+void Renderer::setInstances(std::vector<key64>& keys, size_t numberOfRenders)
+{
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+
+	const std::lock_guard<std::mutex> lock(worker.mutModels);
+
+	for (key64 key : keys)
+		if (models.data.find(key) != models.data.end())
+			if (models.data[key].setActiveInstancesCount(numberOfRenders))
+				e.commands.updateCommandBuffer = true;		// We flag commandBuffer for update assuming that our model is in list "model"
+}
+
+void Renderer::setMaxFPS(int maxFPS)
+{
+	if (maxFPS > 0)
+		this->maxFPS = maxFPS;
+	else
+		this->maxFPS = 0;
+}
+
+void Renderer::updateStates(uint32_t currentImage)
+{
+#if defined(DEBUG_RENDERER) || defined(DEBUG_RENDERLOOP)
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+
+#ifdef DEBUG_RENDERLOOP
+	std::cout << "userUpdate()" << std::endl;
+#endif
+
+	// - USER UPDATES
+
+	timer.updateTime();
+	waitForFPS(timer, maxFPS);
+	timer.reUpdateTime();
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("  waitForFPS: ", profiler.updateTime() * 1000.f);
+#endif
+
+	userUpdate(*this);		// Update model matrices and other things (user defined)
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("  userUpdate: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// - COPY DATA FROM UBOS TO GPU MEMORY
+
+	// Copy the data in the uniform buffer object to the current uniform buffer
+	// <<< Using a UBO this way is not the most efficient way to pass frequently changing values to the shader. Push constants are more efficient for passing a small buffer of data to shaders.
+
+#ifdef DEBUG_RENDERLOOP
+	std::cout << "Copy UBOs" << std::endl;
+#endif
+
+	const std::lock_guard<std::mutex> lock(worker.mutModels);
+
+	models.distributeKeys();
+
+	void* data;
+	size_t activeBytes;
+	ModelData* model;
+
+	// Global UBOs
+	if (globalUBO_vs.totalBytes)
+	{
+		vkMapMemory(e.c.device, globalUBO_vs.uboMemories[currentImage], 0, globalUBO_vs.totalBytes, 0, &data);
+		memcpy(data, globalUBO_vs.ubo.data(), globalUBO_vs.totalBytes);
+		vkUnmapMemory(e.c.device, globalUBO_vs.uboMemories[currentImage]);
+	}
+
+	if (globalUBO_fs.totalBytes)
+	{
+		vkMapMemory(e.c.device, globalUBO_fs.uboMemories[currentImage], 0, globalUBO_fs.totalBytes, 0, &data);
+		memcpy(data, globalUBO_fs.ubo.data(), globalUBO_fs.totalBytes);
+		vkUnmapMemory(e.c.device, globalUBO_fs.uboMemories[currentImage]);
+	}
+
+	// Local UBOs
+	for (auto it = models.data.begin(); it != models.data.end(); it++)
+		if (it->second.ready)
+		{
+			model = &it->second;
+
+			activeBytes = model->vsUBO.numActiveSubUbos * model->vsUBO.subUboSize;
+			if (activeBytes)
+			{
+				vkMapMemory(e.c.device, model->vsUBO.uboMemories[currentImage], 0, activeBytes, 0, &data);	// Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
+				memcpy(data, model->vsUBO.ubo.data(), activeBytes);											// Copy some data in that memory. Copies a number of bytes (sizeof(ubo)) from a source (ubo) to a destination (data).
+				vkUnmapMemory(e.c.device, model->vsUBO.uboMemories[currentImage]);							// "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
+			}
+
+			activeBytes = model->fsUBO.numActiveSubUbos * model->fsUBO.subUboSize;
+			if (activeBytes)
+			{
+				vkMapMemory(e.c.device, model->fsUBO.uboMemories[currentImage], 0, activeBytes, 0, &data);
+				memcpy(data, model->fsUBO.ubo.data(), activeBytes);
+				vkUnmapMemory(e.c.device, model->fsUBO.uboMemories[currentImage]);
+			}
+		}
+}
+
+void Renderer::createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader)
+{
+	std::vector<float> v_quad;	// [4 * 5]
+	std::vector<uint16_t> i_quad;
+	getScreenQuad(v_quad, i_quad, 1.f, 0.f);	// <<< The parameter zValue doesn't represent height (otherwise, this value should serve for hiding one plane behind another).
+
+	std::vector<ShaderLoader*> usedShaders{
+		SL_fromFile::factory(vertShaderPath),
+		SL_fromFile::factory(fragShaderPath, { SMod::changeHeader(fragToolsHeader) })
+	};
+
+	std::vector<TextureLoader*> usedTextures{ };
+
+	ModelDataInfo modelInfo;
+	modelInfo.name = "lightingPass";
+	modelInfo.activeInstances = 1;
+	modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	modelInfo.vertexType = vt_32;
+	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
+	modelInfo.shadersInfo = usedShaders;
+	modelInfo.texturesInfo = usedTextures;
+	modelInfo.maxDescriptorsCount_vs = 0;
+	modelInfo.maxDescriptorsCount_fs = 1;
+	modelInfo.UBOsize_vs = 0;
+	modelInfo.UBOsize_fs = sizes::vec4 + numLights * sizeof(Light);	// camPos,  n * LightPosDir (2*vec4),  n * LightProps (6*vec4);
+	modelInfo.globalUBO_vs;
+	modelInfo.globalUBO_fs;
+	modelInfo.transparency = false;
+	modelInfo.renderPassIndex = 1;
+	modelInfo.subpassIndex = 0;
+
+	lightingPass = newModel(modelInfo);
+}
+
+void Renderer::updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights)
+{
+	if (models.data.find(lightingPass) == models.data.end()) return;
+
+	uint8_t* dest;
+
+	//for (int i = 0; i < lightingPass->vsUBO.numActiveDescriptors; i++)
+	//{
+	//	dest = lightingPass->vsUBO.getDescriptorPtr(i);
+	//	//...
+	//}
+
+	for (int i = 0; i < models.data[lightingPass].fsUBO.numActiveSubUbos; i++)
+	{
+		dest = models.data[lightingPass].fsUBO.getSubUboPtr(i);
+		memcpy(dest, &camPos, sizes::vec4);
+		dest += sizes::vec4;
+		memcpy(dest, lights, numLights * sizeof(Light));
+	}
+}
+
+void Renderer::createPostprocessingPass(std::string vertShaderPath, std::string fragShaderPath)
+{
+	std::vector<float> v_quad;	// [4 * 5]
+	std::vector<uint16_t> i_quad;
+	getScreenQuad(v_quad, i_quad, 1.f, 0.f);	// <<< The parameter zValue doesn't represent heigth (otherwise, this value should serve for hiding one plane behind another).
+
+	std::vector<ShaderLoader*> usedShaders{
+		SL_fromFile::factory(vertShaderPath),
+		SL_fromFile::factory(fragShaderPath)
+	};
+
+	std::vector<TextureLoader*> usedTextures{ };
+
+	ModelDataInfo modelInfo;
+	modelInfo.name = "postprocessingPass";
+	modelInfo.activeInstances = 1;
+	modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	modelInfo.vertexType = vt_32;
+	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
+	modelInfo.shadersInfo = usedShaders;
+	modelInfo.texturesInfo = usedTextures;
+	modelInfo.maxDescriptorsCount_vs = 0;
+	modelInfo.maxDescriptorsCount_fs = 0;
+	modelInfo.UBOsize_vs = 0;
+	modelInfo.UBOsize_fs = 0;
+	modelInfo.globalUBO_vs;
+	modelInfo.globalUBO_fs;
+	modelInfo.transparency = false;
+	modelInfo.renderPassIndex = 3;
+	modelInfo.subpassIndex = 0;
+
+	postprocessingPass = newModel(modelInfo);
+}
+
+void Renderer::updatePostprocessingPass()
+{
+	// No code necessary here
+}
+
+Timer& Renderer::getTimer() { return timer; }
+
+size_t Renderer::getRendersCount(key64 key)
+{
+	if (models.data.find(key) != models.data.end())
+		return models.data[key].getActiveInstancesCount();
+	else
+		return 0;
+}
+
+size_t Renderer::getFrameCount() { return renderedFramesCount; }
+
+size_t Renderer::getFPS() { return std::round(1 / timer.getDeltaTime()); }
+
+size_t Renderer::getModelsCount() { return models.data.size(); }
+
+size_t Renderer::getCommandsCount() { return e.commands.commandsCount; }
+
+size_t Renderer::loadedShaders() { return shaders.size(); }
+
+size_t Renderer::loadedTextures() { return textures.size(); }
+
+IOmanager& Renderer::getIO() { return io; }
+
+int Renderer::getMaxMemoryAllocationCount() { return e.c.deviceData.maxMemoryAllocationCount; }
+
+int Renderer::getMemAllocObjects() { return e.c.memAllocObjects; }

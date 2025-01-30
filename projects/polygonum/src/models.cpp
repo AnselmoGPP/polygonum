@@ -1,7 +1,7 @@
 #include <iostream>
 
 #include "polygonum/models.hpp"
-#include "polygonum/renderer.hpp"
+#include "polygonum/environment.hpp"
 
 
 ModelDataInfo::ModelDataInfo()
@@ -833,4 +833,32 @@ bool ModelData::setActiveInstancesCount(size_t activeInstancesCount)
 		//	createDescriptorSets();				// Contains the UBO
 		//}
 	}
+}
+
+ModelsManager::ModelsManager(const std::shared_ptr<RenderPipeline>& renderPipeline) :
+	newKey(0)
+{
+	keys.resize(renderPipeline->renderPasses.size());
+	for (size_t rp = 0; rp < keys.size(); rp++)
+		keys[rp].resize(renderPipeline->renderPasses[rp].subpasses.size());
+}
+
+void ModelsManager::distributeKeys()
+{
+	for (auto& rp : keys)
+		for (auto& sp : rp)
+			sp.clear();
+
+	for (auto it = data.begin(); it != data.end(); it++)
+		if (it->second.getActiveInstancesCount() && it->second.ready)
+			keys[it->second.renderPassIndex][it->second.subpassIndex].push_back(it->first);
+}
+
+key64 ModelsManager::getNewKey()
+{
+	do
+	{
+		if (data.find(++newKey) == data.end())
+			return newKey;
+	} while (true);
 }

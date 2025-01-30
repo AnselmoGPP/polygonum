@@ -1,7 +1,10 @@
 #ifndef UBO_HPP
 #define UBO_HPP
 
-#include "polygonum/environment.hpp"
+#include "commons.hpp"
+
+
+class VulkanEnvironment;
 
 
 // Prototypes ----------
@@ -42,7 +45,7 @@ namespace sizes {
 	extern size_t mat4;
 	//extern size_t materialSize = sizeof(Material);
 	//extern size_t lightSize;
-}
+};
 
 struct Light
 {

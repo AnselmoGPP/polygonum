@@ -36,7 +36,7 @@
 //#define DEBUG_COMMANDBUFFERS
 //#define DEBUG_RENDERLOOP
 //#define DEBUG_WORKER
-//#define DEBUG_REND_PROFILER
+#define DEBUG_REND_PROFILER
 
 //#define DEBUG_MODELS
 
@@ -44,6 +44,19 @@
 //#define DEBUG_IMPORT
 
 //#define DEBUG_ECS
+
+
+// Typedefs ----------
+
+using key64 = uint64_t;
+template<typename T>
+using vec = std::vector<T>;
+template<typename T>
+using vec2 = std::vector<std::vector<T>>;
+template<typename T>
+using vec3 = std::vector<std::vector<std::vector<T>>>;
+template<typename T1, typename T2>
+using vecpair = std::vector<std::pair<T1, T2>>;
 
 
 // Functions ----------
