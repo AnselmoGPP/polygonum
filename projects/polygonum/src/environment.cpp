@@ -6,11 +6,6 @@
 #include <array>
 
 #include "polygonum/environment.hpp"
-//#include "polygonum/models.hpp"
-//#include "polygonum/timer.hpp"
-//#include "polygonum/input.hpp"
-//#include "polygonum/toolkit.hpp"
-
 #include "polygonum/toolkit.hpp"
 #include "polygonum/models.hpp"
 #include "polygonum/timer.hpp"
@@ -128,7 +123,7 @@ void DeviceData::printData()
 		<< "   depthFormat: " << depthFormat << '\n';
 }
 
-CommandData::CommandData(VulkanCore* core, size_t swapChainImagesCount, size_t maxFramesInFlight) :
+Commander::Commander(VulkanCore* core, size_t swapChainImagesCount, size_t maxFramesInFlight) :
 	lastFrame(0),
 	swapChainImagesCount(swapChainImagesCount),
 	maxFramesInFlight(maxFramesInFlight),
@@ -148,7 +143,7 @@ CommandData::CommandData(VulkanCore* core, size_t swapChainImagesCount, size_t m
 	createCommandPool(core, maxFramesInFlight);
 }
 
-void CommandData::createSynchronizers(VulkanCore* core, size_t numSwapchainImages, size_t numFrames)
+void Commander::createSynchronizers(VulkanCore* core, size_t numSwapchainImages, size_t numFrames)
 {
 	// Create synchronization objects (semaphores and fences for synchronizing the events occuring in each frame at drawFrame()).
 	imageAvailableSemaphores.resize(numFrames);
@@ -170,7 +165,7 @@ void CommandData::createSynchronizers(VulkanCore* core, size_t numSwapchainImage
 			throw std::runtime_error("Failed to create synchronization objects for a frame!");
 }
 
-void CommandData::createCommandBuffers(ModelsManager& models, std::shared_ptr<RenderPipeline> renderPipeline, size_t swapChainImagesCount, size_t frameIndex)
+void Commander::createCommandBuffers(ModelsManager& models, std::shared_ptr<RenderPipeline> renderPipeline, size_t swapChainImagesCount, size_t frameIndex)
 {
 #if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
 	std::cout << typeid(*this).name() << "::" << __func__ << "(" << frameIndex << ") BEGIN" << std::endl;
@@ -266,14 +261,6 @@ void CommandData::createCommandBuffers(ModelsManager& models, std::shared_ptr<Re
 	std::cout << typeid(*this).name() << "::" << __func__ << " END" << std::endl;
 #endif
 }
-
-//VkSwapchainKHR							swapChain;				//!< Swap chain object.
-//std::vector<VkImage>						swapChainImages;		//!< List. Opaque handle to an image object.
-//std::vector<VkImageView>					swapChainImageViews;	//!< List. Opaque handle to an image view object. It allows to use VkImage in the render pipeline. It's a view into an image; it describes how to access the image and which part of the image to access.
-//std::vector<std::array<VkFramebuffer, 2>>	swapChainFramebuffers;	//!< List. Opaque handle to a framebuffer object (set of attachments, including the final image to render). Access: swapChainFramebuffers[numSwapChainImages][attachment]. First attachment: main color. Second attachment: post-processing
-//
-//VkFormat									swapChainImageFormat;
-//VkExtent2D									swapChainExtent;
 
 VulkanCore::VulkanCore(IOmanager& io)
 	: physicalDevice(VK_NULL_HANDLE), msaaSamples(VK_SAMPLE_COUNT_1_BIT), io(io), memAllocObjects(0)
@@ -1169,7 +1156,7 @@ VkImageView VulkanCore::createImageView(VkImage image, VkFormat format, VkImageA
 	return imageView;
 }
 
-uint32_t CommandData::getNextFrame()
+uint32_t Commander::getNextFrame()
 {
 	const std::lock_guard<std::mutex> lock(mutGetNextFrame);
 
@@ -1177,7 +1164,7 @@ uint32_t CommandData::getNextFrame()
 	return lastFrame;
 }
 
-void CommandData::freeCommandBuffers()
+void Commander::freeCommandBuffers()
 {
 	for (uint32_t i = 0; i < commandBuffers.size(); i++)
 	{
@@ -1186,13 +1173,13 @@ void CommandData::freeCommandBuffers()
 	}
 }
 
-void CommandData::destroyCommandPool()
+void Commander::destroyCommandPool()
 {
 	for (VkCommandPool& commandPool : commandPools)
 		vkDestroyCommandPool(core->device, commandPool, nullptr);
 }
 
-void CommandData::destroySynchronizers()
+void Commander::destroySynchronizers()
 {
 	for (size_t i = 0; i < framesInFlight.size(); i++)   // Semaphores (render & image available) & fences (in flight)
 	{
@@ -1229,7 +1216,7 @@ uint32_t VulkanEnvironment::findMemoryType(uint32_t typeFilter, VkMemoryProperty
 
 // (11) <<<
 /// Commands in Vulkan (drawing, memory transfers, etc.) are not executed directly using function calls, you have to record all of the operations you want to perform in command buffer objects. After setting up the drawing commands, just tell Vulkan to execute them in the main loop.
-void CommandData::createCommandPool(VulkanCore* core, size_t numFrames)
+void Commander::createCommandPool(VulkanCore* core, size_t numFrames)
 {
 #if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
 	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
@@ -1254,7 +1241,7 @@ void CommandData::createCommandPool(VulkanCore* core, size_t numFrames)
 #endif
 }
 
-void CommandData::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels)
+void Commander::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels)
 {
 #if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
 	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
@@ -1372,7 +1359,7 @@ void CommandData::transitionImageLayout(VkImage image, VkFormat format, VkImageL
 
 	Memory transfer operations are executed using command buffers (like drawing commands), so we allocate a temporary command buffer. You may wish to create a separate command pool for these kinds of short-lived buffers, because the implementation could apply memory allocation optimizations. You should use the VK_COMMAND_POOL_CREATE_TRANSIENT_BIT flag during command pool generation in that case.
 */
-void CommandData::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size, VulkanEnvironment* e)
+void Commander::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size, VulkanEnvironment* e)
 {
 #if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
 	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
@@ -1400,7 +1387,7 @@ void CommandData::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSiz
 #endif
 }
 
-void CommandData::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
+void Commander::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height)
 {
 #if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
 	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
@@ -1441,7 +1428,7 @@ void CommandData::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t wid
 #endif
 }
 
-void CommandData::generateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels)
+void Commander::generateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels)
 {
 #if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
 	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
@@ -1553,7 +1540,7 @@ void CommandData::generateMipmaps(VkImage image, VkFormat imageFormat, int32_t t
 }
 
 /// Tells if the chosen depth format contains a stencil component.
-bool CommandData::hasStencilComponent(VkFormat format)
+bool Commander::hasStencilComponent(VkFormat format)
 {
 	return format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
 }
@@ -1563,7 +1550,7 @@ bool CommandData::hasStencilComponent(VkFormat format)
 *	Command buffers generated using beginSingleTimeCommands (allocation, start recording) and endSingleTimeCommands (end recording, submit) are freed once its execution completes.
 *	@return Returns a Vulkan command buffer object.
 */
-VkCommandBuffer CommandData::beginSingleTimeCommands(uint32_t frameIndex)
+VkCommandBuffer Commander::beginSingleTimeCommands(uint32_t frameIndex)
 {
 	// <<< Current fences make this functions wait until object is submitted
 	// <<< Do we have to coordinate this with main fences?
@@ -1594,7 +1581,7 @@ VkCommandBuffer CommandData::beginSingleTimeCommands(uint32_t frameIndex)
 /**
 *	Stop recording a command buffer and submit it to the queue. Used together with beginSingleTimeCommands().
 */
-void CommandData::endSingleTimeCommands(uint32_t frameIndex, VkCommandBuffer commandBuffer)
+void Commander::endSingleTimeCommands(uint32_t frameIndex, VkCommandBuffer commandBuffer)
 {
 	vkEndCommandBuffer(commandBuffer);		// Stop recording (this command buffer only contains the copy command, so we can stop recording now).
 	
@@ -2648,7 +2635,7 @@ LoadingWorker::~LoadingWorker()
 #endif
 }
 
-void LoadingWorker::start(Renderer* renderer, ModelsManager* models, CommandData* commandData)
+void LoadingWorker::start(Renderer* renderer, ModelsManager* models, Commander* commandData)
 {
 	runThread = true;
 	thread_loadModels = std::thread(&LoadingWorker::thread_loadData, this, renderer, models, commandData);
@@ -2692,7 +2679,7 @@ void LoadingWorker::returnModel(ModelsManager& models, key64 key)
 		models.data[key].ready = true;
 }
 
-void LoadingWorker::thread_loadData(Renderer* renderer, ModelsManager* models, CommandData* commandData)
+void LoadingWorker::thread_loadData(Renderer* renderer, ModelsManager* models, Commander* commandData)
 {
 #ifdef DEBUG_WORKER
 	std::cout << "- " << typeid(*this).name() << "::" << __func__ << " (begin)" << std::endl;
@@ -2973,7 +2960,7 @@ void Renderer::renderLoop()
 #endif
 }
 
-void CommandData::clearDepthBuffer(VkCommandBuffer commandBuffer, const SwapChain& swapChain)
+void Commander::clearDepthBuffer(VkCommandBuffer commandBuffer, const SwapChain& swapChain)
 {
 	VkClearAttachment attachmentToClear;
 	attachmentToClear.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -3034,7 +3021,7 @@ key64 Renderer::newModel(ModelDataInfo& modelInfo)
 		std::pair<std::unordered_map<key64, ModelData>::iterator, bool> result =
 			models.data.emplace(std::make_pair(models.getNewKey(), ModelData(&e, modelInfo)));   // Save model object into model list
 
-		worker.newTask(result.first->first, construct);   // Schedule task: Construct model
+		worker.newTask(result.first->first, LoadingWorker::construct);   // Schedule task: Construct model
 
 		return result.first->first;
 	}
@@ -3049,7 +3036,7 @@ void Renderer::deleteModel(key64 key)	// <<< splice an element only knowing the 
 	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 #endif
 
-	worker.newTask(key, delet);
+	worker.newTask(key, LoadingWorker::delet);
 }
 
 ModelData* Renderer::getModel(key64 key)
@@ -3115,7 +3102,7 @@ void Renderer::updateStates(uint32_t currentImage)
 	PRINT("  waitForFPS: ", profiler.updateTime() * 1000.f);
 #endif
 
-	userUpdate(*this);		// Update model matrices and other things (user defined)
+	userUpdate(*((Renderer*)this));   // Update model matrices and other things (user defined)
 
 #if defined(DEBUG_REND_PROFILER)
 	PRINT("  userUpdate: ", profiler.updateTime() * 1000.f);
@@ -3176,6 +3163,34 @@ void Renderer::updateStates(uint32_t currentImage)
 			}
 		}
 }
+
+Timer& Renderer::getTimer() { return timer; }
+
+size_t Renderer::getRendersCount(key64 key)
+{
+	if (models.data.find(key) != models.data.end())
+		return models.data[key].getActiveInstancesCount();
+	else
+		return 0;
+}
+
+size_t Renderer::getFrameCount() { return renderedFramesCount; }
+
+size_t Renderer::getFPS() { return std::round(1 / timer.getDeltaTime()); }
+
+size_t Renderer::getModelsCount() { return models.data.size(); }
+
+size_t Renderer::getCommandsCount() { return e.commands.commandsCount; }
+
+size_t Renderer::loadedShaders() { return shaders.size(); }
+
+size_t Renderer::loadedTextures() { return textures.size(); }
+
+IOmanager& Renderer::getIO() { return io; }
+
+int Renderer::getMaxMemoryAllocationCount() { return e.c.deviceData.maxMemoryAllocationCount; }
+
+int Renderer::getMemAllocObjects() { return e.c.memAllocObjects; }
 
 void Renderer::createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader)
 {
@@ -3270,31 +3285,3 @@ void Renderer::updatePostprocessingPass()
 {
 	// No code necessary here
 }
-
-Timer& Renderer::getTimer() { return timer; }
-
-size_t Renderer::getRendersCount(key64 key)
-{
-	if (models.data.find(key) != models.data.end())
-		return models.data[key].getActiveInstancesCount();
-	else
-		return 0;
-}
-
-size_t Renderer::getFrameCount() { return renderedFramesCount; }
-
-size_t Renderer::getFPS() { return std::round(1 / timer.getDeltaTime()); }
-
-size_t Renderer::getModelsCount() { return models.data.size(); }
-
-size_t Renderer::getCommandsCount() { return e.commands.commandsCount; }
-
-size_t Renderer::loadedShaders() { return shaders.size(); }
-
-size_t Renderer::loadedTextures() { return textures.size(); }
-
-IOmanager& Renderer::getIO() { return io; }
-
-int Renderer::getMaxMemoryAllocationCount() { return e.c.deviceData.maxMemoryAllocationCount; }
-
-int Renderer::getMemAllocObjects() { return e.c.memAllocObjects; }

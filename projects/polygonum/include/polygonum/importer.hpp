@@ -40,7 +40,6 @@ class ShaderLoader;
 class SLModule;
 	class SLM_fromFile;
 	class SLM_fromBuffer;
-enum smFlag;
 class ShaderIncluder;
 
 class Texture;

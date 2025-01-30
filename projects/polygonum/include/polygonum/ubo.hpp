@@ -14,7 +14,6 @@ struct Sizes;
 struct LightSet;
 struct LightPosDir;
 struct LightProps;
-enum lightProps;
 
 struct Material;
 struct UBO;
@@ -96,9 +95,6 @@ struct LightSet
 	const size_t numLights;
 	size_t numActiveLights;
 };
-
-enum lightProps { pos = 0, dir = 1, lightType = 0, ambient, diffuse, specular, degree, cutOff };
-
 
 /**
 	@struct Material

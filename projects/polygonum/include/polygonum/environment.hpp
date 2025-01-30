@@ -29,6 +29,7 @@ const bool enableValidationLayers = false;
 
 class VulkanCore;
 class VulkanEnvironment;
+class RenderEngine;
 
 struct QueueFamilyIndices;
 struct SwapChainSupportDetails;
@@ -38,7 +39,7 @@ struct DeviceData;
 
 class  Subpass;
 class  RenderPass;
-class  CommandData;
+class  Commander;
 
 class RenderPipeline;
 class RP_DS;
@@ -324,7 +325,7 @@ protected:
 	void destroyAttachments() override;
 };
 
-class CommandData
+class Commander
 {
 	uint32_t lastFrame;   //!< Frame to process next. Different frames can be processed concurrently.
 	const size_t swapChainImagesCount;
@@ -340,7 +341,7 @@ class CommandData
 	void clearDepthBuffer(VkCommandBuffer commandBuffer, const SwapChain& swapChain);   //!< [Not used] Used for clearing depth buffer between sets of draw commands in order to apply Painter's algorithm.
 
 public:
-	CommandData(VulkanCore* core, size_t swapChainImagesCount, size_t maxFramesInFlight);
+	Commander(VulkanCore* core, size_t swapChainImagesCount, size_t maxFramesInFlight);
 
 	std::vector<VkCommandPool> commandPools;   //!< commandPools[frame]. Opaque handle to a command pool object. It manages the memory that is used to store the buffers, and command buffers are allocated from them. One per frame (for better performance).
 	std::vector<std::vector<VkCommandBuffer>> commandBuffers;			//!< commandBuffers[frame][swapchain images]
@@ -416,16 +417,34 @@ public:
 
 	// Main member variables:
 	SwapChain swapChain;					// Final color. Swapchain elements.
-	CommandData commands;
+	Commander commands;
 	std::shared_ptr<RenderPipeline> rp;		//!< Render pipeline
 };
-
-enum Task { none, construct, delet };   //!< Used in LoadingWorker.
 
 /// Reponsible for the loading thread and its processes.
 class LoadingWorker
 {
-	std::queue<std::pair<key64, Task>> tasks;   //!< FIFO queue
+public:
+	LoadingWorker(int waitTime);
+	~LoadingWorker();
+
+	static enum Task { none, construct, delet };   //!< Used in LoadingWorker::newTask().
+
+	std::mutex mutModels;   //!< for Renderer::models
+	std::mutex mutTasks;   //!< for LoadingWorker::tasks
+
+	std::mutex mutModelTP;
+
+	std::mutex mutLoad;			//!< for Renderer::modelsToLoad
+	std::mutex mutDelete;		//!< for Renderer::modelsToDelete
+	std::mutex mutResources;	//!< for Renderer::shaders & Renderer::textures
+
+	void start(Renderer* renderer, ModelsManager* models, Commander* commandData);
+	void stop();
+	void newTask(key64 key, Task task);
+
+private:
+	std::queue<std::pair<key64, LoadingWorker::Task>> tasks;   //!< FIFO queue
 	std::unordered_map<key64, ModelData> modelTP;   //!< Model To Process: A model is moved here temporarily for processing. After processing, it's tranferred to its final destination.
 
 	//std::unordered_map<key64, ModelData>& models;
@@ -447,34 +466,11 @@ class LoadingWorker
 				<li> Deletes shaders and textures with counter == 0 </li>
 		</ul>
 	*/
-	void thread_loadData(Renderer* renderer, ModelsManager* models, CommandData* commandData);
+	void thread_loadData(Renderer* renderer, ModelsManager* models, Commander* commandData);
 	void extractModel(ModelsManager& models, key64 key);   //!< Extract model from "models" to "modelTP"
 	void returnModel(ModelsManager& models, key64 key);   //!< Extract model from "modelTP" to "models"
 
-public:
-	LoadingWorker(int waitTime);
-	~LoadingWorker();
-
-	std::mutex mutModels;   //!< for Renderer::models
-	std::mutex mutTasks;   //!< for LoadingWorker::tasks
-
-	std::mutex mutModelTP;
-
-	std::mutex mutLoad;			//!< for Renderer::modelsToLoad
-	std::mutex mutDelete;		//!< for Renderer::modelsToDelete
-	std::mutex mutResources;	//!< for Renderer::shaders & Renderer::textures
-
-	void start(Renderer* renderer, ModelsManager* models, CommandData* commandData);
-	void stop();
-	void newTask(key64 key, Task task);
 };
-
-/// Used for the user to specify what primitive type represents the vertex data. 
-//enum primitiveTopology {
-//	point		= VK_PRIMITIVE_TOPOLOGY_POINT_LIST,
-//	line		= VK_PRIMITIVE_TOPOLOGY_LINE_LIST,
-//	triangle	= VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
-//};
 
 // LOOK Restart the Renderer object after finishing the render loop
 /**
@@ -484,13 +480,13 @@ public:
 */
 class Renderer
 {
-	const uint32_t ADDITIONAL_SWAPCHAIN_IMAGES = 1;   //!< Total number of swapchain images = swapChain_capabilities_minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES
+protected:
+	const uint32_t ADDITIONAL_SWAPCHAIN_IMAGES = 3;   //!< Total number of swapchain images = swapChain_capabilities_minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES
 	const uint32_t MAX_FRAMES_IN_FLIGHT = 4;   //!< How many frames should be processed concurrently.
 
 	friend ResourcesLoader;
 	friend LoadingWorker;
 
-	// Main parameters
 	IOmanager io;
 	VulkanEnvironment e;
 	Timer timer, profiler;
@@ -499,12 +495,11 @@ class Renderer
 	PointersManager<std::string, Shader> shaders;			//!< Set of shaders
 	LoadingWorker worker;
 
-	// Member variables:
-	size_t						renderedFramesCount;		//!< Number of frames rendered
-	int							maxFPS;						//!< Maximum FPS (= 30 by default).
+	size_t renderedFramesCount; //!< Number of frames rendered
+	int maxFPS; //!< Maximum FPS (= 30 by default).
 
-	key64						lightingPass;				//!< Optional (createLighting())
-	key64						postprocessingPass;			//!< Optional (createPostprocessing())
+	key64 lightingPass; //!< Optional (createLighting())
+	key64 postprocessingPass; //!< Optional (createPostprocessing())
 
 	// Main methods:
 
@@ -523,32 +518,28 @@ class Renderer
 	/// Draw a frame: Wait for previous command buffer execution, acquire image from swapchain, update states and command buffer, submit command buffer for execution, and present result for display on screen.
 	void drawFrame();
 
-	/// Cleanup after render loop terminates
-	void cleanup();
-
-	// Update uniforms, transformation matrices, add/delete new models/textures. Transformation matrices (MVP) will be generated each frame.
+	/// Update uniforms, transformation matrices, add/delete new models/textures. Transformation matrices (MVP) will be generated each frame.
 	void updateStates(uint32_t currentImage);
 
 	/// Callback used by the client for updating states of their models
 	void(*userUpdate) (Renderer& rend);
 
+	/// Cleanup after render loop terminates
+	void cleanup();
+
 public:
 	// LOOK what if firstModel.size() == 0
 	/// Constructor. Requires a callback for updating model matrix, adding models, deleting models, etc.
 	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOinfo globalUBO_vs, UBOinfo globalUBO_fs);
-	~Renderer();
+	virtual ~Renderer();
 
-	UBO globalUBO_vs;	//!< Max. number of active instances
+	UBO globalUBO_vs;
 	UBO globalUBO_fs;
 
 	void renderLoop();	//!< Create command buffer and start render loop.
 
-	/// Create (partially) a new model in the list modelsToLoad. Used for rendering a model.
-	key64 newModel(ModelDataInfo& modelInfo);
-
-	/// Move model from list models (or modelsToLoad) to list modelsToDelete. If the model is being fully constructed (by the worker), it waits until it finishes. Note: When the app closes, it destroys Renderer. Thus, don't use this method at app-closing (like in an object destructor): if Renderer is destroyed first, the app may crash.
-	void deleteModel(key64 key);
-
+	key64 newModel(ModelDataInfo& modelInfo);   //!< Create (partially) a new model in the list modelsToLoad. Used for rendering a model.
+	void deleteModel(key64 key);   //!< Move model from list models (or modelsToLoad) to list modelsToDelete. If the model is being fully constructed (by the worker), it waits until it finishes. Note: When the app closes, it destroys Renderer. Thus, don't use this method at app-closing (like in an object destructor): if Renderer is destroyed first, the app may crash.
 	ModelData* getModel(key64 key);
 
 	void setInstances(key64 key, size_t numberOfRenders);
@@ -556,28 +547,24 @@ public:
 
 	void setMaxFPS(int maxFPS);
 
-	/// Make a model the last to be drawn within its own layer. Useful for transparent objects.
-	//void toLastDraw(modelIter model) { /* <<< NOT WORKING */ };
+	// Getters
+	Timer& getTimer();		//!< Returns the timer object (provides access to time data).
+	size_t getRendersCount(key64 key);
+	size_t getFrameCount();
+	size_t getFPS();
+	size_t getModelsCount();
+	size_t getCommandsCount();
+	size_t loadedShaders();	//!< Returns number of shaders in Renderer:shaders
+	size_t loadedTextures();	//!< Returns number of textures in Renderer:textures
+	IOmanager& getIO();			//!< Get access to the IO manager
+	int getMaxMemoryAllocationCount();			//!< Max. number of valid memory objects
+	int getMemAllocObjects();					//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount)
 
 	void createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader);
 	void updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights);
 	void createPostprocessingPass(std::string vertShaderPath, std::string fragShaderPath);
 	void updatePostprocessingPass();
-
-	// Getters
-	Timer& getTimer();		//!< Returns the timer object (provides access to time data).
-	size_t		getRendersCount(key64 key);
-	size_t		getFrameCount();
-	size_t		getFPS();
-	size_t		getModelsCount();
-	size_t		getCommandsCount();
-	size_t		loadedShaders();	//!< Returns number of shaders in Renderer:shaders
-	size_t		loadedTextures();	//!< Returns number of textures in Renderer:textures
-	IOmanager& getIO();			//!< Get access to the IO manager
-	int			getMaxMemoryAllocationCount();			//!< Max. number of valid memory objects
-	int			getMemAllocObjects();					//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount)
 };
-
 
 
 #endif
