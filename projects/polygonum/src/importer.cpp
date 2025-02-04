@@ -784,17 +784,6 @@ std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned ch
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
 	);
 
-	//r.c.createImage(
-	//	texWidth, texHeight,
-	//	mipLevels,
-	//	VK_SAMPLE_COUNT_1_BIT,
-	//	imageFormat,			// VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R64_SFLOAT
-	//	VK_IMAGE_TILING_OPTIMAL,
-	//	VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	//	textureImage,
-	//	textureImageMemory);
-
 	// Copy the staging buffer to the texture image
 	r.commander.transitionImageLayout(textureImage, imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);					// Transition the texture image to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
 	r.commander.copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));											// Execute the buffer to image copy operation
@@ -860,8 +849,7 @@ VkSampler TextureLoader::createTextureSampler(uint32_t mipLevels, VulkanCore& c)
 	samplerInfo.mipLodBias = 0.0f;								// Used for changing the lod value. It forces to use lower "lod" and "level" than it would normally use
 
 	VkSampler textureSampler;
-	if (vkCreateSampler(c.device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create texture sampler!");
+	Image::createSampler(textureSampler, c, samplerInfo);
 	return textureSampler;
 
 	/*

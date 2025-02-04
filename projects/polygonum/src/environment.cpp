@@ -25,6 +25,11 @@ void Image::createFullImage(uint32_t width, uint32_t height, uint32_t mipLevels,
 	createImageView(view, c, image, format, aspectFlags, mipLevels);
 }
 
+void Image::createSampler(VkSamplerCreateInfo& samplerInfo)
+{
+	createSampler(sampler, c, samplerInfo);
+}
+
 void Image::destroy()
 {
 	if (image)   c.memAllocObjects--;
@@ -32,6 +37,74 @@ void Image::destroy()
 	if (image)   vkDestroyImage(c.device, image, nullptr);   // Resolve buffer	(VkImage)
 	if (memory)  vkFreeMemory(c.device, memory, nullptr);   // Resolve buffer	(VkDeviceMemory)
 	if (sampler) vkDestroySampler(c.device, sampler, nullptr);
+}
+
+void Image::createImage(VkImage& destImage, VkDeviceMemory& destImageMemory, VulkanCore& core, uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties)
+{
+	// Create image objects for letting the shader access the pixel values (better option than setting up the shader to access the pixel values in the buffer). Pixels within an image object are known as texels.
+	VkImageCreateInfo imageInfo{};
+	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+	imageInfo.imageType = VK_IMAGE_TYPE_2D;				// Kind of coordinate system the texels in the image are going to be addressed: 1D (to store an array of data or gradient...), 2D (textures...), 3D (to store voxel volumes...).
+	imageInfo.extent.width = width;						// Number of texels in X									
+	imageInfo.extent.height = height;					// Number of texels in Y
+	imageInfo.extent.depth = 1;
+	imageInfo.mipLevels = mipLevels;					// Number of levels (mipmaps)
+	imageInfo.arrayLayers = 1;
+	imageInfo.format = format;							// Same format for the texels as the pixels in the buffer. This format is widespread, but if it is not supported by the graphics hardware, you should go with the best supported alternative.
+	imageInfo.tiling = tiling;							// This cannot be changed later. VK_IMAGE_TILING_ ... LINEAR (texels are laid out in row-major order like our pixels array), OPTIMAL (texels are laid out in an implementation defined order for optimal access).
+	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;// VK_IMAGE_LAYOUT_ ... UNDEFINED (not usable by the GPU and the very first transition will discard the texels), PREINITIALIZED (not usable by the GPU, but the first transition will preserve the texels). We choose UNDEFINED because we're first going to transition the image to be a transfer destination and then copy texel data to it from a buffer object. There are few situations where PREINITIALIZED is necessary (example: when we want to use an image as a staging image in combination with the VK_IMAGE_TILING_LINEAR layout). 
+	imageInfo.usage = usage;							// The image is going to be used as destination for the buffer copy, so it should be set up as a transfer destination; and we also want to be able to access the image from the shader to color our mesh.
+	imageInfo.samples = numSamples;						// For multisampling. Only relevant for images that will be used as attachments.
+	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;	// The image will only be used by one queue family: the one that supports graphics (and therefore also) transfer operations.
+	imageInfo.flags = 0;								// [Optional]  There are some optional flags for images that are related to sparse images (images where only certain regions are actually backed by memory). Example: If you were using a 3D texture for a voxel terrain, then you could use this to avoid allocating memory to store large volumes of "air" values.
+
+	if (vkCreateImage(core.device, &imageInfo, nullptr, &destImage) != VK_SUCCESS)
+		throw std::runtime_error("Failed to create image!");
+
+	// Allocate memory for the image
+	VkMemoryRequirements memRequirements;
+	vkGetImageMemoryRequirements(core.device, destImage, &memRequirements);
+
+	VkMemoryAllocateInfo allocInfo{};
+	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocInfo.allocationSize = memRequirements.size;
+	allocInfo.memoryTypeIndex = core.findMemoryType(memRequirements.memoryTypeBits, properties);
+
+	if (vkAllocateMemory(core.device, &allocInfo, nullptr, &destImageMemory) != VK_SUCCESS)
+		throw std::runtime_error("Failed to allocate image memory!");
+
+	core.memAllocObjects++;
+
+	vkBindImageMemory(core.device, destImage, destImageMemory, 0);
+}
+
+void Image::createImageView(VkImageView& destImageView, VulkanCore& core, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels)
+{
+	VkImageViewCreateInfo viewInfo{};
+	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	viewInfo.image = image;
+	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;			// 1D, 2D, 3D, or cube map
+	viewInfo.format = format;
+	viewInfo.subresourceRange.aspectMask = aspectFlags;						// Image's purpose and which part of it should be accessed. Here, our images will be used as color targets without any mipmapping levels or multiple layers. 
+	viewInfo.subresourceRange.baseMipLevel = 0;
+	viewInfo.subresourceRange.levelCount = mipLevels;
+	viewInfo.subresourceRange.baseArrayLayer = 0;
+	viewInfo.subresourceRange.layerCount = 1;
+	viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;	// Default color mapping
+	viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+	viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+	viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+	// Note about stereographic 3D applications: For them, you would create a swap chain with multiple layers, and then create multiple image views for each image (one for left eye and another for right eye).
+
+	if (vkCreateImageView(core.device, &viewInfo, nullptr, &destImageView) != VK_SUCCESS)
+		throw std::runtime_error("Failed to create texture image view!");
+}
+
+void Image::createSampler(VkSampler& destSampler, VulkanCore& core, VkSamplerCreateInfo& samplerInfo)
+{
+	if (vkCreateSampler(core.device, &samplerInfo, nullptr, &destSampler) != VK_SUCCESS)
+		throw std::runtime_error("Failed to create sampler!");
 }
 
 SwapChain::SwapChain(VulkanCore& core, uint32_t additionalSwapChainImages)
@@ -280,25 +353,6 @@ VulkanCore::VulkanCore(int width, int height)
 	createSurface();
 	pickPhysicalDevice();
 	createLogicalDevice();
-}
-
-void VulkanCore::initWindow()
-{
-	#ifdef DEBUG_ENV_CORE
-		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
-	#endif
-/*
-	glfwInit();
-
-	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);	// Tell GLFW not to create an OpenGL context
-	glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);		// Enable resizable window (default)
-
-	window = glfwCreateWindow((int)width, (int)height, "Grapho", nullptr, nullptr);
-	//glfwSetWindowUserPointer(window, this);								// Input class has been set as windowUserPointer
-	//glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);	// This callback has been set in Input
-
-	glfwSetInputMode(window, GLFW_STICKY_KEYS, GLFW_TRUE);
-	*/
 }
 
 // (1) 
@@ -1048,68 +1102,6 @@ void Renderer::recreateSwapChain()
 	const std::lock_guard<std::mutex> lock(commander.mutCommandPool[frameIndex]);
 	commander.createCommandBuffers(models, rp, swapChain.imagesCount(), frameIndex);   // Command buffers directly depend on the swap chain images.
 	commander.imagesInFlight.resize(swapChain.imagesCount(), VK_NULL_HANDLE);
-}
-
-void Image::createImage(VkImage& destImage, VkDeviceMemory& destImageMemory, VulkanCore& core, uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties)
-{
-	// Create image objects for letting the shader access the pixel values (better option than setting up the shader to access the pixel values in the buffer). Pixels within an image object are known as texels.
-	VkImageCreateInfo imageInfo{};
-	imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-	imageInfo.imageType = VK_IMAGE_TYPE_2D;				// Kind of coordinate system the texels in the image are going to be addressed: 1D (to store an array of data or gradient...), 2D (textures...), 3D (to store voxel volumes...).
-	imageInfo.extent.width = width;						// Number of texels in X									
-	imageInfo.extent.height = height;					// Number of texels in Y
-	imageInfo.extent.depth = 1;
-	imageInfo.mipLevels = mipLevels;					// Number of levels (mipmaps)
-	imageInfo.arrayLayers = 1;
-	imageInfo.format = format;							// Same format for the texels as the pixels in the buffer. This format is widespread, but if it is not supported by the graphics hardware, you should go with the best supported alternative.
-	imageInfo.tiling = tiling;							// This cannot be changed later. VK_IMAGE_TILING_ ... LINEAR (texels are laid out in row-major order like our pixels array), OPTIMAL (texels are laid out in an implementation defined order for optimal access).
-	imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;// VK_IMAGE_LAYOUT_ ... UNDEFINED (not usable by the GPU and the very first transition will discard the texels), PREINITIALIZED (not usable by the GPU, but the first transition will preserve the texels). We choose UNDEFINED because we're first going to transition the image to be a transfer destination and then copy texel data to it from a buffer object. There are few situations where PREINITIALIZED is necessary (example: when we want to use an image as a staging image in combination with the VK_IMAGE_TILING_LINEAR layout). 
-	imageInfo.usage = usage;							// The image is going to be used as destination for the buffer copy, so it should be set up as a transfer destination; and we also want to be able to access the image from the shader to color our mesh.
-	imageInfo.samples = numSamples;						// For multisampling. Only relevant for images that will be used as attachments.
-	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;	// The image will only be used by one queue family: the one that supports graphics (and therefore also) transfer operations.
-	imageInfo.flags = 0;								// [Optional]  There are some optional flags for images that are related to sparse images (images where only certain regions are actually backed by memory). Example: If you were using a 3D texture for a voxel terrain, then you could use this to avoid allocating memory to store large volumes of "air" values.
-
-	if (vkCreateImage(core.device, &imageInfo, nullptr, &destImage) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create image!");
-
-	// Allocate memory for the image
-	VkMemoryRequirements memRequirements;
-	vkGetImageMemoryRequirements(core.device, destImage, &memRequirements);
-
-	VkMemoryAllocateInfo allocInfo{};
-	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	allocInfo.allocationSize = memRequirements.size;
-	allocInfo.memoryTypeIndex = core.findMemoryType(memRequirements.memoryTypeBits, properties);
-
-	if (vkAllocateMemory(core.device, &allocInfo, nullptr, &destImageMemory) != VK_SUCCESS)
-		throw std::runtime_error("Failed to allocate image memory!");
-
-	core.memAllocObjects++;
-
-	vkBindImageMemory(core.device, destImage, destImageMemory, 0);
-}
-
-void Image::createImageView(VkImageView& destImageView, VulkanCore& core, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels)
-{
-	VkImageViewCreateInfo viewInfo{};
-	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-	viewInfo.image = image;
-	viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;			// 1D, 2D, 3D, or cube map
-	viewInfo.format = format;
-	viewInfo.subresourceRange.aspectMask = aspectFlags;						// Image's purpose and which part of it should be accessed. Here, our images will be used as color targets without any mipmapping levels or multiple layers. 
-	viewInfo.subresourceRange.baseMipLevel = 0;
-	viewInfo.subresourceRange.levelCount = mipLevels;
-	viewInfo.subresourceRange.baseArrayLayer = 0;
-	viewInfo.subresourceRange.layerCount = 1;
-	viewInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;	// Default color mapping
-	viewInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-	viewInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-	viewInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-
-	// Note about stereographic 3D applications: For them, you would create a swap chain with multiple layers, and then create multiple image views for each image (one for left eye and another for right eye).
-
-	if (vkCreateImageView(core.device, &viewInfo, nullptr, &destImageView) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create texture image view!");
 }
 
 uint32_t Commander::getNextFrame()
@@ -2053,22 +2045,7 @@ void RP_DS::createImageResources(Commander& commander)
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		VK_IMAGE_ASPECT_COLOR_BIT );
 
-	//Image::createImage(
-	//	swapChain.extent.width,
-	//	swapChain.extent.height,
-	//	1,
-	//	VK_SAMPLE_COUNT_1_BIT,
-	//	VK_FORMAT_R32G32B32A32_SFLOAT,
-	//	VK_IMAGE_TILING_OPTIMAL,
-	//	VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	//	position.image,
-	//	position.memory);
-	//
-	//position.view = c.createImageView(position.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1);
-
-	if (vkCreateSampler(c.device, &samplerInfo, nullptr, &position.sampler) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create resolve color sampler!");
+	position.createSampler(samplerInfo);
 
 	// Albedo -------------------------------------
 
@@ -2083,22 +2060,7 @@ void RP_DS::createImageResources(Commander& commander)
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		VK_IMAGE_ASPECT_COLOR_BIT );
 
-	//c.createImage(
-	//	swapChain.extent.width,
-	//	swapChain.extent.height,
-	//	1,
-	//	VK_SAMPLE_COUNT_1_BIT,
-	//	swapChain.imageFormat,
-	//	VK_IMAGE_TILING_OPTIMAL,
-	//	VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	//	albedo.image,
-	//	albedo.memory);
-	//
-	//albedo.view = c.createImageView(albedo.image, swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
-
-	if (vkCreateSampler(c.device, &samplerInfo, nullptr, &albedo.sampler) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create resolve color sampler!");
+	albedo.createSampler(samplerInfo);
 
 	// Normal -------------------------------------
 
@@ -2113,22 +2075,7 @@ void RP_DS::createImageResources(Commander& commander)
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		VK_IMAGE_ASPECT_COLOR_BIT );
 
-	//c.createImage(
-	//	swapChain.extent.width,
-	//	swapChain.extent.height,
-	//	1,
-	//	VK_SAMPLE_COUNT_1_BIT,
-	//	VK_FORMAT_R32G32B32A32_SFLOAT,
-	//	VK_IMAGE_TILING_OPTIMAL,
-	//	VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	//	normal.image,
-	//	normal.memory);
-	//
-	//normal.view = c.createImageView(normal.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1);
-
-	if (vkCreateSampler(c.device, &samplerInfo, nullptr, &normal.sampler) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create resolve color sampler!");
+	normal.createSampler(samplerInfo);
 
 	// specRoug -------------------------------------
 
@@ -2143,22 +2090,7 @@ void RP_DS::createImageResources(Commander& commander)
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		VK_IMAGE_ASPECT_COLOR_BIT );
 
-	//c.createImage(
-	//	swapChain.extent.width,
-	//	swapChain.extent.height,
-	//	1,
-	//	VK_SAMPLE_COUNT_1_BIT,
-	//	swapChain.imageFormat,
-	//	VK_IMAGE_TILING_OPTIMAL,
-	//	VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	//	specRoug.image,
-	//	specRoug.memory);
-	//
-	//specRoug.view = c.createImageView(specRoug.image, swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
-
-	if (vkCreateSampler(c.device, &samplerInfo, nullptr, &specRoug.sampler) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create resolve color sampler!");
+	specRoug.createSampler(samplerInfo);
 
 	// Depth -------------------------------------
 
@@ -2173,24 +2105,10 @@ void RP_DS::createImageResources(Commander& commander)
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		VK_IMAGE_ASPECT_DEPTH_BIT );
 
-	//c.createImage(swapChain.extent.width,
-	//	swapChain.extent.height,
-	//	1,
-	//	VK_SAMPLE_COUNT_1_BIT,
-	//	c.deviceData.depthFormat,
-	//	VK_IMAGE_TILING_OPTIMAL,
-	//	VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	//	depth.image,
-	//	depth.memory);
-	//
-	//depth.view = c.createImageView(depth.image, c.deviceData.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
-
 	// Explicitly transition the layout of the image to a depth attachment (there is no need of doing this because we take care of this in the render pass, but this is here for completeness).
 	commander.transitionImageLayout(depth.image, c.deviceData.depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
 
-	if (vkCreateSampler(c.device, &samplerInfo, nullptr, &depth.sampler) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create depth sampler!");
+	depth.createSampler(samplerInfo);
 }
 
 void RP_DS::destroyAttachments()
@@ -2505,23 +2423,8 @@ void RP_DS_PP::createImageResources(Commander& commander)
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		VK_IMAGE_ASPECT_COLOR_BIT );
 
-	//c.createImage(
-	//	swapChain.extent.width,
-	//	swapChain.extent.height,
-	//	1,
-	//	VK_SAMPLE_COUNT_1_BIT,
-	//	VK_FORMAT_R32G32B32A32_SFLOAT,
-	//	VK_IMAGE_TILING_OPTIMAL,
-	//	VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	//	position.image,
-	//	position.memory);
-	//
-	//position.view = c.createImageView(position.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	position.createSampler(samplerInfo);
 
-	if (vkCreateSampler(c.device, &samplerInfo, nullptr, &position.sampler) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create resolve color sampler!");
-	
 	// Albedo -------------------------------------
 
 	albedo.createFullImage(
@@ -2536,23 +2439,8 @@ void RP_DS_PP::createImageResources(Commander& commander)
 		VK_IMAGE_ASPECT_COLOR_BIT
 	);
 
-	//c.createImage(
-	//	swapChain.extent.width,
-	//	swapChain.extent.height,
-	//	1,
-	//	VK_SAMPLE_COUNT_1_BIT,
-	//	swapChain.imageFormat,
-	//	VK_IMAGE_TILING_OPTIMAL,
-	//	VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	//	albedo.image,
-	//	albedo.memory);
-	//
-	//albedo.view = c.createImageView(albedo.image, swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	albedo.createSampler(samplerInfo);
 
-	if (vkCreateSampler(c.device, &samplerInfo, nullptr, &albedo.sampler) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create resolve color sampler!");
-	
 	// Normal -------------------------------------
 
 	normal.createFullImage(
@@ -2567,23 +2455,8 @@ void RP_DS_PP::createImageResources(Commander& commander)
 		VK_IMAGE_ASPECT_COLOR_BIT
 	);
 
-	//c.createImage(
-	//	swapChain.extent.width,
-	//	swapChain.extent.height,
-	//	1,
-	//	VK_SAMPLE_COUNT_1_BIT,
-	//	VK_FORMAT_R32G32B32A32_SFLOAT,
-	//	VK_IMAGE_TILING_OPTIMAL,
-	//	VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	//	normal.image,
-	//	normal.memory);
-	//
-	//normal.view = c.createImageView(normal.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	normal.createSampler(samplerInfo);
 
-	if (vkCreateSampler(c.device, &samplerInfo, nullptr, &normal.sampler) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create resolve color sampler!");
-	
 	// specRoug -------------------------------------
 
 	specRoug.createFullImage(
@@ -2597,23 +2470,8 @@ void RP_DS_PP::createImageResources(Commander& commander)
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		VK_IMAGE_ASPECT_COLOR_BIT );
 
-	//c.createImage(
-	//	swapChain.extent.width,
-	//	swapChain.extent.height,
-	//	1,
-	//	VK_SAMPLE_COUNT_1_BIT,
-	//	swapChain.imageFormat,
-	//	VK_IMAGE_TILING_OPTIMAL,
-	//	VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	//	specRoug.image,
-	//	specRoug.memory);
-	//
-	//specRoug.view = c.createImageView(specRoug.image, swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+	specRoug.createSampler(samplerInfo);
 
-	if (vkCreateSampler(c.device, &samplerInfo, nullptr, &specRoug.sampler) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create resolve color sampler!");
-	
 	// Depth -------------------------------------
 
 	depth.createFullImage(
@@ -2627,25 +2485,11 @@ void RP_DS_PP::createImageResources(Commander& commander)
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
 		VK_IMAGE_ASPECT_DEPTH_BIT );
 
-	//c.createImage(swapChain.extent.width,
-	//	swapChain.extent.height,
-	//	1,
-	//	VK_SAMPLE_COUNT_1_BIT,
-	//	c.deviceData.depthFormat,
-	//	VK_IMAGE_TILING_OPTIMAL,
-	//	VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	//	depth.image,
-	//	depth.memory);
-	//
-	//depth.view = c.createImageView(depth.image, c.deviceData.depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT, 1);
-
 	// Explicitly transition the layout of the image to a depth attachment (there is no need of doing this because we take care of this in the render pass, but this is here for completeness).
 	commander.transitionImageLayout(depth.image, c.deviceData.depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
 
-	if (vkCreateSampler(c.device, &samplerInfo, nullptr, &depth.sampler) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create depth sampler!");
-	
+	depth.createSampler(samplerInfo);
+
 	// Color -------------------------------------
 
 	color.createFullImage(
@@ -2660,22 +2504,7 @@ void RP_DS_PP::createImageResources(Commander& commander)
 		VK_IMAGE_ASPECT_COLOR_BIT
 	);
 
-	//c.createImage(
-	//	swapChain.extent.width,
-	//	swapChain.extent.height,
-	//	1,
-	//	VK_SAMPLE_COUNT_1_BIT,
-	//	swapChain.imageFormat,
-	//	VK_IMAGE_TILING_OPTIMAL,
-	//	VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-	//	color.image,
-	//	color.memory);
-	//
-	//color.view = c.createImageView(color.image, swapChain.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
-
-	if (vkCreateSampler(c.device, &samplerInfo, nullptr, &color.sampler) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create resolve color sampler!");
+	color.createSampler(samplerInfo);
 }
 
 void RP_DS_PP::destroyAttachments()

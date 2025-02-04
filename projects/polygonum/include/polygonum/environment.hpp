@@ -78,15 +78,15 @@ class Image
 public:
 	Image(VulkanCore& core);
 
-	void createFullImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImageAspectFlags aspectFlags);
 	void destroy();
 
-	//void createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties);
-	//void createImageView(VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
+	void createFullImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImageAspectFlags aspectFlags);   //!< Create image, memory, and view.
+	void createSampler(VkSamplerCreateInfo& samplerInfo);
 
 	static void createImage(VkImage& destImage, VkDeviceMemory& destImageMemory, VulkanCore& core, uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties);
 	static void createImageView(VkImageView& destImageView, VulkanCore& core, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
-
+	static void createSampler(VkSampler& destSampler, VulkanCore& core, VkSamplerCreateInfo& samplerInfo);
+	
 	VkImage			image;		//!< Image object
 	VkDeviceMemory	memory;		//!< Device memory object
 	VkImageView		view;		//!< References a part of the image to be used (subset of its pixels). Required for being able to access it.
@@ -98,14 +98,6 @@ private:
 
 class SwapChain
 {
-	VulkanCore& c;
-
-	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
-	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
-	VkExtent2D chooseSwapExtent(IOmanager& io, const VkSurfaceCapabilitiesKHR& capabilities);
-
-	const uint32_t additionalSwapChainImages;
-
 public:
 	SwapChain(VulkanCore& core, uint32_t additionalSwapChainImages);
 
@@ -119,6 +111,15 @@ public:
 
 	VkFormat									imageFormat;	//!< VK_FORMAT_B8G8R8A8_SRGB
 	VkExtent2D									extent;
+
+private:
+	VulkanCore& c;
+
+	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
+	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
+	VkExtent2D chooseSwapExtent(IOmanager& io, const VkSurfaceCapabilitiesKHR& capabilities);
+
+	const uint32_t additionalSwapChainImages;
 };
 
 struct DeviceData
@@ -183,8 +184,6 @@ public:
 
 	int memAllocObjects;							//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount). Incremented each vkAllocateMemory call; decremented each vkFreeMemory call.
 
-	//void createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
-	//VkImageView	createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
 	SwapChainSupportDetails	querySwapChainSupport();
 	QueueFamilyIndices findQueueFamilies();
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
@@ -196,7 +195,6 @@ private:
 	const std::vector<const char*> requiredValidationLayers = { "VK_LAYER_KHRONOS_validation" };
 	const std::vector<const char*> requiredDeviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };	//!< Swap chain: Queue of images that are waiting to be presented to the screen. Our application will acquire such an image to draw to it, and then return it to the queue. Its general purpose is to synchronize the presentation of images with the refresh rate of the screen.
 
-	void initWindow();
 	void createInstance();
 	void setupDebugMessenger();
 	void createSurface();
@@ -204,18 +202,19 @@ private:
 	void createLogicalDevice();
 
 	bool checkValidationLayerSupport(const std::vector<const char*>& requiredLayers);
-	void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
-	std::vector<const char*> getRequiredExtensions();
-	bool checkExtensionSupport(const char* const* requiredExtensions, uint32_t reqExtCount);
 	VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
+	void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
+	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
+	void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator);
+
+	bool checkExtensionSupport(const char* const* requiredExtensions, uint32_t reqExtCount);
+	bool checkDeviceExtensionSupport(VkPhysicalDevice device);
+	std::vector<const char*> getRequiredExtensions();
+
+	SwapChainSupportDetails	querySwapChainSupport(VkPhysicalDevice device);
 	int evaluateDevice(VkPhysicalDevice device);
 	VkSampleCountFlagBits getMaxUsableSampleCount(bool getMinimum);
 	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
-	void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator);
-
-	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
-	bool checkDeviceExtensionSupport(VkPhysicalDevice device);
-	SwapChainSupportDetails	querySwapChainSupport(VkPhysicalDevice device);
 };
 
 class Subpass
