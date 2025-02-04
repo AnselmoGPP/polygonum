@@ -25,8 +25,8 @@ ModelDataInfo::ModelDataInfo()
 { }
 
 
-ModelData::ModelData(VulkanEnvironment* environment, ModelDataInfo& modelInfo)
-	: e(environment),
+ModelData::ModelData(Renderer* renderer, ModelDataInfo& modelInfo)
+	: r(renderer),
 	name(modelInfo.name),
 	primitiveTopology(modelInfo.topology),
 	vertexType(modelInfo.vertexType),
@@ -34,8 +34,8 @@ ModelData::ModelData(VulkanEnvironment* environment, ModelDataInfo& modelInfo)
 	cullMode(modelInfo.cullMode),
 	globalUBO_vs(modelInfo.globalUBO_vs),
 	globalUBO_fs(modelInfo.globalUBO_fs),
-	vsUBO(e, UBOinfo(modelInfo.maxDescriptorsCount_vs, modelInfo.activeInstances, modelInfo.UBOsize_vs)),
-	fsUBO(e, UBOinfo(modelInfo.maxDescriptorsCount_fs, modelInfo.maxDescriptorsCount_fs, modelInfo.UBOsize_fs)),
+	vsUBO(renderer, UBOinfo(modelInfo.maxDescriptorsCount_vs, modelInfo.activeInstances, modelInfo.UBOsize_vs)),
+	fsUBO(renderer, UBOinfo(modelInfo.maxDescriptorsCount_fs, modelInfo.maxDescriptorsCount_fs, modelInfo.UBOsize_fs)),
 	renderPassIndex(modelInfo.renderPassIndex),
 	subpassIndex(modelInfo.subpassIndex),
 	activeInstances(modelInfo.activeInstances),
@@ -55,16 +55,34 @@ ModelData::~ModelData()
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
 	#endif
 
-	if (fullyConstructed) {
-		cleanup_Pipeline_Descriptors();
-		cleanup();
+	if (fullyConstructed)
+	{
+		// Pipeline & Descriptors
+		cleanup_pipeline_and_descriptors();
+
+		// Descriptor set layout
+		vkDestroyDescriptorSetLayout(r->c.device, descriptorSetLayout, nullptr);
+
+		// Index buffer
+		if (vert.indexCount)
+		{
+			vkDestroyBuffer(r->c.device, vert.indexBuffer, nullptr);
+			vkFreeMemory(r->c.device, vert.indexBufferMemory, nullptr);
+			r->c.memAllocObjects--;
+		}
+
+		// Vertex buffer
+		vkDestroyBuffer(r->c.device, vert.vertexBuffer, nullptr);
+		vkFreeMemory(r->c.device, vert.vertexBufferMemory, nullptr);
+		r->c.memAllocObjects--;
 	}
 
+	// Resources loader
 	deleteLoader();
 }
 
 ModelData::ModelData(ModelData&& other) noexcept
-	: e(other.e),
+	: r(other.r),
 	primitiveTopology(other.primitiveTopology),
 	hasTransparencies(other.hasTransparencies),
 	cullMode(other.cullMode),
@@ -91,7 +109,7 @@ ModelData::ModelData(ModelData&& other) noexcept
 	fsUBO = std::move(other.fsUBO);
 	descriptorSets = std::move(other.descriptorSets);
 
-	other.e = nullptr;
+	other.r = nullptr;
 	other.globalUBO_vs = nullptr;
 	other.globalUBO_fs = nullptr;
 	other.resLoader = nullptr;
@@ -105,7 +123,7 @@ ModelData& ModelData::operator=(ModelData&& other) noexcept
 		deleteLoader();
 
 		// Transfer resources ownership
-		e = other.e;
+		r = other.r;
 		primitiveTopology = other.primitiveTopology;
 		hasTransparencies = other.hasTransparencies;
 		cullMode = other.cullMode;
@@ -133,7 +151,7 @@ ModelData& ModelData::operator=(ModelData&& other) noexcept
 		name = std::move(other.name);
 
 		// Leave other in valid state
-		other.e = nullptr;
+		other.r = nullptr;
 		other.primitiveTopology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
 		other.hasTransparencies = false;
 		other.cullMode = VK_CULL_MODE_FLAG_BITS_MAX_ENUM;
@@ -262,12 +280,12 @@ void ModelData::createDescriptorSetLayout()
 	}
 
 	// 5) Input attachments
-	if(e->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size())
+	if(r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size())
 	{
 		VkDescriptorSetLayoutBinding inputAttachmentLayoutBinding{};
 		inputAttachmentLayoutBinding.binding = bindNumber++;
 		inputAttachmentLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;	// VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-		inputAttachmentLayoutBinding.descriptorCount = e->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size();
+		inputAttachmentLayoutBinding.descriptorCount = r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size();
 		inputAttachmentLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 		inputAttachmentLayoutBinding.pImmutableSamplers = nullptr;
 
@@ -280,7 +298,7 @@ void ModelData::createDescriptorSetLayout()
 	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
 	layoutInfo.pBindings = bindings.data();
 	
-	if (vkCreateDescriptorSetLayout(e->c.device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
+	if (vkCreateDescriptorSetLayout(r->c.device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create descriptor set layout!");
 }
 
@@ -299,7 +317,7 @@ void ModelData::createGraphicsPipeline()
 	pipelineLayoutInfo.pushConstantRangeCount = 0;				// Optional. <<< Push constants are another way of passing dynamic values to shaders.
 	pipelineLayoutInfo.pPushConstantRanges = nullptr;			// Optional
 
-	if (vkCreatePipelineLayout(e->c.device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
+	if (vkCreatePipelineLayout(r->c.device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create pipeline layout!");
 	
 	// Read shader files
@@ -346,15 +364,15 @@ void ModelData::createGraphicsPipeline()
 	VkViewport viewport{};
 	viewport.x = 0.0f;
 	viewport.y = 0.0f;
-	viewport.width = (float)e->swapChain.extent.width;
-	viewport.height = (float)e->swapChain.extent.height;
+	viewport.width = (float)r->swapChain.extent.width;
+	viewport.height = (float)r->swapChain.extent.height;
 	viewport.minDepth = 0.0f;
 	viewport.maxDepth = 1.0f;
 
 	// Scissor rectangle: Defines in which region pixels will actually be stored. Pixels outside the scissor rectangles will be discarded by the rasterizer. It works like a filter rather than a transformation.
 	VkRect2D scissor{};
 	scissor.offset = { 0, 0 };
-	scissor.extent = e->swapChain.extent;
+	scissor.extent = r->swapChain.extent;
 
 	// Viewport state: Combines the viewport and scissor rectangle into a viewport state. Multiple viewports and scissors require enabling a GPU feature.
 	VkPipelineViewportStateCreateInfo viewportState{};
@@ -381,9 +399,9 @@ void ModelData::createGraphicsPipeline()
 	// Multisampling: One way to perform anti-aliasing. Combines the fragment shader results of multiple polygons that rasterize to the same pixel. Requires enabling a GPU feature.
 	VkPipelineMultisampleStateCreateInfo multisampling{};
 	multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-	multisampling.rasterizationSamples = e->c.msaaSamples;	// VK_SAMPLE_COUNT_1_BIT);	// <<<
-	multisampling.sampleShadingEnable = (e->c.add_SS ? VK_TRUE : VK_FALSE);	// Enable sample shading in the pipeline
-	if (e->c.add_SS)
+	multisampling.rasterizationSamples = r->c.msaaSamples;	// VK_SAMPLE_COUNT_1_BIT);	// <<<
+	multisampling.sampleShadingEnable = (r->c.add_SS ? VK_TRUE : VK_FALSE);	// Enable sample shading in the pipeline
+	if (r->c.add_SS)
 		multisampling.minSampleShading = .2f;								// [Optional] Min fraction for sample shading; closer to one is smoother
 	multisampling.pSampleMask = nullptr;									// [Optional]
 	multisampling.alphaToCoverageEnable = VK_FALSE;							// [Optional]
@@ -436,14 +454,14 @@ void ModelData::createGraphicsPipeline()
 		*/
 	}
 
-	std::vector<VkPipelineColorBlendAttachmentState> setColorBlendAttachments(e->rp->getSubpass(renderPassIndex, subpassIndex).colorAttsCount, colorBlendAttachment);
+	std::vector<VkPipelineColorBlendAttachmentState> setColorBlendAttachments(r->rp->getSubpass(renderPassIndex, subpassIndex).colorAttsCount, colorBlendAttachment);
 
 	//	- Global color blending settings. Set blend constants that you can use as blend factors in the aforementioned calculations.
 	VkPipelineColorBlendStateCreateInfo colorBlending{};
 	colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 	colorBlending.logicOpEnable = VK_FALSE;					// VK_FALSE: Blending method of mixing values.  VK_TRUE: Blending method of bitwise values combination (this disables the previous structure, like blendEnable = VK_FALSE).
 	colorBlending.logicOp = VK_LOGIC_OP_COPY;				// Optional
-	colorBlending.attachmentCount = e->rp->getSubpass(renderPassIndex, subpassIndex).colorAttsCount;
+	colorBlending.attachmentCount = r->rp->getSubpass(renderPassIndex, subpassIndex).colorAttsCount;
 	colorBlending.pAttachments = setColorBlendAttachments.data();
 	colorBlending.blendConstants[0] = 0.0f;						// Optional
 	colorBlending.blendConstants[1] = 0.0f;						// Optional
@@ -473,12 +491,12 @@ void ModelData::createGraphicsPipeline()
 	pipelineInfo.pColorBlendState = &colorBlending;
 	pipelineInfo.pDynamicState = nullptr;					// [Optional] <<< dynamic state not passed. If the bound graphics pipeline state was created with the VK_DYNAMIC_STATE_VIEWPORT dynamic state enabled then vkCmdSetViewport must have been called in the current command buffer prior to this drawing command. 
 	pipelineInfo.layout = pipelineLayout;
-	pipelineInfo.renderPass = e->rp->renderPasses[renderPassIndex].renderPass;// It's possible to use other render passes with this pipeline instead of this specific instance, but they have to be compatible with "renderPass" (https://www.khronos.org/registry/vulkan/specs/1.0/html/vkspec.html#renderpass-compatibility).
+	pipelineInfo.renderPass = r->rp->renderPasses[renderPassIndex].renderPass;// It's possible to use other render passes with this pipeline instead of this specific instance, but they have to be compatible with "renderPass" (https://www.khronos.org/registry/vulkan/specs/1.0/html/vkspec.html#renderpass-compatibility).
 	pipelineInfo.subpass = 0;
 	pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;		// [Optional] Specify the handle of an existing pipeline.
 	pipelineInfo.basePipelineIndex = -1;					// [Optional] Reference another pipeline that is about to be created by index.
 	
-	if (vkCreateGraphicsPipelines(e->c.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS)
+	if (vkCreateGraphicsPipelines(r->c.device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create graphics pipeline!");
 	
 	// Cleanup
@@ -500,42 +518,42 @@ void ModelData::createDescriptorPool()
 	if (globalUBO_vs && globalUBO_vs->subUboSize)
 	{
 		pool.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		pool.descriptorCount = static_cast<uint32_t>(e->swapChain.images.size());
+		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
 		poolSizes.push_back(pool);
 	}
 
 	if (vsUBO.maxNumSubUbos && vsUBO.subUboSize)
 	{
 		pool.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;								// VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER or VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
-		pool.descriptorCount = static_cast<uint32_t>(e->swapChain.images.size());	// Number of descriptors of this type to allocate
+		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());	// Number of descriptors of this type to allocate
 		poolSizes.push_back(pool);
 	}
 
 	if (globalUBO_fs && globalUBO_fs->subUboSize)
 	{
 		pool.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		pool.descriptorCount = static_cast<uint32_t>(e->swapChain.images.size());
+		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
 		poolSizes.push_back(pool);
 	}
 
 	if (fsUBO.maxNumSubUbos && fsUBO.subUboSize)
 	{
 		pool.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		pool.descriptorCount = static_cast<uint32_t>(e->swapChain.images.size());
+		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
 		poolSizes.push_back(pool);
 	}
 
 	for (size_t i = 0; i < textures.size(); ++i)
 	{
 		pool.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		pool.descriptorCount = static_cast<uint32_t>(e->swapChain.images.size());
+		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
 		poolSizes.push_back(pool);
 	}
 
-	if(e->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size())
+	if(r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size())
 	{
 		pool.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-		pool.descriptorCount = static_cast<uint32_t>(e->swapChain.images.size());
+		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
 		poolSizes.push_back(pool);
 	}
 
@@ -544,10 +562,10 @@ void ModelData::createDescriptorPool()
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	poolInfo.pPoolSizes = poolSizes.data();
-	poolInfo.maxSets = static_cast<uint32_t>(e->swapChain.images.size());	// Max. number of individual descriptor sets that may be allocated
+	poolInfo.maxSets = static_cast<uint32_t>(r->swapChain.images.size());	// Max. number of individual descriptor sets that may be allocated
 	poolInfo.flags = 0;														// Determine if individual descriptor sets can be freed (VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT) or not (0). Since we aren't touching the descriptor set after its creation, we put 0 (default).
 
-	if (vkCreateDescriptorPool(e->c.device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
+	if (vkCreateDescriptorPool(r->c.device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create descriptor pool!");
 }
 
@@ -558,23 +576,23 @@ void ModelData::createDescriptorSets()
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
 	#endif
 
-	descriptorSets.resize(e->swapChain.images.size());
+	descriptorSets.resize(r->swapChain.images.size());
 
-	std::vector<VkDescriptorSetLayout> layouts(e->swapChain.images.size(), descriptorSetLayout);
+	std::vector<VkDescriptorSetLayout> layouts(r->swapChain.images.size(), descriptorSetLayout);
 
 	// Describe the descriptor set. Here, we will create one descriptor set for each swap chain image, all with the same layout
 	VkDescriptorSetAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 	allocInfo.descriptorPool = descriptorPool;											// Descriptor pool to allocate from
-	allocInfo.descriptorSetCount = static_cast<uint32_t>(e->swapChain.images.size());	// Number of descriptor sets to allocate
+	allocInfo.descriptorSetCount = static_cast<uint32_t>(r->swapChain.images.size());	// Number of descriptor sets to allocate
 	allocInfo.pSetLayouts = layouts.data();												// Descriptor layout to base them on
 
 	// Allocate the descriptor set handles
-	if (vkAllocateDescriptorSets(e->c.device, &allocInfo, descriptorSets.data()) != VK_SUCCESS)
+	if (vkAllocateDescriptorSets(r->c.device, &allocInfo, descriptorSets.data()) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate descriptor sets!");
 
 	// Populate each descriptor set.
-	for (size_t i = 0; i < e->swapChain.images.size(); i++)
+	for (size_t i = 0; i < r->swapChain.images.size(); i++)
 	{
 		VkDescriptorBufferInfo descriptorInfo;						// Info about one descriptor
 
@@ -629,12 +647,12 @@ void ModelData::createDescriptorSets()
 		}
 
 		// Input attachments
-		std::vector<VkDescriptorImageInfo> inputAttachInfo(e->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size());
+		std::vector<VkDescriptorImageInfo> inputAttachInfo(r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size());
 		for (unsigned i = 0; i < inputAttachInfo.size(); i++)
 		{
 			inputAttachInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			inputAttachInfo[i].imageView = e->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts[i]->view;
-			inputAttachInfo[i].sampler = e->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts[i]->sampler;
+			inputAttachInfo[i].imageView = r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts[i]->view;
+			inputAttachInfo[i].sampler = r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts[i]->sampler;
 		}
 		
 		std::vector<VkWriteDescriptorSet> descriptorWrites;
@@ -721,7 +739,7 @@ void ModelData::createDescriptorSets()
 			descriptorWrites.push_back(descriptor);
 		}
 		
-		if (e->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size())
+		if (r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size())
 		{
 			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			descriptor.dstSet = descriptorSets[i];
@@ -737,11 +755,11 @@ void ModelData::createDescriptorSets()
 			descriptorWrites.push_back(descriptor);
 		}
 
-		vkUpdateDescriptorSets(e->c.device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);	// Accepts 2 kinds of arrays as parameters: VkWriteDescriptorSet, VkCopyDescriptorSet.
+		vkUpdateDescriptorSets(r->c.device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);	// Accepts 2 kinds of arrays as parameters: VkWriteDescriptorSet, VkCopyDescriptorSet.
 	}
 }
 
-void ModelData::recreate_Pipeline_Descriptors()
+void ModelData::recreate_pipeline_and_descriptors()
 {
 	#ifdef DEBUG_MODELS
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
@@ -755,45 +773,22 @@ void ModelData::recreate_Pipeline_Descriptors()
 	createDescriptorSets();				// Descriptor sets
 }
 
-void ModelData::cleanup_Pipeline_Descriptors()
+void ModelData::cleanup_pipeline_and_descriptors()
 {
 	#ifdef DEBUG_MODELS
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
 	#endif
-
+	
 	// Graphics pipeline
-	vkDestroyPipeline(e->c.device, graphicsPipeline, nullptr);
-	vkDestroyPipelineLayout(e->c.device, pipelineLayout, nullptr);
+	vkDestroyPipeline(r->c.device, graphicsPipeline, nullptr);
+	vkDestroyPipelineLayout(r->c.device, pipelineLayout, nullptr);
 
 	// Uniform buffers & memory
 	vsUBO.destroyUBO();
 	fsUBO.destroyUBO();
 
 	// Descriptor pool & Descriptor set (When a descriptor pool is destroyed, all descriptor-sets allocated from the pool are implicitly/automatically freed and become invalid)
-	vkDestroyDescriptorPool(e->c.device, descriptorPool, nullptr);
-}
-
-void ModelData::cleanup()
-{
-	#ifdef DEBUG_MODELS
-		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
-	#endif
-	
-	// Descriptor set layout
-	vkDestroyDescriptorSetLayout(e->c.device, descriptorSetLayout, nullptr);
-
-	// Index
-	if (vert.indexCount)
-	{
-		vkDestroyBuffer(e->c.device, vert.indexBuffer, nullptr);
-		vkFreeMemory(e->c.device, vert.indexBufferMemory, nullptr);
-		e->c.memAllocObjects--;
-	}
-
-	// Vertex
-	vkDestroyBuffer(e->c.device, vert.vertexBuffer, nullptr);
-	vkFreeMemory(e->c.device, vert.vertexBufferMemory, nullptr);
-	e->c.memAllocObjects--;
+	vkDestroyDescriptorPool(r->c.device, descriptorPool, nullptr);
 }
 
 void ModelData::deleteLoader()
@@ -861,4 +856,22 @@ key64 ModelsManager::getNewKey()
 		if (data.find(++newKey) == data.end())
 			return newKey;
 	} while (true);
+}
+
+void ModelsManager::cleanup_pipelines_and_descriptors(std::mutex* waitMutex)
+{
+	if (waitMutex)
+		const std::lock_guard<std::mutex> lock(*waitMutex);
+
+	for (auto it = data.begin(); it != data.end(); it++)
+		it->second.cleanup_pipeline_and_descriptors();
+}
+
+void ModelsManager::create_pipelines_and_descriptors(std::mutex* waitMutex)
+{
+	if (waitMutex)
+		const std::lock_guard<std::mutex> lock(*waitMutex);
+
+	for (auto it = data.begin(); it != data.end(); it++)
+		it->second.recreate_pipeline_and_descriptors();
 }

@@ -28,8 +28,7 @@ const bool enableValidationLayers = false;
 // Prototypes ----------
 
 class VulkanCore;
-class VulkanEnvironment;
-class RenderEngine;
+class Renderer;
 
 struct QueueFamilyIndices;
 struct SwapChainSupportDetails;
@@ -46,13 +45,11 @@ class RP_DS;
 class RP_DS_PP;
 
 class LoadingWorker;
-class ModelsManager;
-class Renderer;
 
 // Common functions ----------
 
 /// Creates a Vulkan buffer (VkBuffer and VkDeviceMemory).Used as friend in modelData, UBO and Texture.
-void createBuffer(VulkanEnvironment* e, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
+void createBuffer(VulkanCore* c, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
 
 
 // Definitions ----------
@@ -76,32 +73,44 @@ struct SwapChainSupportDetails
 };
 
 /// Image used as attachment in a render pass. One per render pass.
-struct Image
+class Image
 {
-	Image();
-	void destroy(VulkanEnvironment* e);
+public:
+	Image(VulkanCore& core);
+
+	void createFullImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImageAspectFlags aspectFlags);
+	void destroy();
+
+	//void createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties);
+	//void createImageView(VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
+
+	static void createImage(VkImage& destImage, VkDeviceMemory& destImageMemory, VulkanCore& core, uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties);
+	static void createImageView(VkImageView& destImageView, VulkanCore& core, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
 
 	VkImage			image;		//!< Image object
 	VkDeviceMemory	memory;		//!< Device memory object
 	VkImageView		view;		//!< References a part of the image to be used (subset of its pixels). Required for being able to access it.
 	VkSampler		sampler;	//!< Images are accessed through image views rather than directly
+
+private:
+	VulkanCore& c;
 };
 
-struct SwapChain
+class SwapChain
 {
-	void createSwapChain(VulkanCore& core);
-	void createSwapChainImageViews(VulkanCore& core);   //!< Creates a basic image view for every image in the swap chain so that we can use them as color targets later on.
+	VulkanCore& c;
+
 	VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
 	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
 	VkExtent2D chooseSwapExtent(IOmanager& io, const VkSurfaceCapabilitiesKHR& capabilities);
-	void cleanupSwapChain(VulkanEnvironment& env, LoadingWorker& worker, IOmanager& io, ModelsManager& models);   //!< Used in recreateSwapChain()
 
 	const uint32_t additionalSwapChainImages;
 
 public:
 	SwapChain(VulkanCore& core, uint32_t additionalSwapChainImages);
-	void recreateSwapChain(VulkanEnvironment& env, LoadingWorker& worker, IOmanager& io, ModelsManager& models);   //!< Used in drawFrame(). The window surface may change, making the swap chain no longer compatible with it (example: window resizing). Here, we catch these events (when acquiring/submitting an image from/to the swap chain) and recreate the swap chain.
-	void destroy(VkDevice device);
+
+	void createSwapChain();
+	void destroy();
 	size_t imagesCount();
 
 	VkSwapchainKHR								swapChain;		//!< Swap chain object.
@@ -153,12 +162,12 @@ private:
 class VulkanCore
 {
 public:
-	VulkanCore(IOmanager& io);
+	VulkanCore(int width, int height);
 
 	const bool add_MSAA = false;					//!< Shader MSAA (MultiSample AntiAliasing). 
 	const bool add_SS   = false;					//!< Sample shading. This can solve some problems from shader MSAA (example: only smoothens out edges of geometry but not the interior filling) (https://www.khronos.org/registry/vulkan/specs/1.0/html/vkspec.html#primsrast-sampleshading).
 
-	IOmanager& io;
+	IOmanager io;
 
 	VkInstance					instance;			//!< Opaque handle to an instance object. There is no global state in Vulkan and all per-application state is stored here.
 	VkDebugUtilsMessengerEXT	debugMessenger;		//!< Opaque handle to a debug messenger object (the debug callback is part of it).
@@ -166,7 +175,7 @@ public:
 
 	VkPhysicalDevice			physicalDevice;		//!< Opaque handle to a physical device object.
 	VkSampleCountFlagBits		msaaSamples;		//!< Number of samples used for MSAA (MultiSampling AntiAliasing)
-	VkDevice					device;				//!< Opaque handle to a device object.
+	VkDevice					device;				//!< Opaque handle to a logical device object.
 	DeviceData					deviceData;			//!< Physical device properties and features.
 
 	VkQueue						graphicsQueue;		//!< Opaque handle to a queue object (computer graphics).
@@ -174,10 +183,13 @@ public:
 
 	int memAllocObjects;							//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount). Incremented each vkAllocateMemory call; decremented each vkFreeMemory call.
 
-	VkImageView	createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
+	//void createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
+	//VkImageView	createImageView(VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
 	SwapChainSupportDetails	querySwapChainSupport();
 	QueueFamilyIndices findQueueFamilies();
+	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 	void destroy();
+	void queueWaitIdle(VkQueue queue, std::mutex* waitMutex);
 
 private:
 
@@ -222,9 +234,9 @@ public:
 	RenderPass(std::vector<Subpass> subpasses) : subpasses(subpasses) { }
 
 	void createRenderPass(VkDevice& device, std::vector<VkAttachmentDescription>& allAttachments, std::vector<VkAttachmentReference>& inputAttachments, std::vector<VkAttachmentReference>& colorAttachments, VkAttachmentReference* depthAttachment);
-	void createFramebuffers(VulkanEnvironment& e);			//!< Define the swap chain framebuffers and their attachments. Framebuffers directly depend on the swap chain images.
-	void createRenderPassInfo(VulkanEnvironment& e);		//!< Create the VkRenderPassBeginInfo objects used at vkCmdBeginRenderPass() for creating the command buffer.
-	void destroy(VulkanEnvironment& e);						//!< Destroy framebuffers and render-pass.
+	void createFramebuffers(VulkanCore& c, SwapChain& swapChain);   //!< Define the swap chain framebuffers and their attachments. Framebuffers directly depend on the swap chain images.
+	void createRenderPassInfo(SwapChain& swapChain);		//!< Create the VkRenderPassBeginInfo objects used at vkCmdBeginRenderPass() for creating the command buffer.
+	void destroy(VulkanCore& c);						//!< Destroy framebuffers and render-pass.
 
 	VkRenderPass renderPass;
 	std::vector<Subpass> subpasses;	
@@ -232,97 +244,6 @@ public:
 	std::vector<VkFramebuffer> framebuffers;				//!< One per swap chain image. List. Opaque handle to a framebuffer object (set of attachments, including the final image to render). Access: swapChainFramebuffers[numSwapChainImages][attachment]. First attachment: main color. Second attachment: post-processing
 	std::vector<VkRenderPassBeginInfo> renderPassInfos;		//!< One per swap chain image.
 	std::vector<VkClearValue> clearValues;					//!< One per attachment.
-};
-
-/**
-	@brief Set the system of render passes, subpasses, and framebuffers used.
-
-	It tells Vulkan the framebuffer attachments that will be used while rendering (input, color/output, depth, multisampled images). A render-pass denotes more explicitly how your rendering happens. Specify subpasses and their attachments.
-	- Subpasses : A single render pass can consist of multiple subpasses, which are subsequent rendering operations that depend on the contents of framebuffers in previous passes (example : a sequence of post-processing effects applied one after another). Grouping them into one render pass may give better performance.
-	- Attachment references: Every subpass references one or more of the attachments.
-		- Input attachments (IA): Input images.
-		- Color attachments (CA): Output images.
-		- Depth/stencil attachment (DA): Depth/stencil buffer.
-		- Resolve attachment (RA): Used for resolving the final image from a multisampled image.
-*/
-class RenderPipeline
-{
-public:
-	RenderPipeline(VulkanEnvironment& e);
-
-	std::vector<RenderPass> renderPasses;
-	Subpass& getSubpass(unsigned renderPassIndex, unsigned subpassIndex);
-
-	friend VulkanEnvironment;
-
-protected:
-	VulkanEnvironment& e;
-
-	void createRenderPipeline();		//!< Create render-passes, framebuffers, and attachments.
-	void destroyRenderPipeline();		//!< Destroy render-passes, framebuffers, and attachments.
-
-private:
-	virtual void destroyAttachments() = 0;
-	virtual void createRenderPass() = 0;		//!< A render-pass denotes more explicitly how your rendering happens. Specify subpasses and their attachments.
-	virtual void createImageResources() = 0;
-};
-
-/// Render pipeline containing Deferred shading (lighting pass + geometry pass)
-class RP_DS : public RenderPipeline
-{
-public:
-	RP_DS(VulkanEnvironment& e);
-
-	Image position;
-	Image albedo;
-	Image normal;
-	Image specRoug;
-	Image depth;
-	//Image finalColor;	// swapchain.image[i]
-
-protected:
-	void createRenderPass() override;
-	void createImageResources() override;
-	void destroyAttachments() override;
-};
-
-/**
-  Render pipeline containing Deferred shading(lighting pass + geometry pass) + forward shading + post - processing
-
-  RP1::SP1 (Geometry pass):
-    IA (0)
-    DA (1): depth
-    CA (4): position, albedo, normal, specRough
-  RP2::SP1 (Lighting pass):
-    IA (4): CAs from RP1
-    DA (0)
-    CA (1): color
-  RP3::SP1 (Forward pass):
-    IA (0):
-    DA (1): depth (from RP1)
-    CA (1): color (from RP2)
-  RP4::SP1 (Post-processing pass):
-    IA (2): color (from RP3), depth (from RP3)
-    DA (0)
-    CA (1): color (swapchain)
-*/
-class RP_DS_PP : public RenderPipeline
-{
-public:
-	RP_DS_PP(VulkanEnvironment& e);
-
-	Image position;
-	Image albedo;
-	Image normal;
-	Image specRoug;
-	Image depth;
-	Image color;
-	//Image finalColor;	// swapchain.image[i]
-
-protected:
-	void createRenderPass() override;
-	void createImageResources() override;
-	void destroyAttachments() override;
 };
 
 class Commander
@@ -385,7 +306,7 @@ public:
 
 	// Single time commands
 	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);
-	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size, VulkanEnvironment* e);
+	void copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
 	void copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
 	void generateMipmaps(VkImage image, VkFormat imageFormat, int32_t texWidth, int32_t texHeight, uint32_t mipLevels);
 
@@ -395,30 +316,93 @@ public:
 	void destroySynchronizers();
 };
 
-class VulkanEnvironment
+/**
+	@brief Set the system of render passes, subpasses, and framebuffers used.
+
+	It tells Vulkan the framebuffer attachments that will be used while rendering (input, color/output, depth, multisampled images). A render-pass denotes more explicitly how your rendering happens. Specify subpasses and their attachments.
+	- Subpasses : A single render pass can consist of multiple subpasses, which are subsequent rendering operations that depend on the contents of framebuffers in previous passes (example : a sequence of post-processing effects applied one after another). Grouping them into one render pass may give better performance.
+	- Attachment references: Every subpass references one or more of the attachments.
+		- Input attachments (IA): Input images.
+		- Color attachments (CA): Output images.
+		- Depth/stencil attachment (DA): Depth/stencil buffer.
+		- Resolve attachment (RA): Used for resolving the final image from a multisampled image.
+*/
+class RenderPipeline
 {
-	//const uint32_t additionalSwapChainImages;   //!< Tota number of swapchain images = swapChain_capabilities_minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES
-	//const uint32_t maxFramesInFlight;   //!< How many frames should be processed concurrently.
-
-	IOmanager& io;
-
 public:
-	VulkanEnvironment(IOmanager& io, size_t additionalSwapChainImages, size_t maxFramesInFlight);
-	~VulkanEnvironment();
+	RenderPipeline(VulkanCore& core, SwapChain& swapChain);
 
-	VulkanCore c;
+	std::vector<RenderPass> renderPasses;
+	Subpass& getSubpass(unsigned renderPassIndex, unsigned subpassIndex);
+	void createRenderPipeline(Commander& commands);   //!< Create render-passes, framebuffers, and attachments.
+	void destroyRenderPipeline();   //!< Destroy render-passes, framebuffers, and attachments.
 
-	void			createImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImage& image, VkDeviceMemory& imageMemory);
-	uint32_t		findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+protected:
+	VulkanCore& c;
+	SwapChain& swapChain;
 
-	void			recreate_RenderPipeline_SwapChain();
-	void			cleanup_RenderPipeline_SwapChain();
-	void			cleanup();
+private:
+	virtual void createRenderPass() = 0;   //!< A render-pass denotes more explicitly how your rendering happens. Specify subpasses and their attachments.
+	virtual void createImageResources(Commander& commander) = 0;
+	virtual void destroyAttachments() = 0;
+};
 
-	// Main member variables:
-	SwapChain swapChain;					// Final color. Swapchain elements.
-	Commander commands;
-	std::shared_ptr<RenderPipeline> rp;		//!< Render pipeline
+/// Render pipeline containing Deferred shading (lighting pass + geometry pass)
+class RP_DS : public RenderPipeline
+{
+public:
+	RP_DS(VulkanCore& core, SwapChain& swapChain, Commander& commander);
+
+	Image position;
+	Image albedo;
+	Image normal;
+	Image specRoug;
+	Image depth;
+	//Image finalColor;	// swapchain.image[i]
+
+protected:
+	void createRenderPass() override;
+	void createImageResources(Commander& commander) override;
+	void destroyAttachments() override;
+};
+
+/**
+  Render pipeline containing Deferred shading(lighting pass + geometry pass) + forward shading + post - processing
+
+  RP1::SP1 (Geometry pass):
+    IA (0)
+    DA (1): depth
+    CA (4): position, albedo, normal, specRough
+  RP2::SP1 (Lighting pass):
+    IA (4): CAs from RP1
+    DA (0)
+    CA (1): color
+  RP3::SP1 (Forward pass):
+    IA (0):
+    DA (1): depth (from RP1)
+    CA (1): color (from RP2)
+  RP4::SP1 (Post-processing pass):
+    IA (2): color (from RP3), depth (from RP3)
+    DA (0)
+    CA (1): color (swapchain)
+*/
+class RP_DS_PP : public RenderPipeline
+{
+public:
+	RP_DS_PP(VulkanCore& core, SwapChain& swapChain, Commander& commander);
+
+	Image position;
+	Image albedo;
+	Image normal;
+	Image specRoug;
+	Image depth;
+	Image color;
+	//Image finalColor;	// swapchain.image[i]
+
+protected:
+	void createRenderPass() override;
+	void createImageResources(Commander& commander) override;
+	void destroyAttachments() override;
 };
 
 /// Reponsible for the loading thread and its processes.
@@ -486,9 +470,16 @@ protected:
 
 	friend ResourcesLoader;
 	friend LoadingWorker;
+	friend ModelData;
+	friend UBO;
+	friend VertexesLoader;
+	friend Texture;
+	friend TextureLoader;
 
-	IOmanager io;
-	VulkanEnvironment e;
+	VulkanCore c;
+	SwapChain swapChain;					// Final color. Swapchain elements.
+	Commander commander;
+	std::shared_ptr<RenderPipeline> rp;		//!< Render pipeline
 	Timer timer, profiler;
 	ModelsManager models;
 	PointersManager<std::string, Texture> textures;			//!< Set of textures
@@ -524,12 +515,12 @@ protected:
 	/// Callback used by the client for updating states of their models
 	void(*userUpdate) (Renderer& rend);
 
-	/// Cleanup after render loop terminates
-	void cleanup();
+	void cleanup();   //!< Cleanup after render loop terminates
+	void recreateSwapChain();   //!< Used in drawFrame() in case the window surface changes (like when window resizing), making swap chain no longer compatible with it. Here, we catch these events (when acquiring/submitting an image from/to the swap chain) and recreate the swap chain.
 
 public:
 	// LOOK what if firstModel.size() == 0
-	/// Constructor. Requires a callback for updating model matrix, adding models, deleting models, etc.
+	/// Constructor. Requires a callback for user updates (update model matrix, add models, delete models...).
 	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOinfo globalUBO_vs, UBOinfo globalUBO_fs);
 	virtual ~Renderer();
 
@@ -547,7 +538,6 @@ public:
 
 	void setMaxFPS(int maxFPS);
 
-	// Getters
 	Timer& getTimer();		//!< Returns the timer object (provides access to time data).
 	size_t getRendersCount(key64 key);
 	size_t getFrameCount();

@@ -2,6 +2,7 @@
 #define MODELS_HPP
 
 //#include <functional>						// std::function (function wrapper that stores a callable object)
+#include <mutex>
 
 #include "polygonum/vertex.hpp"
 #include "polygonum/ubo.hpp"
@@ -12,8 +13,8 @@
 
 
 class Renderer;
-class VulkanEnvironment;
 class RenderPipeline;
+
 
 struct ModelDataInfo
 {
@@ -47,7 +48,15 @@ struct ModelDataInfo
 */
 class ModelData
 {
-	VulkanEnvironment* e;
+public:
+	ModelData(Renderer* renderer = nullptr, ModelDataInfo& modelInfo = ModelDataInfo());   //!< Construct an object for rendering
+	virtual ~ModelData();
+	ModelData(ModelData&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
+	ModelData& ModelData::operator=(ModelData&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
+
+private:
+
+	Renderer* r;
 	VkPrimitiveTopology primitiveTopology;		//!< Primitive topology (VK_PRIMITIVE_TOPOLOGY_ ... POINT_LIST, LINE_LIST, LINE_STRIP, TRIANGLE_LIST, TRIANGLE_STRIP). Used when creating the graphics pipeline.
 	VertexType vertexType;
 	bool hasTransparencies;						//!< Flags if textures contain transparencies (alpha channel)
@@ -55,8 +64,6 @@ class ModelData
 	UBO* globalUBO_vs;
 	UBO* globalUBO_fs;
 	size_t activeInstances;		//!< Number of renderings (<= vsDynUBO.dynBlocksCount). Can be set with setRenderCount.
-
-	// Main methods:
 
 	/// Layout for the descriptor set (descriptor: handle or pointer into a resource (buffer, sampler, texture...))
 	void createDescriptorSetLayout();
@@ -87,35 +94,23 @@ class ModelData
 	/// Descriptor sets creation.
 	void createDescriptorSets();
 
-	/// Clear descriptor sets, vertex and indices. Called by destructor.
-	void cleanup();
-
 	/// Delete ResourcesLoader object (no longer required after uploading resources to Vulkan)
 	void deleteLoader();
 
 public:
-	ModelData(VulkanEnvironment* environment = nullptr, ModelDataInfo& modelInfo = ModelDataInfo());   //!< Construct an object for rendering
-	virtual ~ModelData();
-	ModelData(ModelData&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
-	ModelData& ModelData::operator=(ModelData&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
+	ModelData& fullConstruction(Renderer &rend);   //!< Creates graphic pipeline and descriptor sets, and loads data for creating buffers (vertex, indices, textures). Useful in a second thread
 
-	/// Creates graphic pipeline and descriptor sets, and loads data for creating buffers (vertex, indices, textures). Useful in a second thread
-	ModelData& fullConstruction(Renderer &rend);
+	void cleanup_pipeline_and_descriptors();   //!< Destroys graphic pipeline and descriptor sets. Called by destructor, and for window resizing (by Renderer::recreateSwapChain()::cleanupSwapChain()).
+	void recreate_pipeline_and_descriptors();   //!< Creates graphic pipeline and descriptor sets. Called for window resizing (by Renderer::recreateSwapChain()).
 
-	/// Destroys graphic pipeline and descriptor sets. Called by destructor, and for window resizing (by Renderer::recreateSwapChain()::cleanupSwapChain()).
-	void cleanup_Pipeline_Descriptors();
-
-	/// Creates graphic pipeline and descriptor sets. Called for window resizing (by Renderer::recreateSwapChain()).
-	void recreate_Pipeline_Descriptors();
-
-	size_t getActiveInstancesCount();
 	bool setActiveInstancesCount(size_t activeInstancesCount);	//!< Set number of active instances (<= vsUBO.maxUBOcount).
+	size_t getActiveInstancesCount();
 
 	VkPipelineLayout			 pipelineLayout;		//!< Pipeline layout. Allows to use uniform values in shaders (globals similar to dynamic state variables that can be changed at drawing time to alter the behavior of your shaders without having to recreate them).
 	VkPipeline					 graphicsPipeline;		//!< Opaque handle to a pipeline object.
 
 	std::vector<std::shared_ptr<Texture>> textures;		//!< Set of textures used by this model.
-	std::vector<std::shared_ptr<Shader>> shaders;		//!< Vertex shader (0), Fragment shader (1)
+	std::vector<std::shared_ptr<Shader>>  shaders;		//!< Vertex shader (0), Fragment shader (1)
 
 	VertexData					 vert;					//!< Vertex data + Indices
 
@@ -135,6 +130,7 @@ public:
 	std::string					 name;					//!< For debugging purposes.
 };
 
+
 class ModelsManager
 {
 public:
@@ -146,6 +142,9 @@ public:
 	void distributeKeys();
 	key64 getNewKey();
 	key64 newKey;
+
+	void create_pipelines_and_descriptors(std::mutex* waitMutex);
+	void cleanup_pipelines_and_descriptors(std::mutex* waitMutex);
 };
 
 #endif

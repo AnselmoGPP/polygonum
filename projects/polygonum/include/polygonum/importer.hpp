@@ -138,11 +138,11 @@ protected:
 	std::vector<VerticesModifier*> modifiers;
 	
 	virtual void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources) = 0;   //!< Get vertexes and indices from source. Subclasses define this.
-	void createBuffers(VertexData& result, const VertexSet& rawVertices, const std::vector<uint16_t>& rawIndices, VulkanEnvironment* e);	//!< Upload raw vertex data to Vulkan (i.e., create Vulkan buffers)
+	void createBuffers(VertexData& result, const VertexSet& rawVertices, const std::vector<uint16_t>& rawIndices, Renderer& r);	//!< Upload raw vertex data to Vulkan (i.e., create Vulkan buffers)
 	void applyModifiers(VertexSet& vertexes);
 
-	void createVertexBuffer(const VertexSet& rawVertices, VertexData& result, VulkanEnvironment* e);									//!< Vertex buffer creation.
-	void createIndexBuffer(const std::vector<uint16_t>& rawIndices, VertexData& result, VulkanEnvironment* e);							//!< Index buffer creation
+	void createVertexBuffer(const VertexSet& rawVertices, VertexData& result, Renderer& r);									//!< Vertex buffer creation.
+	void createIndexBuffer(const std::vector<uint16_t>& rawIndices, VertexData& result, Renderer& r);							//!< Index buffer creation
 
 	glm::vec3 getVertexTangent(const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3, const glm::vec2 uv1, const glm::vec2 uv2, const glm::vec2 uv3);
 
@@ -150,7 +150,7 @@ public:
 	virtual ~VertexesLoader();
 	virtual VertexesLoader* clone() = 0;		//!< Create a new object of children type and return its pointer.
 
-	void loadVertexes(VertexData& result, ResourcesLoader* resources, VulkanEnvironment* e);   //!< Get vertexes from source and store them in "result" ("resources" is used to store additional resources, if they exist).
+	void loadVertexes(VertexData& result, ResourcesLoader* resources, Renderer& r);   //!< Get vertexes from source and store them in "result" ("resources" is used to store additional resources, if they exist).
 };
 
 /// Pass all the vertices at construction time. Call to getRawData will pass these vertices.
@@ -196,11 +196,11 @@ public:
 class Shader : public InterfaceForPointersManagerElements<std::string, Shader>
 {
 public:
-	Shader(VulkanEnvironment& e, const std::string id, VkShaderModule shaderModule);
+	Shader(VulkanCore& c, const std::string id, VkShaderModule shaderModule);
 	~Shader();
 
-	VulkanEnvironment& e;						//!< Used in destructor.
-	const std::string id;						//!< Used for checking whether a shader to load is already loaded.
+	VulkanCore& c;   //!< Used in destructor.
+	const std::string id;   //!< Used for checking whether a shader to load is already loaded.
 	const VkShaderModule shaderModule;
 };
 
@@ -255,7 +255,7 @@ protected:
 public:
 	virtual ~ShaderLoader() { };
 
-	std::shared_ptr<Shader> loadShader(PointersManager<std::string, Shader>& loadedShaders, VulkanEnvironment* e);	//!< Get an iterator to the shader in loadedShaders. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
+	std::shared_ptr<Shader> loadShader(PointersManager<std::string, Shader>& loadedShaders, VulkanCore& c);	//!< Get an iterator to the shader in loadedShaders. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
 	virtual ShaderLoader* clone() = 0;
 };
 
@@ -317,10 +317,10 @@ public:
 class Texture : public InterfaceForPointersManagerElements<std::string, Texture>
 {
 public:
-	Texture(VulkanEnvironment& e, const std::string& id, VkImage textureImage, VkDeviceMemory textureImageMemory, VkImageView textureImageView, VkSampler textureSampler);
+	Texture(VulkanCore& c, const std::string& id, VkImage textureImage, VkDeviceMemory textureImageMemory, VkImageView textureImageView, VkSampler textureSampler);
 	~Texture();
 
-	VulkanEnvironment& e;						//!< Used in destructor.
+	VulkanCore& c;								//!< Used in destructor.
 	const std::string id;						//!< Used for checking whether the texture to load is already loaded.
 
 	VkImage				textureImage;			//!< Opaque handle to an image object.
@@ -337,18 +337,17 @@ protected:
 
 	virtual void getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) = 0;	//!< Get pixels, texWidth, texHeight, 
 
-	std::pair<VkImage, VkDeviceMemory> createTextureImage(unsigned char* pixels, int32_t texWidth, int32_t texHeight, uint32_t& mipLevels);
-	VkImageView                        createTextureImageView(VkImage textureImage, uint32_t mipLevels);
-	VkSampler                          createTextureSampler(uint32_t mipLevels);
+	std::pair<VkImage, VkDeviceMemory> createTextureImage(unsigned char* pixels, int32_t texWidth, int32_t texHeight, uint32_t& mipLevels, Renderer& r);
+	VkImageView                        createTextureImageView(VkImage textureImage, uint32_t mipLevels, VulkanCore& c);
+	VkSampler                          createTextureSampler(uint32_t mipLevels, VulkanCore& c);
 
-	VulkanEnvironment* e;
 	std::string id;
 	VkFormat imageFormat;
 	VkSamplerAddressMode addressMode;
 
 public:
 	virtual ~TextureLoader() { };
-	std::shared_ptr<Texture> loadTexture(PointersManager<std::string, Texture>& loadedTextures, VulkanEnvironment* e);	//!< Get an iterator to the Texture in loadedTextures list. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
+	std::shared_ptr<Texture> loadTexture(PointersManager<std::string, Texture>& loadedTextures, Renderer& r);	//!< Get an iterator to the Texture in loadedTextures list. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
 	virtual TextureLoader* clone() = 0;
 };
 

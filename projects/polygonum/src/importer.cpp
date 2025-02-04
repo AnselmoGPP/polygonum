@@ -34,18 +34,18 @@ void ResourcesLoader::loadResources(ModelData& model, Renderer& rend)
 	// <<< why not using Renderer to access destination buffers?
 	
 	// Load vertexes and indices
-	vertices->loadVertexes(model.vert, this, &rend.e);
+	vertices->loadVertexes(model.vert, this, rend);
 	
 	{
 		const std::lock_guard<std::mutex> lock(rend.worker.mutResources);
 		
 		// Load shaders
 		for (unsigned i = 0; i < shaders.size(); i++)
-			model.shaders.push_back(shaders[i]->loadShader(rend.shaders, &rend.e));
+			model.shaders.push_back(shaders[i]->loadShader(rend.shaders, rend.c));
 		
 		// Load textures
 		for (unsigned i = 0; i < textures.size(); i++)
-			model.textures.push_back(textures[i]->loadTexture(rend.textures, &rend.e));
+			model.textures.push_back(textures[i]->loadTexture(rend.textures, rend));
 	}
 }
 
@@ -57,20 +57,20 @@ VertexesLoader::VertexesLoader(size_t vertexSize, std::initializer_list<Vertices
 
 VertexesLoader::~VertexesLoader() { }
 
-void VertexesLoader::loadVertexes(VertexData& result, ResourcesLoader* resources, VulkanEnvironment* e)
+void VertexesLoader::loadVertexes(VertexData& result, ResourcesLoader* resources, Renderer& r)
 {
 	VertexSet rawVertices;
 	std::vector<uint16_t> rawIndices;
 	
 	getRawData(rawVertices, rawIndices, *resources);		// Get raw data from source
 	applyModifiers(rawVertices);
-	createBuffers(result, rawVertices, rawIndices, e);		// Upload data to Vulkan
+	createBuffers(result, rawVertices, rawIndices, r);		// Upload data to Vulkan
 }
 
-void VertexesLoader::createBuffers(VertexData& result, const VertexSet& rawVertices, const std::vector<uint16_t>& rawIndices, VulkanEnvironment* e)
+void VertexesLoader::createBuffers(VertexData& result, const VertexSet& rawVertices, const std::vector<uint16_t>& rawIndices, Renderer& r)
 {
-	createVertexBuffer(rawVertices, result, e);
-	createIndexBuffer(rawIndices, result, e);
+	createVertexBuffer(rawVertices, result, r);
+	createIndexBuffer(rawIndices, result, r);
 }
 
 void VertexesLoader::applyModifiers(VertexSet& vertexes)
@@ -79,7 +79,7 @@ void VertexesLoader::applyModifiers(VertexSet& vertexes)
 		modifier->modify(vertexes);
 }
 
-void VertexesLoader::createVertexBuffer(const VertexSet& rawVertices, VertexData& result, VulkanEnvironment* e)
+void VertexesLoader::createVertexBuffer(const VertexSet& rawVertices, VertexData& result, Renderer& r)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -91,7 +91,7 @@ void VertexesLoader::createVertexBuffer(const VertexSet& rawVertices, VertexData
 	VkDeviceMemory stagingBufferMemory;
 
 	createBuffer(
-		e,
+		&r.c,
 		bufferSize,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 											// VK_BUFFER_USAGE_ ... TRANSFER_SRC_BIT / TRANSFER_DST_BIT (buffer can be used as source/destination in a memory transfer operation).
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -100,9 +100,9 @@ void VertexesLoader::createVertexBuffer(const VertexSet& rawVertices, VertexData
 
 	// Fill the staging buffer (by mapping the buffer memory into CPU accessible memory: https://en.wikipedia.org/wiki/Memory-mapped_I/O)
 	void* data;
-	vkMapMemory(e->c.device, stagingBufferMemory, 0, bufferSize, 0, &data);	// Access a memory region. Use VK_WHOLE_SIZE to map all of the memory.
+	vkMapMemory(r.c.device, stagingBufferMemory, 0, bufferSize, 0, &data);	// Access a memory region. Use VK_WHOLE_SIZE to map all of the memory.
 	memcpy(data, rawVertices.data(), (size_t)bufferSize);					// Copy the vertex data to the mapped memory.
-	vkUnmapMemory(e->c.device, stagingBufferMemory);						// Unmap memory.
+	vkUnmapMemory(r.c.device, stagingBufferMemory);						// Unmap memory.
 
 	/*
 		Note:
@@ -117,7 +117,7 @@ void VertexesLoader::createVertexBuffer(const VertexSet& rawVertices, VertexData
 	// Create the actual vertex buffer (Device local buffer used as actual vertex buffer. Generally it doesn't allow to use vkMapMemory, but we can copy from stagingBuffer to vertexBuffer, though you need to specify the transfer source flag for stagingBuffer and the transfer destination flag for vertexBuffer).
 	// This makes vertex data to be loaded from high performance memory.
 	createBuffer(
-		e,
+		&r.c,
 		bufferSize,
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -127,15 +127,15 @@ void VertexesLoader::createVertexBuffer(const VertexSet& rawVertices, VertexData
 	result.vertexCount = rawVertices.getNumVertex();
 
 	// Move the vertex data to the device local buffer
-	e->commands.copyBuffer(stagingBuffer, result.vertexBuffer, bufferSize, e);
+	r.commander.copyBuffer(stagingBuffer, result.vertexBuffer, bufferSize);
 
 	// Clean up
-	vkDestroyBuffer(e->c.device, stagingBuffer, nullptr);
-	vkFreeMemory(e->c.device, stagingBufferMemory, nullptr);
-	e->c.memAllocObjects--;
+	vkDestroyBuffer(r.c.device, stagingBuffer, nullptr);
+	vkFreeMemory(r.c.device, stagingBufferMemory, nullptr);
+	r.c.memAllocObjects--;
 }
 
-void VertexesLoader::createIndexBuffer(const std::vector<uint16_t>& rawIndices, VertexData& result, VulkanEnvironment* e)
+void VertexesLoader::createIndexBuffer(const std::vector<uint16_t>& rawIndices, VertexData& result, Renderer& r)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -151,7 +151,7 @@ void VertexesLoader::createIndexBuffer(const std::vector<uint16_t>& rawIndices, 
 	VkDeviceMemory stagingBufferMemory;
 
 	createBuffer(
-		e,
+		&r.c,
 		bufferSize,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -160,13 +160,13 @@ void VertexesLoader::createIndexBuffer(const std::vector<uint16_t>& rawIndices, 
 
 	// Fill the staging buffer
 	void* data;
-	vkMapMemory(e->c.device, stagingBufferMemory, 0, bufferSize, 0, &data);
+	vkMapMemory(r.c.device, stagingBufferMemory, 0, bufferSize, 0, &data);
 	memcpy(data, rawIndices.data(), (size_t)bufferSize);
-	vkUnmapMemory(e->c.device, stagingBufferMemory);
+	vkUnmapMemory(r.c.device, stagingBufferMemory);
 
 	// Create the vertex buffer
 	createBuffer(
-		e,
+		&r.c,
 		bufferSize,
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -174,12 +174,12 @@ void VertexesLoader::createIndexBuffer(const std::vector<uint16_t>& rawIndices, 
 		result.indexBufferMemory);
 
 	// Move the vertex data to the device local buffer
-	e->commands.copyBuffer(stagingBuffer, result.indexBuffer, bufferSize, e);
+	r.commander.copyBuffer(stagingBuffer, result.indexBuffer, bufferSize);
 
 	// Clean up
-	vkDestroyBuffer(e->c.device, stagingBuffer, nullptr);
-	vkFreeMemory(e->c.device, stagingBufferMemory, nullptr);
-	e->c.memAllocObjects--;
+	vkDestroyBuffer(r.c.device, stagingBuffer, nullptr);
+	vkFreeMemory(r.c.device, stagingBufferMemory, nullptr);
+	r.c.memAllocObjects--;
 }
 
 glm::vec3 VertexesLoader::getVertexTangent(const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3, const glm::vec2 uv1, const glm::vec2 uv2, const glm::vec2 uv3)
@@ -415,8 +415,8 @@ VerticesModifier_Translation* VerticesModifier_Translation::factory(glm::vec3 po
 
 // SHADERS --------------------------------------------------------
 
-Shader::Shader(VulkanEnvironment& e, const std::string id, VkShaderModule shaderModule) 
-	: e(e), id(id), shaderModule(shaderModule) { }
+Shader::Shader(VulkanCore& c, const std::string id, VkShaderModule shaderModule) 
+	: c(c), id(id), shaderModule(shaderModule) { }
 
 Shader::~Shader() 
 {
@@ -424,7 +424,7 @@ Shader::~Shader()
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
 
-	vkDestroyShaderModule(e.c.device, shaderModule, nullptr); 
+	vkDestroyShaderModule(c.device, shaderModule, nullptr); 
 }
 
 SMod::SMod(unsigned modificationType, std::initializer_list<std::string> params)
@@ -586,7 +586,7 @@ ShaderLoader::ShaderLoader(const std::string& id, const std::initializer_list<SM
 		}
 }
 
-std::shared_ptr<Shader> ShaderLoader::loadShader(PointersManager<std::string, Shader>& loadedShaders, VulkanEnvironment* e)
+std::shared_ptr<Shader> ShaderLoader::loadShader(PointersManager<std::string, Shader>& loadedShaders, VulkanCore& c)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << ": " << this->id << std::endl;
@@ -631,11 +631,11 @@ std::shared_ptr<Shader> ShaderLoader::loadShader(PointersManager<std::string, Sh
 	createInfo.pCode = reinterpret_cast<const uint32_t*>(spirv.data());	// The default allocator from std::vector ensures that the data satisfies the alignment requirements of `uint32_t`.
 	
 	VkShaderModule shaderModule;
-	if (vkCreateShaderModule(e->c.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+	if (vkCreateShaderModule(c.device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create shader module!");
 	
 	// Create and save shader object
-	return loadedShaders.emplace(id, *e, id, shaderModule);
+	return loadedShaders.emplace(id, c, id, shaderModule);
 }
 
 void ShaderLoader::applyModifications(std::string& shader)
@@ -693,8 +693,8 @@ void ShaderIncluder::ReleaseInclude(shaderc_include_result* data)
 
 // TEXTURE --------------------------------------------------------
 
-Texture::Texture(VulkanEnvironment& e, const std::string& id, VkImage textureImage, VkDeviceMemory textureImageMemory, VkImageView textureImageView, VkSampler textureSampler)
-	: e(e), id(id), textureImage(textureImage), textureImageMemory(textureImageMemory), textureImageView(textureImageView), textureSampler(textureSampler) { }
+Texture::Texture(VulkanCore& c, const std::string& id, VkImage textureImage, VkDeviceMemory textureImageMemory, VkImageView textureImageView, VkSampler textureSampler)
+	: c(c), id(id), textureImage(textureImage), textureImageMemory(textureImageMemory), textureImageView(textureImageView), textureSampler(textureSampler) { }
 
 Texture::~Texture()
 {
@@ -702,23 +702,23 @@ Texture::~Texture()
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
 
-	vkDestroySampler(e.c.device, textureSampler, nullptr);
-	vkDestroyImage(e.c.device, textureImage, nullptr);
-	vkDestroyImageView(e.c.device, textureImageView, nullptr);
-	vkFreeMemory(e.c.device, textureImageMemory, nullptr);
-	e.c.memAllocObjects--;
+	vkDestroySampler(c.device, textureSampler, nullptr);
+	vkDestroyImage(c.device, textureImage, nullptr);
+	vkDestroyImageView(c.device, textureImageView, nullptr);
+	vkFreeMemory(c.device, textureImageMemory, nullptr);
+	c.memAllocObjects--;
 }
 
 TextureLoader::TextureLoader(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode)
 	: id(id), imageFormat(imageFormat), addressMode(addressMode) { };
 
-std::shared_ptr<Texture> TextureLoader::loadTexture(PointersManager<std::string, Texture>& loadedTextures, VulkanEnvironment* e)
+std::shared_ptr<Texture> TextureLoader::loadTexture(PointersManager<std::string, Texture>& loadedTextures, Renderer& r)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << ": " << this->id << std::endl;
 	#endif
 	
-	this->e = e;
+	//this->c = &core;
 	
 	// Look for it in loadedShaders
 	if (loadedTextures.contains(id))
@@ -731,15 +731,15 @@ std::shared_ptr<Texture> TextureLoader::loadTexture(PointersManager<std::string,
 	
 	// Get arguments for creating the texture object
 	uint32_t mipLevels;		//!< Number of levels (mipmaps)
-	std::pair<VkImage, VkDeviceMemory> image = createTextureImage(pixels, texWidth, texHeight, mipLevels);
-	VkImageView textureImageView             = createTextureImageView(std::get<VkImage>(image), mipLevels);
-	VkSampler textureSampler                 = createTextureSampler(mipLevels);
+	std::pair<VkImage, VkDeviceMemory> image = createTextureImage(pixels, texWidth, texHeight, mipLevels, r);
+	VkImageView textureImageView             = createTextureImageView(std::get<VkImage>(image), mipLevels, r.c);
+	VkSampler textureSampler                 = createTextureSampler(mipLevels, r.c);
 	
 	// Create and save texture object
-	return loadedTextures.emplace(id, *e, id, std::get<VkImage>(image), std::get<VkDeviceMemory>(image), textureImageView, textureSampler);
+	return loadedTextures.emplace(id, r.c, id, std::get<VkImage>(image), std::get<VkDeviceMemory>(image), textureImageView, textureSampler);
 }
 
-std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned char* pixels, int32_t texWidth, int32_t texHeight, uint32_t& mipLevels)
+std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned char* pixels, int32_t texWidth, int32_t texHeight, uint32_t& mipLevels, Renderer& r)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << "   " << __func__ << std::endl;
@@ -753,7 +753,7 @@ std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned ch
 	VkDeviceMemory stagingBufferMemory;
 
 	createBuffer(
-		e,
+		&r.c,
 		imageSize,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -762,51 +762,67 @@ std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned ch
 	
 	// Copy directly the pixel values from the image we loaded to the staging-buffer.
 	void* data;
-	vkMapMemory(e->c.device, stagingBufferMemory, 0, imageSize, 0, &data);	// vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (stagingBufferMemory). We have to provide the logical device that owns the memory (e.device).
+	vkMapMemory(r.c.device, stagingBufferMemory, 0, imageSize, 0, &data);	// vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (stagingBufferMemory). We have to provide the logical device that owns the memory (e.device).
 	memcpy(data, pixels, static_cast<size_t>(imageSize));					// Copies a number of bytes (imageSize) from a source (pixels) to a destination (data).
-	vkUnmapMemory(e->c.device, stagingBufferMemory);						// Unmap a previously mapped memory object (stagingBufferMemory).
+	vkUnmapMemory(r.c.device, stagingBufferMemory);						// Unmap a previously mapped memory object (stagingBufferMemory).
 	stbi_image_free(pixels);	// Clean up the original pixel array
 	
 	// Create the texture image
 	VkImage			textureImage;
 	VkDeviceMemory	textureImageMemory;
 
-	e->createImage(
+	Image::createImage(
+		textureImage,
+		textureImageMemory,
+		r.c,
 		texWidth, texHeight,
 		mipLevels,
 		VK_SAMPLE_COUNT_1_BIT,
 		imageFormat,			// VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R64_SFLOAT
 		VK_IMAGE_TILING_OPTIMAL,
 		VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-		textureImage,
-		textureImageMemory);
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
+	);
+
+	//r.c.createImage(
+	//	texWidth, texHeight,
+	//	mipLevels,
+	//	VK_SAMPLE_COUNT_1_BIT,
+	//	imageFormat,			// VK_FORMAT_R8G8B8A8_SRGB, VK_FORMAT_R64_SFLOAT
+	//	VK_IMAGE_TILING_OPTIMAL,
+	//	VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+	//	VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+	//	textureImage,
+	//	textureImageMemory);
 
 	// Copy the staging buffer to the texture image
-	e->commands.transitionImageLayout(textureImage, imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);					// Transition the texture image to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
-	e->commands.copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));											// Execute the buffer to image copy operation
+	r.commander.transitionImageLayout(textureImage, imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, mipLevels);					// Transition the texture image to VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL
+	r.commander.copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));											// Execute the buffer to image copy operation
 	// Transitioned to VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL while generating mipmaps
 	// transitionImageLayout(textureImage, imageFormat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, mipLevels);	// To be able to start sampling from the texture image in the shader, we need one last transition to prepare it for shader access
-	e->commands.generateMipmaps(textureImage, imageFormat, texWidth, texHeight, mipLevels);
+	r.commander.generateMipmaps(textureImage, imageFormat, texWidth, texHeight, mipLevels);
 
 	// Cleanup the staging buffer and its memory
-	vkDestroyBuffer(e->c.device, stagingBuffer, nullptr);
-	vkFreeMemory(e->c.device, stagingBufferMemory, nullptr);
-	e->c.memAllocObjects--;
+	vkDestroyBuffer(r.c.device, stagingBuffer, nullptr);
+	vkFreeMemory(r.c.device, stagingBufferMemory, nullptr);
+	r.c.memAllocObjects--;
 
 	return std::pair(textureImage, textureImageMemory);
 }
 
-VkImageView TextureLoader::createTextureImageView(VkImage textureImage, uint32_t mipLevels)
+VkImageView TextureLoader::createTextureImageView(VkImage textureImage, uint32_t mipLevels, VulkanCore& c)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << "   " << __func__ << std::endl;
 	#endif
 
-	return e->c.createImageView(textureImage, imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
+	VkImageView imageView;
+	Image::createImageView(imageView, c, textureImage, imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
+
+	return imageView;
 }
 
-VkSampler TextureLoader::createTextureSampler(uint32_t mipLevels)
+VkSampler TextureLoader::createTextureSampler(uint32_t mipLevels, VulkanCore& c)
 {
 	#ifdef DEBUG_RESOURCES
 		std::cout << "   " << __func__ << std::endl;
@@ -820,11 +836,11 @@ VkSampler TextureLoader::createTextureSampler(uint32_t mipLevels)
 	samplerInfo.addressModeV = addressMode;
 	samplerInfo.addressModeW = addressMode;
 
-	if (e->c.deviceData.samplerAnisotropy)						// If anisotropic filtering is available (see isDeviceSuitable) <<<<<
+	if (c.deviceData.samplerAnisotropy)						// If anisotropic filtering is available (see isDeviceSuitable) <<<<<
 	{
 		samplerInfo.anisotropyEnable = VK_TRUE;							// Specify if anisotropic filtering should be used
 		VkPhysicalDeviceProperties properties{};
-		vkGetPhysicalDeviceProperties(e->c.physicalDevice, &properties);
+		vkGetPhysicalDeviceProperties(c.physicalDevice, &properties);
 		samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;		// another option:  samplerInfo.maxAnisotropy = 1.0f;
 	}
 	else
@@ -844,7 +860,7 @@ VkSampler TextureLoader::createTextureSampler(uint32_t mipLevels)
 	samplerInfo.mipLodBias = 0.0f;								// Used for changing the lod value. It forces to use lower "lod" and "level" than it would normally use
 
 	VkSampler textureSampler;
-	if (vkCreateSampler(e->c.device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS)
+	if (vkCreateSampler(c.device, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create texture sampler!");
 	return textureSampler;
 

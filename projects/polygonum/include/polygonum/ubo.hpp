@@ -3,9 +3,11 @@
 
 #include "commons.hpp"
 
+// Forward declarations ----------
 
-class VulkanEnvironment;
-
+class VulkanCore;
+class Renderer;
+class SwapChain;
 
 // Prototypes ----------
 
@@ -134,10 +136,11 @@ struct UBOinfo
 struct UBO
 {
 private:
-	VulkanEnvironment* e;
+	VulkanCore* c;
+	SwapChain* swapChain;
 
 public:
-	UBO(VulkanEnvironment* e, UBOinfo uboInfo);			
+	UBO(Renderer* renderer, UBOinfo uboInfo);
 	UBO();
 	~UBO() = default;
 	UBO(UBO&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
@@ -155,7 +158,7 @@ public:
 	bool setNumActiveSubUbos(size_t count);				//!< Set the value of activeUBOs. Returns false if > maxUBOcount;
 	uint8_t* getSubUboPtr(size_t subUboIndex);
 	void createUBO();									//!< Create uniform buffers (type of descriptors that can be bound) (VkBuffer & VkDeviceMemory), one for each swap chain image. At least one is created (if count == 0, a buffer of size "range" is created).
-	void destroyUBO();									//!< Destroy the uniform buffers (VkBuffer) and their memories (VkDeviceMemory).
+	void destroyUBO();				//!< Destroy the uniform buffers (VkBuffer) and their memories (VkDeviceMemory).
 };
 
 /// Model-View-Projection matrix as a UBO (Uniform buffer object) (https://www.opengl-tutorial.org/beginners-tutorials/tutorial-3-matrices/)

@@ -21,10 +21,11 @@ UBOinfo::UBOinfo(size_t maxNumSubUbos, size_t numActiveSubUbos, size_t minSubUbo
 UBOinfo::UBOinfo()
 	: maxNumSubUbos(0), numActiveSubUbos(0), minSubUboSize(0) { }
 
-UBO::UBO(VulkanEnvironment* e, UBOinfo uboInfo)
-	:e(e),
+UBO::UBO(Renderer* renderer, UBOinfo uboInfo) :
+	c(&renderer->c),
+	swapChain(&renderer->swapChain),
 	maxNumSubUbos(uboInfo.maxNumSubUbos),
-	subUboSize(uboInfo.minSubUboSize ? e->c.deviceData.minUniformBufferOffsetAlignment * (1 + uboInfo.minSubUboSize / e->c.deviceData.minUniformBufferOffsetAlignment) : 0),
+	subUboSize(uboInfo.minSubUboSize ? c->deviceData.minUniformBufferOffsetAlignment * (1 + uboInfo.minSubUboSize / c->deviceData.minUniformBufferOffsetAlignment) : 0),
 	totalBytes(subUboSize* maxNumSubUbos),
 	ubo(totalBytes)
 {
@@ -32,11 +33,12 @@ UBO::UBO(VulkanEnvironment* e, UBOinfo uboInfo)
 }
 
 UBO::UBO() 
-	: e(nullptr), maxNumSubUbos(0), numActiveSubUbos(0), subUboSize(0), totalBytes(0), ubo(0), uboBuffers(0), uboMemories(0)
+	: c(nullptr), swapChain(nullptr), maxNumSubUbos(0), numActiveSubUbos(0), subUboSize(0), totalBytes(0), ubo(0), uboBuffers(0), uboMemories(0)
 { };
 
 UBO::UBO(UBO&& other) noexcept
-	: e(other.e),
+	: c(other.c),
+	swapChain(other.swapChain),
 	maxNumSubUbos(other.maxNumSubUbos),
 	numActiveSubUbos(other.numActiveSubUbos),
 	subUboSize(other.subUboSize),
@@ -52,7 +54,8 @@ UBO& UBO::operator=(UBO&& other) noexcept
 	if (this != &other)
 	{
 		// Transfer resources ownership
-		e = other.e;
+		c = other.c;
+		swapChain = other.swapChain,
 		maxNumSubUbos = other.maxNumSubUbos;
 		numActiveSubUbos = other.numActiveSubUbos;
 		subUboSize = other.subUboSize;
@@ -94,15 +97,15 @@ void UBO::createUBO()
 {
 	if (!maxNumSubUbos) return;
 
-	uboBuffers.resize(e->swapChain.images.size());
-	uboMemories.resize(e->swapChain.images.size());
+	uboBuffers.resize(swapChain->images.size());
+	uboMemories.resize(swapChain->images.size());
 	
 	//destroyUniformBuffers();		// Not required since Renderer calls this first
 
 	if (subUboSize)
-		for (size_t i = 0; i < e->swapChain.images.size(); i++)
+		for (size_t i = 0; i < swapChain->images.size(); i++)
 			createBuffer(
-				e,
+				c,
 				maxNumSubUbos == 0 ? subUboSize : totalBytes,
 				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -114,11 +117,11 @@ void UBO::destroyUBO()
 {
 	if (subUboSize)
 	{
-		for (size_t i = 0; i < e->swapChain.images.size(); i++)
+		for (size_t i = 0; i < swapChain->images.size(); i++)
 		{
-			vkDestroyBuffer(e->c.device, uboBuffers[i], nullptr);
-			vkFreeMemory(e->c.device, uboMemories[i], nullptr);
-			e->c.memAllocObjects--;
+			vkDestroyBuffer(c->device, uboBuffers[i], nullptr);
+			vkFreeMemory(c->device, uboMemories[i], nullptr);
+			c->memAllocObjects--;
 		}
 	}
 }
