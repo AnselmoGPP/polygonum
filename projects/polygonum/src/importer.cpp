@@ -90,8 +90,7 @@ void VertexesLoader::createVertexBuffer(const VertexSet& rawVertices, VertexData
 	VkBuffer	   stagingBuffer;
 	VkDeviceMemory stagingBufferMemory;
 
-	createBuffer(
-		&r.c,
+	r.c.createBuffer(
 		bufferSize,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT, 											// VK_BUFFER_USAGE_ ... TRANSFER_SRC_BIT / TRANSFER_DST_BIT (buffer can be used as source/destination in a memory transfer operation).
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -116,8 +115,7 @@ void VertexesLoader::createVertexBuffer(const VertexSet& rawVertices, VertexData
 
 	// Create the actual vertex buffer (Device local buffer used as actual vertex buffer. Generally it doesn't allow to use vkMapMemory, but we can copy from stagingBuffer to vertexBuffer, though you need to specify the transfer source flag for stagingBuffer and the transfer destination flag for vertexBuffer).
 	// This makes vertex data to be loaded from high performance memory.
-	createBuffer(
-		&r.c,
+	r.c.createBuffer(
 		bufferSize,
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -150,8 +148,7 @@ void VertexesLoader::createIndexBuffer(const std::vector<uint16_t>& rawIndices, 
 	VkBuffer	   stagingBuffer;
 	VkDeviceMemory stagingBufferMemory;
 
-	createBuffer(
-		&r.c,
+	r.c.createBuffer(
 		bufferSize,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
@@ -165,8 +162,7 @@ void VertexesLoader::createIndexBuffer(const std::vector<uint16_t>& rawIndices, 
 	vkUnmapMemory(r.c.device, stagingBufferMemory);
 
 	// Create the vertex buffer
-	createBuffer(
-		&r.c,
+	r.c.createBuffer(
 		bufferSize,
 		VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
 		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
@@ -752,8 +748,7 @@ std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned ch
 	VkBuffer	   stagingBuffer;
 	VkDeviceMemory stagingBufferMemory;
 
-	createBuffer(
-		&r.c,
+	r.c.createBuffer(
 		imageSize,
 		VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
 		VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,

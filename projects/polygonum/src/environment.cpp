@@ -201,11 +201,11 @@ void DeviceData::printData()
 		<< "   depthFormat: " << depthFormat << '\n';
 }
 
-Commander::Commander(VulkanCore* core, size_t swapChainImagesCount, size_t maxFramesInFlight) :
+Commander::Commander(VulkanCore& core, size_t swapChainImagesCount, size_t maxFramesInFlight) :
+	c(core),
 	lastFrame(0),
 	swapChainImagesCount(swapChainImagesCount),
 	maxFramesInFlight(maxFramesInFlight),
-	core(core),
 	commandPools(maxFramesInFlight),
 	commandBuffers(maxFramesInFlight),
 	mutCommandPool(maxFramesInFlight),
@@ -217,11 +217,11 @@ Commander::Commander(VulkanCore* core, size_t swapChainImagesCount, size_t maxFr
 	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 #endif
 
-	createSynchronizers(core, swapChainImagesCount, maxFramesInFlight);
-	createCommandPool(core, maxFramesInFlight);
+	createSynchronizers(swapChainImagesCount, maxFramesInFlight);
+	createCommandPool(maxFramesInFlight);
 }
 
-void Commander::createSynchronizers(VulkanCore* core, size_t numSwapchainImages, size_t numFrames)
+void Commander::createSynchronizers(size_t numSwapchainImages, size_t numFrames)
 {
 	// Create synchronization objects (semaphores and fences for synchronizing the events occuring in each frame at drawFrame()).
 	imageAvailableSemaphores.resize(numFrames);
@@ -237,9 +237,9 @@ void Commander::createSynchronizers(VulkanCore* core, size_t numSwapchainImages,
 	fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;						// Reset to signaled state (CB finished execution)
 
 	for (size_t i = 0; i < numFrames; i++)
-		if (vkCreateSemaphore(core->device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
-			vkCreateSemaphore(core->device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
-			vkCreateFence(core->device, &fenceInfo, nullptr, &framesInFlight[i]) != VK_SUCCESS)
+		if (vkCreateSemaphore(c.device, &semaphoreInfo, nullptr, &imageAvailableSemaphores[i]) != VK_SUCCESS ||
+			vkCreateSemaphore(c.device, &semaphoreInfo, nullptr, &renderFinishedSemaphores[i]) != VK_SUCCESS ||
+			vkCreateFence(c.device, &fenceInfo, nullptr, &framesInFlight[i]) != VK_SUCCESS)
 			throw std::runtime_error("Failed to create synchronization objects for a frame!");
 }
 
@@ -264,7 +264,7 @@ void Commander::createCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 
 	//const std::lock_guard<std::mutex> lock(e.mutCommandPool);	// already called before calling createCommandBuffers() 
 
-	if (vkAllocateCommandBuffers(core->device, &allocInfo, commandBufferSet.data()) != VK_SUCCESS)
+	if (vkAllocateCommandBuffers(c.device, &allocInfo, commandBufferSet.data()) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate command buffers!");
 
 	// Start command buffer recording (one per swapChainImage)
@@ -349,7 +349,7 @@ VulkanCore::VulkanCore(int width, int height)
 
 	//initWindow();
 	createInstance();
-	setupDebugMessenger();
+	valLayers.setupDebugMessenger(instance);
 	createSurface();
 	pickPhysicalDevice();
 	createLogicalDevice();
@@ -362,10 +362,6 @@ void VulkanCore::createInstance()
 	#ifdef DEBUG_ENV_CORE
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
-
-	// Check validation layer support
-	if (enableValidationLayers && !checkValidationLayerSupport(requiredValidationLayers))
-		throw std::runtime_error("Validation layers requested, but not available!");
 
 	// [Optional] Tell the compiler some info about the instance to create (used for optimization)
 	VkApplicationInfo appInfo{};
@@ -387,9 +383,9 @@ void VulkanCore::createInstance()
 	VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo;
 	if (enableValidationLayers)
 	{
-		createInfo.ppEnabledLayerNames = requiredValidationLayers.data();
-		createInfo.enabledLayerCount = static_cast<uint32_t>(requiredValidationLayers.size());
-		populateDebugMessengerCreateInfo(debugCreateInfo);
+		createInfo.ppEnabledLayerNames = valLayers.requiredValidationLayers.data();
+		createInfo.enabledLayerCount = static_cast<uint32_t>(valLayers.requiredValidationLayers.size());
+		valLayers.populateDebugMessengerCreateInfo(debugCreateInfo);
 		createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*)&debugCreateInfo;
 	}
 	else
@@ -398,12 +394,12 @@ void VulkanCore::createInstance()
 		createInfo.pNext = nullptr;
 	}
 
-	auto extensions = getRequiredExtensions();
+	auto extensions = ext.getRequiredExtensions_glfw_valLayers();
 	createInfo.ppEnabledExtensionNames = extensions.data();
 	createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
 
 	// Check for extension support
-	if (!checkExtensionSupport(createInfo.ppEnabledExtensionNames, createInfo.enabledExtensionCount))
+	if (!ext.checkExtensionSupport(createInfo.ppEnabledExtensionNames, createInfo.enabledExtensionCount))
 		throw std::runtime_error("Extensions requested, but not available!");
 
 	// Create the instance
@@ -411,7 +407,7 @@ void VulkanCore::createInstance()
 		throw std::runtime_error("Failed to create instance!");
 }
 
-bool VulkanCore::checkValidationLayerSupport(const std::vector<const char*>& requiredLayers)
+bool ValLayers::checkValidationLayerSupport()
 {
 	// Number of layers available
 	uint32_t layerCount;
@@ -433,7 +429,7 @@ bool VulkanCore::checkValidationLayerSupport(const std::vector<const char*>& req
 	#endif
 
 	// Check if all the "requiredLayers" exist in "availableLayers"
-	for (const char* reqLayer : requiredLayers)
+	for (const char* reqLayer : requiredValidationLayers)
 	{
 		bool layerFound = false;
 		for (const auto& layerProperties : availableLayers)
@@ -459,7 +455,7 @@ bool VulkanCore::checkValidationLayerSupport(const std::vector<const char*>& req
 *	VkDebugUtilsMessengerCreateInfoEXT struct. The file "$VULKAN_SDK/Config/vk_layer_settings.txt" explains how to configure the layers.
 *	@param createInfo Struct that this method will use for setting the type of messages to receive, and the callback function.
  */
-void VulkanCore::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
+void ValLayers::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
 {
 	createInfo = {};
 	// - Type of the struct
@@ -503,7 +499,7 @@ void VulkanCore::populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInf
    @param pUserData Pointer (specified during the setup of the callback) that allows you to pass your own data.
    @return Boolean indicating if the Vulkan call that triggered the validation layer message should be aborted. If true, the call is aborted with the VK_ERROR_VALIDATION_FAILED_EXT error.
  */
-VKAPI_ATTR VkBool32 VKAPI_CALL VulkanCore::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
+VKAPI_ATTR VkBool32 VKAPI_CALL ValLayers::debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData)
 {
 	//std::cerr << "Validation layer: (" << messageSeverity << '/' << messageType << ") " << pCallbackData->pMessage << std::endl;
 	if (messageType != 1)			// Avoid GENERAL_BIT messages (unrelated to the specification or performance).
@@ -511,8 +507,14 @@ VKAPI_ATTR VkBool32 VKAPI_CALL VulkanCore::debugCallback(VkDebugUtilsMessageSeve
 	return VK_FALSE;
 }
 
+std::vector<const char*> Extensions::getRequiredExtensions_device()
+{
+	const std::vector<const char*> requiredDeviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+	return requiredDeviceExtensions;
+}
+
 /// Get a list of required extensions (based on whether validation layers are enabled or not)
-std::vector<const char*> VulkanCore::getRequiredExtensions()
+std::vector<const char*> Extensions::getRequiredExtensions_glfw_valLayers()
 {
 	// Get required extensions (glfwExtensions)
 	const char** glfwExtensions;
@@ -532,7 +534,7 @@ std::vector<const char*> VulkanCore::getRequiredExtensions()
 	return extensions;
 }
 
-bool VulkanCore::checkExtensionSupport(const char* const* requiredExtensions, uint32_t reqExtCount)
+bool Extensions::checkExtensionSupport(const char* const* requiredExtensions, uint32_t reqExtCount)
 {
 	// Number of extensions available
 	uint32_t extensionCount = 0;
@@ -572,13 +574,20 @@ bool VulkanCore::checkExtensionSupport(const char* const* requiredExtensions, ui
 	return true;				// If all extensions are found, returns true
 }
 
+ValLayers::ValLayers() : instance(nullptr), debugMessenger(nullptr)
+{
+	// Check validation layer support
+	if (enableValidationLayers && !checkValidationLayerSupport())
+		throw std::runtime_error("Validation layers requested, but not available!");
+}
+
 // (2)
 /**
 	@brief Specify the details about the messenger and its callback, and create the debug messenger.
 
 	Specify the details about the messenger and its callback (there are more ways to configure validation layer messages and debug callbacks), and create the debug messenger.
  */
-void VulkanCore::setupDebugMessenger()
+void ValLayers::setupDebugMessenger(VkInstance instance)
 {
 	#ifdef DEBUG_ENV_CORE
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -586,12 +595,12 @@ void VulkanCore::setupDebugMessenger()
 
 	if (!enableValidationLayers) return;
 
-	// Fill in a structure with details about the messenger and its callback
-	VkDebugUtilsMessengerCreateInfoEXT createInfo;
-	populateDebugMessengerCreateInfo(createInfo);
+	this->instance = instance;
 
-	// Create the debug messenger
-	if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS)
+	VkDebugUtilsMessengerCreateInfoEXT createInfo;
+	populateDebugMessengerCreateInfo(createInfo);   // Fill in a structure with details about the messenger and its callback
+
+	if (CreateDebugUtilsMessengerEXT(&createInfo, nullptr, &debugMessenger) != VK_SUCCESS)   // Create the debug messenger
 		throw std::runtime_error("Failed to set up debug messenger!");
 }
 
@@ -604,7 +613,7 @@ void VulkanCore::setupDebugMessenger()
  * @param pDebugMessenger Debug messenger object
  * @return Returns the extension object, or an error if is not available.
  */
-VkResult VulkanCore::CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger)
+VkResult ValLayers::CreateDebugUtilsMessengerEXT(const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger)
 {
 	// Load the extension object if it's available (the extension function needs to be explicitly loaded)
 	auto func = (PFN_vkCreateDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
@@ -709,13 +718,13 @@ int VulkanCore::evaluateDevice(VkPhysicalDevice device)
 	QueueFamilyIndices indices = findQueueFamilies(device);
 
 	// Check whether required device extensions are supported 
-	bool extensionsSupported = checkDeviceExtensionSupport(device);
+	bool extensionsSupported = ext.checkDeviceExtensionSupport(device);
 
 	// Check whether swap chain extension is compatible with the window surface (adequately supported)
 	bool swapChainAdequate = false;
 	if (extensionsSupported)
 	{
-		SwapChainSupportDetails swapChainSupport = querySwapChainSupport(device);
+		SwapChainSupportDetails swapChainSupport = SwapChain::querySwapChainSupport(device, surface);
 		swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();	// Adequate if there's at least one supported image format and one supported presentation mode.
 	}
 
@@ -777,15 +786,10 @@ QueueFamilyIndices VulkanCore::findQueueFamilies(VkPhysicalDevice device)
 	return indices;
 }
 
-QueueFamilyIndices VulkanCore::findQueueFamilies() { return findQueueFamilies(physicalDevice); }
-
 void VulkanCore::destroy()
 {
 	vkDestroyDevice(device, nullptr);										// Logical device & device queues
-	
-	if (enableValidationLayers)												// Debug messenger
-		DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
-
+	valLayers.DestroyDebugUtilsMessengerEXT();
 	vkDestroySurfaceKHR(instance, surface, nullptr);						// Surface KHR
 	vkDestroyInstance(instance, nullptr);									// Instance
 	io.destroy();
@@ -804,7 +808,7 @@ void VulkanCore::queueWaitIdle(VkQueue queue, std::mutex* waitMutex)
 	@param device Device to evaluate
 	@return True if all the required device extensions are supported. False otherwise.
 */
-bool VulkanCore::checkDeviceExtensionSupport(VkPhysicalDevice device)
+bool Extensions::checkDeviceExtensionSupport(VkPhysicalDevice device)
 {
 	uint32_t extensionCount;
 	vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
@@ -812,7 +816,8 @@ bool VulkanCore::checkDeviceExtensionSupport(VkPhysicalDevice device)
 	std::vector<VkExtensionProperties> availableExtensions(extensionCount);
 	vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
 
-	std::set<std::string> requiredExtensions(requiredDeviceExtensions.begin(), requiredDeviceExtensions.end());
+	auto extensions = getRequiredExtensions_device();
+	std::set<std::string> requiredExtensions(extensions.begin(), extensions.end());
 
 	for (const auto& extension : availableExtensions)
 		requiredExtensions.erase(extension.extensionName);
@@ -820,7 +825,7 @@ bool VulkanCore::checkDeviceExtensionSupport(VkPhysicalDevice device)
 	return requiredExtensions.empty();
 }
 
-SwapChainSupportDetails VulkanCore::querySwapChainSupport(VkPhysicalDevice device)
+SwapChainSupportDetails SwapChain::querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface)
 {
 	SwapChainSupportDetails details;
 
@@ -847,8 +852,6 @@ SwapChainSupportDetails VulkanCore::querySwapChainSupport(VkPhysicalDevice devic
 
 	return details;
 }
-
-SwapChainSupportDetails VulkanCore::querySwapChainSupport() { return querySwapChainSupport(physicalDevice); }
 
 /// Get the maximum number of samples (for MSAA) according to the physical device.
 VkSampleCountFlagBits VulkanCore::getMaxUsableSampleCount(bool getMinimum)
@@ -905,11 +908,14 @@ void VulkanCore::createLogicalDevice()
 	createInfo.pQueueCreateInfos = queueCreateInfos.data();
 	createInfo.queueCreateInfoCount = static_cast<uint32_t>(queueCreateInfos.size());
 	createInfo.pEnabledFeatures = &deviceFeatures;
-	createInfo.enabledExtensionCount = static_cast<uint32_t>(requiredDeviceExtensions.size());
-	createInfo.ppEnabledExtensionNames = requiredDeviceExtensions.data();
-	if (enableValidationLayers) {
-		createInfo.enabledLayerCount = static_cast<uint32_t>(requiredValidationLayers.size());
-		createInfo.ppEnabledLayerNames = requiredValidationLayers.data();
+	auto extensions = ext.getRequiredExtensions_device();
+	createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+	createInfo.ppEnabledExtensionNames = extensions.data();
+
+	if (enableValidationLayers)
+	{
+		createInfo.enabledLayerCount = static_cast<uint32_t>(valLayers.requiredValidationLayers.size());
+		createInfo.ppEnabledLayerNames = valLayers.requiredValidationLayers.data();
 	}
 	else
 		createInfo.enabledLayerCount = 0;
@@ -934,7 +940,7 @@ void SwapChain::createSwapChain()
 	// 1. Create swap chain
 
 	// 1.1. Get some properties
-	SwapChainSupportDetails swapChainSupport = c.querySwapChainSupport();
+	SwapChainSupportDetails swapChainSupport = querySwapChainSupport(c.physicalDevice, c.surface);
 
 	VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);	// Surface formats (pixel format, color space)
 	VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);	// Presentation modes
@@ -956,7 +962,7 @@ void SwapChain::createSwapChain()
 	createInfo.imageArrayLayers = 1;								// Number of layers each image consists of (always 1, except for stereoscopic 3D applications)
 	createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;	// Kind of operations we'll use the images in the swap chain for. VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT let us render directly to the swap chain. VK_IMAGE_USAGE_TRANSFER_DST_BIT let us render images to a separate image ifrst to perform operations like post-processing and use memory operation to transfer the rendered image to a swap chain image. 
 
-	QueueFamilyIndices indices = c.findQueueFamilies();
+	QueueFamilyIndices indices = c.findQueueFamilies(c.physicalDevice);
 	uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value(), indices.presentFamily.value() };
 
 	if (indices.graphicsFamily != indices.presentFamily)			// Specify how to handle swap chain images that will be used across multiple queue families. This will be the case if the graphics queue family is different from the presentation queue (draws on the images in the swap chain from the graphics queue and submits them on the presentation queue).
@@ -1094,7 +1100,7 @@ void Renderer::recreateSwapChain()
 	// 4. Create swapchain and related resources.
 	swapChain.createSwapChain();				// Recreate the swap chain.
 
-	rp->createRenderPipeline(commander);
+	rp->createRenderPipeline();
 
 	models.create_pipelines_and_descriptors(&worker.mutModels);
 
@@ -1117,23 +1123,23 @@ void Commander::freeCommandBuffers()
 	for (uint32_t i = 0; i < commandBuffers.size(); i++)
 	{
 		const std::lock_guard<std::mutex> lock(mutCommandPool[i]);
-		vkFreeCommandBuffers(core->device, commandPools[i], static_cast<uint32_t>(commandBuffers[i].size()), commandBuffers[i].data());
+		vkFreeCommandBuffers(c.device, commandPools[i], static_cast<uint32_t>(commandBuffers[i].size()), commandBuffers[i].data());
 	}
 }
 
 void Commander::destroyCommandPool()
 {
 	for (VkCommandPool& commandPool : commandPools)
-		vkDestroyCommandPool(core->device, commandPool, nullptr);
+		vkDestroyCommandPool(c.device, commandPool, nullptr);
 }
 
 void Commander::destroySynchronizers()
 {
 	for (size_t i = 0; i < framesInFlight.size(); i++)   // Semaphores (render & image available) & fences (in flight)
 	{
-		vkDestroySemaphore(core->device, renderFinishedSemaphores[i], nullptr);
-		vkDestroySemaphore(core->device, imageAvailableSemaphores[i], nullptr);
-		vkDestroyFence(core->device, framesInFlight[i], nullptr);
+		vkDestroySemaphore(c.device, renderFinishedSemaphores[i], nullptr);
+		vkDestroySemaphore(c.device, imageAvailableSemaphores[i], nullptr);
+		vkDestroyFence(c.device, framesInFlight[i], nullptr);
 	}
 }
 
@@ -1164,13 +1170,13 @@ uint32_t VulkanCore::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags p
 
 // (11) <<<
 /// Commands in Vulkan (drawing, memory transfers, etc.) are not executed directly using function calls, you have to record all of the operations you want to perform in command buffer objects. After setting up the drawing commands, just tell Vulkan to execute them in the main loop.
-void Commander::createCommandPool(VulkanCore* core, size_t numFrames)
+void Commander::createCommandPool(size_t numFrames)
 {
 #if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
 	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
 #endif
 
-	QueueFamilyIndices queueFamilyIndices = core->findQueueFamilies();	// <<< wrapped method
+	QueueFamilyIndices queueFamilyIndices = c.findQueueFamilies(c.physicalDevice);
 
 	// Command buffers are executed by submitting them on one of the device queues we retrieved (graphics queue, presentation queue, etc.). Each command pool can only allocate command buffers that are submitted on a single type of queue.
 	VkCommandPoolCreateInfo poolInfo{};
@@ -1181,7 +1187,7 @@ void Commander::createCommandPool(VulkanCore* core, size_t numFrames)
 	commandPools.resize(numFrames);
 
 	for(VkCommandPool& commandPool : commandPools)
-		if (vkCreateCommandPool(core->device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS)
+		if (vkCreateCommandPool(c.device, &poolInfo, nullptr, &commandPool) != VK_SUCCESS)
 			throw std::runtime_error("Failed to create command pool!");
 
 #if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
@@ -1384,7 +1390,7 @@ void Commander::generateMipmaps(VkImage image, VkFormat imageFormat, int32_t tex
 
 	// Check if the image format supports linear blitting. We are using vkCmdBlitImage, but it's not guaranteed to be supported on all platforms because it requires our texture image format to support linear filtering, so we check it with vkGetPhysicalDeviceFormatProperties.
 	VkFormatProperties formatProperties;
-	vkGetPhysicalDeviceFormatProperties(core->physicalDevice, imageFormat, &formatProperties);
+	vkGetPhysicalDeviceFormatProperties(c.physicalDevice, imageFormat, &formatProperties);
 	if (!(formatProperties.optimalTilingFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT))
 	{
 		throw std::runtime_error("Texture image format does not support linear blitting!");
@@ -1514,7 +1520,7 @@ VkCommandBuffer Commander::beginSingleTimeCommands(uint32_t frameIndex)
 	allocInfo.commandBufferCount = 1;
 
 	VkCommandBuffer commandBuffer;
-	vkAllocateCommandBuffers(core->device, &allocInfo, &commandBuffer);
+	vkAllocateCommandBuffers(c.device, &allocInfo, &commandBuffer);
 
 	// Start recording the command buffer.
 	VkCommandBufferBeginInfo beginInfo{};
@@ -1551,20 +1557,20 @@ void Commander::endSingleTimeCommands(uint32_t frameIndex, VkCommandBuffer comma
 	//vkCreateFence(core->device, &fenceInfo, nullptr, &singleTimeFence);
 	////vkResetFences(c.device, 1, &singleTimeFence);							// Reset to unsignaled state (CB didn't finish execution).
 
-	vkWaitForFences(core->device, 1, &framesInFlight[frameIndex], VK_TRUE, UINT64_MAX);	// Wait for signaled state
-	vkResetFences(core->device, 1, &framesInFlight[frameIndex]);						// Reset to unsignaled state (CB didn't finish execution).
+	vkWaitForFences(c.device, 1, &framesInFlight[frameIndex], VK_TRUE, UINT64_MAX);	// Wait for signaled state
+	vkResetFences(c.device, 1, &framesInFlight[frameIndex]);						// Reset to unsignaled state (CB didn't finish execution).
 
 	{
 		const std::lock_guard<std::mutex> lock(mutQueue);
-		vkQueueSubmit(core->graphicsQueue, 1, &submitInfo, framesInFlight[frameIndex]);	// VK_NULL_HANDLE);
+		vkQueueSubmit(c.graphicsQueue, 1, &submitInfo, framesInFlight[frameIndex]);	// VK_NULL_HANDLE);
 		//vkQueueWaitIdle(c.graphicsQueue);									// Wait to this transfer to complete. Two ways to do this: vkQueueWaitIdle (Wait for the transfer queue to become idle. Execute one transfer at a time) or vkWaitForFences (Use a fence. Allows to schedule multiple transfers simultaneously and wait for all of them complete. It may give the driver more opportunities to optimize).
 	}
 	
-	vkWaitForFences(core->device, 1, &framesInFlight[frameIndex], VK_TRUE, UINT64_MAX);	// Wait for signaled state
+	vkWaitForFences(c.device, 1, &framesInFlight[frameIndex], VK_TRUE, UINT64_MAX);	// Wait for signaled state
 	//vkDestroyFence(core->device, framesInFlight[frameIndex], nullptr);
 
 	// Clean up the command buffer used.
-	vkFreeCommandBuffers(core->device, commandPools[frameIndex], 1, &commandBuffer);
+	vkFreeCommandBuffers(c.device, commandPools[frameIndex], 1, &commandBuffer);
 }
 
 /**
@@ -1573,15 +1579,17 @@ void Commander::endSingleTimeCommands(uint32_t frameIndex, VkCommandBuffer comma
  * @param debugMessenger Debug messenger object
  * @param pAllocator Optional allocator callback
  */
-void VulkanCore::DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator)
+void ValLayers::DestroyDebugUtilsMessengerEXT()
 {
+	if (instance == nullptr) return;
+
 	// Similarly to vkCreateDebugUtilsMessengerEXT, the extension function needs to be explicitly loaded.
 	auto func = (PFN_vkDestroyDebugUtilsMessengerEXT)vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
 	if (func != nullptr)
-		func(instance, debugMessenger, pAllocator);
+		func(instance, debugMessenger, nullptr);
 }
 
-void createBuffer(VulkanCore* c, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory)
+void VulkanCore::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory)
 {
 	// Create buffer.
 	VkBufferCreateInfo bufferInfo{};
@@ -1591,39 +1599,39 @@ void createBuffer(VulkanCore* c, VkDeviceSize size, VkBufferUsageFlags usage, Vk
 	bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;			// Like images in the swap chain, buffers can also be owned by a specific queue family or be shared between multiple at the same time. Since the buffer will only be used from the graphics queue, we use EXCLUSIVE.
 	bufferInfo.flags = 0;										// Used to configure sparse buffer memory.
 
-	if (vkCreateBuffer(c->device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS)	// vkCreateBuffer creates a new buffer object and returns it to a pointer to a VkBuffer provided by the caller.
+	if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS)	// vkCreateBuffer creates a new buffer object and returns it to a pointer to a VkBuffer provided by the caller.
 		throw std::runtime_error("Failed to create buffer!");
 
 	// Get buffer requirements.
 	VkMemoryRequirements memRequirements;		// Members: size (amount of memory in bytes. May differ from bufferInfo.size), alignment (offset in bytes where the buffer begins in the allocated region. Depends on bufferInfo.usage and bufferInfo.flags), memoryTypeBits (bit field of the memory types that are suitable for the buffer).
-	vkGetBufferMemoryRequirements(c->device, buffer, &memRequirements);
+	vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
 
 	// Allocate memory for the buffer.
 	VkMemoryAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocInfo.allocationSize = memRequirements.size;
-	allocInfo.memoryTypeIndex = c->findMemoryType(memRequirements.memoryTypeBits, properties);		// Properties parameter: We need to be able to write our vertex data to that memory. The properties define special features of the memory, like being able to map it so we can write to it from the CPU.
+	allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);		// Properties parameter: We need to be able to write our vertex data to that memory. The properties define special features of the memory, like being able to map it so we can write to it from the CPU.
 
-	if (vkAllocateMemory(c->device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS)
+	if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate buffer memory!");
 
-	c->memAllocObjects++;
+	memAllocObjects++;
 
-	vkBindBufferMemory(c->device, buffer, bufferMemory, 0);	// Associate this memory with the buffer. If the offset (4th parameter) is non-zero, it's required to be divisible by memRequirements.alignment.
+	vkBindBufferMemory(device, buffer, bufferMemory, 0);	// Associate this memory with the buffer. If the offset (4th parameter) is non-zero, it's required to be divisible by memRequirements.alignment.
 }
 
-RenderPipeline::RenderPipeline(VulkanCore& core, SwapChain& swapChain)
-	: c(core), swapChain(swapChain) { }
+RenderPipeline::RenderPipeline(VulkanCore& core, SwapChain& swapChain, Commander& commander)
+	: c(core), swapChain(swapChain), commander(commander) { }
 
 Subpass& RenderPipeline::getSubpass(unsigned renderPassIndex, unsigned subpassIndex)
 {
 	return renderPasses[renderPassIndex].subpasses[subpassIndex];
 }
 
-void RenderPipeline::createRenderPipeline(Commander& commands)
+void RenderPipeline::createRenderPipeline()
 {
 	createRenderPass();				// Recreate render pass because it depends on the format of the swap chain images.
-	createImageResources(commands);
+	createImageResources();
 
 	for (RenderPass& renderPass : renderPasses)
 	{
@@ -1731,7 +1739,7 @@ void RenderPass::destroy(VulkanCore& c)
 }
 
 RP_DS::RP_DS(VulkanCore& core, SwapChain& swapChain, Commander& commander) 
-	: RenderPipeline(core, swapChain), position(c), albedo(c), normal(c), specRoug(c), depth(c)
+	: RenderPipeline(core, swapChain, commander), position(c), albedo(c), normal(c), specRoug(c), depth(c)
 {
 	// Render passes -------------------------
 
@@ -1774,7 +1782,7 @@ RP_DS::RP_DS(VulkanCore& core, SwapChain& swapChain, Commander& commander)
 	renderPasses[i].clearValues[3].color = zeros;				// Input attachment (specularity & roughness)
 	renderPasses[i].clearValues[4].color = background;			// Final color buffer
 
-	createRenderPipeline(commander);
+	createRenderPipeline();
 }
 
 void RP_DS::createRenderPass()
@@ -2005,7 +2013,7 @@ void RP_DS::createRenderPass()
 		throw std::runtime_error("Failed to create render pass!");
 }
 
-void RP_DS::createImageResources(Commander& commander)
+void RP_DS::createImageResources()
 {
 	#ifdef DEBUG_ENV_CORE
 		std::cout << "   " << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -2121,7 +2129,7 @@ void RP_DS::destroyAttachments()
 }
 
 RP_DS_PP::RP_DS_PP(VulkanCore& core, SwapChain& swapChain, Commander& commander)
-	: RenderPipeline(core, swapChain), position(c), albedo(c), normal(c), specRoug(c), depth(c), color(c)
+	: RenderPipeline(core, swapChain, commander), position(c), albedo(c), normal(c), specRoug(c), depth(c), color(c)
 {
 	renderPasses = {
 		RenderPass({ Subpass({ }, 4) }),
@@ -2176,7 +2184,7 @@ RP_DS_PP::RP_DS_PP(VulkanCore& core, SwapChain& swapChain, Commander& commander)
 	renderPasses[i].clearValues[1].depthStencil = { 1.0f, 0 };	// Input attachment (depth buffer)
 	renderPasses[i].clearValues[2].color = zeros;				// Color attachment (color)
 
-	createRenderPipeline(commander);
+	createRenderPipeline();
 }
 
 void RP_DS_PP::createRenderPass()
@@ -2383,7 +2391,7 @@ void RP_DS_PP::createRenderPass()
 	renderPasses[3].createRenderPass(c.device, allAttachments41, inputAttachments41, colorAttachments41, depthAttachment41);
 }
 
-void RP_DS_PP::createImageResources(Commander& commander)
+void RP_DS_PP::createImageResources()
 {
 	#ifdef DEBUG_ENV_CORE
 		std::cout << "   " << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -2519,8 +2527,8 @@ void RP_DS_PP::destroyAttachments()
 
 // LoadingWorker ---------------------------------------------------------------------
 
-LoadingWorker::LoadingWorker(int waitTime)
-	: waitTime(waitTime), runThread(false) { }
+LoadingWorker::LoadingWorker(Renderer* renderer, int waitTime)
+	: r(*renderer), waitTime(waitTime), runThread(false) { }
 
 LoadingWorker::~LoadingWorker()
 {
@@ -2529,10 +2537,10 @@ LoadingWorker::~LoadingWorker()
 #endif
 }
 
-void LoadingWorker::start(Renderer* renderer, ModelsManager* models, Commander* commandData)
+void LoadingWorker::start()
 {
 	runThread = true;
-	thread_loadModels = std::thread(&LoadingWorker::thread_loadData, this, renderer, models, commandData);
+	thread_loadModels = std::thread(&LoadingWorker::thread_loadData, this, std::ref(r), std::ref(r.models), std::ref(r.commander));
 }
 
 void LoadingWorker::stop()
@@ -2573,7 +2581,7 @@ void LoadingWorker::returnModel(ModelsManager& models, key64 key)
 		models.data[key].ready = true;
 }
 
-void LoadingWorker::thread_loadData(Renderer* renderer, ModelsManager* models, Commander* commandData)
+void LoadingWorker::thread_loadData(Renderer& renderer, ModelsManager& models, Commander& commander)
 {
 #ifdef DEBUG_WORKER
 	std::cout << "- " << typeid(*this).name() << "::" << __func__ << " (begin)" << std::endl;
@@ -2602,15 +2610,15 @@ void LoadingWorker::thread_loadData(Renderer* renderer, ModelsManager* models, C
 				//modelTP.begin()->second.fullConstruction(shaders, textures, mutResources);
 				//returnModel(key);
 				//updateCommandBuffer = true;
-				models->data[key].fullConstruction(*renderer);
-				models->data[key].ready = true;
-				commandData->updateCommandBuffer = true;
+				models.data[key].fullConstruction(renderer);
+				models.data[key].ready = true;
+				commander.updateCommandBuffer = true;
 				break;
 
 			case delet:
-				extractModel(*models, key);
+				extractModel(models, key);
 				modelTP.clear();
-				commandData->updateCommandBuffer = true;
+				commander.updateCommandBuffer = true;
 				break;
 
 			default:
@@ -2631,7 +2639,7 @@ void LoadingWorker::thread_loadData(Renderer* renderer, ModelsManager* models, C
 Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOinfo globalUBO_vs, UBOinfo globalUBO_fs) : 
 	c(width, height),
 	swapChain(c, ADDITIONAL_SWAPCHAIN_IMAGES),
-	commander(&c, swapChain.images.size(), MAX_FRAMES_IN_FLIGHT),
+	commander(c, swapChain.images.size(), MAX_FRAMES_IN_FLIGHT),
 	rp(std::make_shared<RP_DS_PP>(c, swapChain, commander)),
 	models(rp),
 	userUpdate(graphicsUpdate),
@@ -2639,7 +2647,7 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOi
 	maxFPS(30),
 	globalUBO_vs(this, globalUBO_vs),
 	globalUBO_fs(this, globalUBO_fs),
-	worker(500)
+	worker(this, 500)
 {
 #ifdef DEBUG_RENDERER
 	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -2825,8 +2833,7 @@ void Renderer::renderLoop()
 #endif
 
 	commander.createCommandBuffers(models, rp, swapChain.imagesCount(), commander.getNextFrame());
-	//createSyncObjects();
-	worker.start(this, &models, &commander);
+	worker.start();
 
 	timer.startTimer();
 	profiler.startTimer();

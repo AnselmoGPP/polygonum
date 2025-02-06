@@ -46,11 +46,6 @@ class RP_DS_PP;
 
 class LoadingWorker;
 
-// Common functions ----------
-
-/// Creates a Vulkan buffer (VkBuffer and VkDeviceMemory).Used as friend in modelData, UBO and Texture.
-void createBuffer(VulkanCore* c, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);
-
 
 // Definitions ----------
 
@@ -104,6 +99,7 @@ public:
 	void createSwapChain();
 	void destroy();
 	size_t imagesCount();
+	static SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface);
 
 	VkSwapchainKHR								swapChain;		//!< Swap chain object.
 	std::vector<VkImage>						images;			//!< List. Opaque handle to an image object.
@@ -160,6 +156,36 @@ private:
 	VkFormat findSupportedFormat(VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 };
 
+class ValLayers
+{
+public:
+	ValLayers();
+
+	const std::vector<const char*> requiredValidationLayers = { "VK_LAYER_KHRONOS_validation" };
+
+	void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);   // Fill a createInfo struct for creating debugMessenger.
+	void setupDebugMessenger(VkInstance instance);   // Create the debugMessenger (and save instance).
+	void DestroyDebugUtilsMessengerEXT();   // Destroy the debugMessenger. Call it before destroying the Vulkan instance.
+
+private:
+	VkInstance instance;
+	VkDebugUtilsMessengerEXT debugMessenger;		//!< Opaque handle to a debug messenger object (the debug callback is part of it).
+
+	bool checkValidationLayerSupport();
+	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
+	VkResult CreateDebugUtilsMessengerEXT(const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
+};
+
+class Extensions
+{
+public:
+	std::vector<const char*> getRequiredExtensions_device();   //!< Required device extensions. Used for creating logical device. Swap chain: Queue of images that are waiting to be presented to the screen. Our application will acquire such an image to draw to it, and then return it to the queue. Its general purpose is to synchronize the presentation of images with the refresh rate of the screen.
+	bool checkDeviceExtensionSupport(VkPhysicalDevice device);   // Check if device extensions are supported. Used for evaluating device. 
+
+	std::vector<const char*> getRequiredExtensions_glfw_valLayers();   // Required GLFW (and Validation layers) extensions. Used for creating Vulkan instance. 
+	bool checkExtensionSupport(const char* const* requiredExtensions, uint32_t reqExtCount);   // Check if extensions (for GLFW and Validation layers) are supported. For creating Vulkan instance. 
+};
+
 class VulkanCore
 {
 public:
@@ -171,50 +197,36 @@ public:
 	IOmanager io;
 
 	VkInstance					instance;			//!< Opaque handle to an instance object. There is no global state in Vulkan and all per-application state is stored here.
-	VkDebugUtilsMessengerEXT	debugMessenger;		//!< Opaque handle to a debug messenger object (the debug callback is part of it).
 	VkSurfaceKHR				surface;			//!< Opaque handle to a surface object (abstract type of surface to present rendered images to)
 
 	VkPhysicalDevice			physicalDevice;		//!< Opaque handle to a physical device object.
-	VkSampleCountFlagBits		msaaSamples;		//!< Number of samples used for MSAA (MultiSampling AntiAliasing)
 	VkDevice					device;				//!< Opaque handle to a logical device object.
 	DeviceData					deviceData;			//!< Physical device properties and features.
+	VkSampleCountFlagBits		msaaSamples;		//!< Number of samples used for MSAA (MultiSampling AntiAliasing)
 
 	VkQueue						graphicsQueue;		//!< Opaque handle to a queue object (computer graphics).
 	VkQueue						presentQueue;		//!< Opaque handle to a queue object (presentation to window surface).
 
 	int memAllocObjects;							//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount). Incremented each vkAllocateMemory call; decremented each vkFreeMemory call.
 
-	SwapChainSupportDetails	querySwapChainSupport();
-	QueueFamilyIndices findQueueFamilies();
+	void queueWaitIdle(VkQueue queue, std::mutex* waitMutex);
+	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);   //!< Creates a Vulkan buffer (VkBuffer and VkDeviceMemory).Used as friend in modelData, UBO and Texture.
+	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 	void destroy();
-	void queueWaitIdle(VkQueue queue, std::mutex* waitMutex);
 
 private:
-
-	const std::vector<const char*> requiredValidationLayers = { "VK_LAYER_KHRONOS_validation" };
-	const std::vector<const char*> requiredDeviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };	//!< Swap chain: Queue of images that are waiting to be presented to the screen. Our application will acquire such an image to draw to it, and then return it to the queue. Its general purpose is to synchronize the presentation of images with the refresh rate of the screen.
+	//const std::vector<const char*> requiredDeviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };	//!< Swap chain: Queue of images that are waiting to be presented to the screen. Our application will acquire such an image to draw to it, and then return it to the queue. Its general purpose is to synchronize the presentation of images with the refresh rate of the screen.
+	ValLayers valLayers;
+	Extensions ext;
 
 	void createInstance();
-	void setupDebugMessenger();
 	void createSurface();
 	void pickPhysicalDevice();
 	void createLogicalDevice();
 
-	bool checkValidationLayerSupport(const std::vector<const char*>& requiredLayers);
-	VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
-	void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo);
-	static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity, VkDebugUtilsMessageTypeFlagsEXT messageType, const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData, void* pUserData);
-	void DestroyDebugUtilsMessengerEXT(VkInstance instance, VkDebugUtilsMessengerEXT debugMessenger, const VkAllocationCallbacks* pAllocator);
-
-	bool checkExtensionSupport(const char* const* requiredExtensions, uint32_t reqExtCount);
-	bool checkDeviceExtensionSupport(VkPhysicalDevice device);
-	std::vector<const char*> getRequiredExtensions();
-
-	SwapChainSupportDetails	querySwapChainSupport(VkPhysicalDevice device);
 	int evaluateDevice(VkPhysicalDevice device);
 	VkSampleCountFlagBits getMaxUsableSampleCount(bool getMinimum);
-	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 };
 
 class Subpass
@@ -247,21 +259,8 @@ public:
 
 class Commander
 {
-	uint32_t lastFrame;   //!< Frame to process next. Different frames can be processed concurrently.
-	const size_t swapChainImagesCount;
-	const size_t maxFramesInFlight;
-	std::mutex mutGetNextFrame;
-
-	VulkanCore* core;
-
-	void createSynchronizers(VulkanCore* core, size_t numSwapchainImages, size_t numFrames);   //!< Create semaphores and fences for synchronizing the events occuring in each frame (drawFrame()).
-	VkCommandBuffer	beginSingleTimeCommands(uint32_t frameIndex);
-	void endSingleTimeCommands(uint32_t frameIndex, VkCommandBuffer commandBuffer);// <<< commandBuffer as argument?
-	bool hasStencilComponent(VkFormat format);
-	void clearDepthBuffer(VkCommandBuffer commandBuffer, const SwapChain& swapChain);   //!< [Not used] Used for clearing depth buffer between sets of draw commands in order to apply Painter's algorithm.
-
 public:
-	Commander(VulkanCore* core, size_t swapChainImagesCount, size_t maxFramesInFlight);
+	Commander(VulkanCore& core, size_t swapChainImagesCount, size_t maxFramesInFlight);
 
 	std::vector<VkCommandPool> commandPools;   //!< commandPools[frame]. Opaque handle to a command pool object. It manages the memory that is used to store the buffers, and command buffers are allocated from them. One per frame (for better performance).
 	std::vector<std::vector<VkCommandBuffer>> commandBuffers;			//!< commandBuffers[frame][swapchain images]
@@ -300,7 +299,7 @@ public:
 		</ul>
 	*/
 	void createCommandBuffers(ModelsManager& models, std::shared_ptr<RenderPipeline> renderPipeline, size_t swapChainImagesCount, size_t frameIndex);
-	void createCommandPool(VulkanCore* core, size_t numFrames);
+	void createCommandPool(size_t numFrames);
 	uint32_t getNextFrame();   //!< Increment currentFrame by one, but loop around when reaching "maxFramesInFlight".
 
 	// Single time commands
@@ -313,6 +312,20 @@ public:
 	void freeCommandBuffers();
 	void destroyCommandPool();
 	void destroySynchronizers();
+
+private:
+	VulkanCore& c;
+
+	uint32_t lastFrame;   //!< Frame to process next. Different frames can be processed concurrently.
+	const size_t swapChainImagesCount;
+	const size_t maxFramesInFlight;
+	std::mutex mutGetNextFrame;
+
+	void createSynchronizers(size_t numSwapchainImages, size_t numFrames);   //!< Create semaphores and fences for synchronizing the events occuring in each frame (drawFrame()).
+	VkCommandBuffer	beginSingleTimeCommands(uint32_t frameIndex);
+	void endSingleTimeCommands(uint32_t frameIndex, VkCommandBuffer commandBuffer);// <<< commandBuffer as argument?
+	bool hasStencilComponent(VkFormat format);
+	void clearDepthBuffer(VkCommandBuffer commandBuffer, const SwapChain& swapChain);   //!< [Not used] Used for clearing depth buffer between sets of draw commands in order to apply Painter's algorithm.
 };
 
 /**
@@ -329,20 +342,21 @@ public:
 class RenderPipeline
 {
 public:
-	RenderPipeline(VulkanCore& core, SwapChain& swapChain);
+	RenderPipeline(VulkanCore& core, SwapChain& swapChain, Commander& commander);
 
 	std::vector<RenderPass> renderPasses;
 	Subpass& getSubpass(unsigned renderPassIndex, unsigned subpassIndex);
-	void createRenderPipeline(Commander& commands);   //!< Create render-passes, framebuffers, and attachments.
+	void createRenderPipeline();   //!< Create render-passes, framebuffers, and attachments.
 	void destroyRenderPipeline();   //!< Destroy render-passes, framebuffers, and attachments.
 
 protected:
 	VulkanCore& c;
 	SwapChain& swapChain;
+	Commander& commander;
 
 private:
 	virtual void createRenderPass() = 0;   //!< A render-pass denotes more explicitly how your rendering happens. Specify subpasses and their attachments.
-	virtual void createImageResources(Commander& commander) = 0;
+	virtual void createImageResources() = 0;
 	virtual void destroyAttachments() = 0;
 };
 
@@ -361,7 +375,7 @@ public:
 
 protected:
 	void createRenderPass() override;
-	void createImageResources(Commander& commander) override;
+	void createImageResources() override;
 	void destroyAttachments() override;
 };
 
@@ -400,7 +414,7 @@ public:
 
 protected:
 	void createRenderPass() override;
-	void createImageResources(Commander& commander) override;
+	void createImageResources() override;
 	void destroyAttachments() override;
 };
 
@@ -408,7 +422,7 @@ protected:
 class LoadingWorker
 {
 public:
-	LoadingWorker(int waitTime);
+	LoadingWorker(Renderer* renderer, int waitTime);
 	~LoadingWorker();
 
 	static enum Task { none, construct, delet };   //!< Used in LoadingWorker::newTask().
@@ -422,19 +436,15 @@ public:
 	std::mutex mutDelete;		//!< for Renderer::modelsToDelete
 	std::mutex mutResources;	//!< for Renderer::shaders & Renderer::textures
 
-	void start(Renderer* renderer, ModelsManager* models, Commander* commandData);
+	void start();
 	void stop();
 	void newTask(key64 key, Task task);
 
 private:
+	Renderer& r;
+
 	std::queue<std::pair<key64, LoadingWorker::Task>> tasks;   //!< FIFO queue
 	std::unordered_map<key64, ModelData> modelTP;   //!< Model To Process: A model is moved here temporarily for processing. After processing, it's tranferred to its final destination.
-
-	//std::unordered_map<key64, ModelData>& models;
-	//std::list<Texture>& textures;
-	//std::list<Shader>& shaders;
-
-	//bool&					updateCommandBuffer;
 
 	int						waitTime;				//!< Time (milliseconds) the loading-thread wait till next check.
 	bool					runThread;				//!< Signals whether the secondary thread (loadingThread) should be running.
@@ -449,7 +459,7 @@ private:
 				<li> Deletes shaders and textures with counter == 0 </li>
 		</ul>
 	*/
-	void thread_loadData(Renderer* renderer, ModelsManager* models, Commander* commandData);
+	void thread_loadData(Renderer& renderer, ModelsManager& models, Commander& commander);
 	void extractModel(ModelsManager& models, key64 key);   //!< Extract model from "models" to "modelTP"
 	void returnModel(ModelsManager& models, key64 key);   //!< Extract model from "modelTP" to "models"
 
@@ -464,15 +474,15 @@ private:
 class Renderer
 {
 protected:
-	const uint32_t ADDITIONAL_SWAPCHAIN_IMAGES = 3;   //!< Total number of swapchain images = swapChain_capabilities_minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES
-	const uint32_t MAX_FRAMES_IN_FLIGHT = 4;   //!< How many frames should be processed concurrently.
+	const uint32_t ADDITIONAL_SWAPCHAIN_IMAGES = 3;   //!< (1) Total number of swapchain images = swapChain_capabilities_minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES
+	const uint32_t MAX_FRAMES_IN_FLIGHT = 4;   //!< (2) How many frames should be processed concurrently.
 
 	friend ResourcesLoader;
 	friend LoadingWorker;
 	friend ModelData;
 	friend UBO;
 	friend VertexesLoader;
-	friend Texture;
+	//friend Texture;
 	friend TextureLoader;
 
 	VulkanCore c;
