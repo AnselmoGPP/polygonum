@@ -115,14 +115,8 @@ void UBO::createUBO()
 void UBO::destroyUBO()
 {
 	if (subUboSize)
-	{
 		for (size_t i = 0; i < swapChain->images.size(); i++)
-		{
-			vkDestroyBuffer(c->device, uboBuffers[i], nullptr);
-			vkFreeMemory(c->device, uboMemories[i], nullptr);
-			c->memAllocObjects--;
-		}
-	}
+			c->destroyBuffer(c->device, uboBuffers[i], uboMemories[i]);
 }
 
 Material::Material(glm::vec3& diffuse, glm::vec3& specular, float shininess)

@@ -65,16 +65,10 @@ ModelData::~ModelData()
 
 		// Index buffer
 		if (vert.indexCount)
-		{
-			vkDestroyBuffer(r->c.device, vert.indexBuffer, nullptr);
-			vkFreeMemory(r->c.device, vert.indexBufferMemory, nullptr);
-			r->c.memAllocObjects--;
-		}
+			r->c.destroyBuffer(r->c.device, vert.indexBuffer, vert.indexBufferMemory);
 
 		// Vertex buffer
-		vkDestroyBuffer(r->c.device, vert.vertexBuffer, nullptr);
-		vkFreeMemory(r->c.device, vert.vertexBufferMemory, nullptr);
-		r->c.memAllocObjects--;
+		r->c.destroyBuffer(r->c.device, vert.vertexBuffer, vert.vertexBufferMemory);
 	}
 
 	// Resources loader

@@ -128,9 +128,7 @@ void VertexesLoader::createVertexBuffer(const VertexSet& rawVertices, VertexData
 	r.commander.copyBuffer(stagingBuffer, result.vertexBuffer, bufferSize);
 
 	// Clean up
-	vkDestroyBuffer(r.c.device, stagingBuffer, nullptr);
-	vkFreeMemory(r.c.device, stagingBufferMemory, nullptr);
-	r.c.memAllocObjects--;
+	r.c.destroyBuffer(r.c.device, stagingBuffer, stagingBufferMemory);
 }
 
 void VertexesLoader::createIndexBuffer(const std::vector<uint16_t>& rawIndices, VertexData& result, Renderer& r)
@@ -173,9 +171,7 @@ void VertexesLoader::createIndexBuffer(const std::vector<uint16_t>& rawIndices, 
 	r.commander.copyBuffer(stagingBuffer, result.indexBuffer, bufferSize);
 
 	// Clean up
-	vkDestroyBuffer(r.c.device, stagingBuffer, nullptr);
-	vkFreeMemory(r.c.device, stagingBufferMemory, nullptr);
-	r.c.memAllocObjects--;
+	r.c.destroyBuffer(r.c.device, stagingBuffer, stagingBufferMemory);
 }
 
 glm::vec3 VertexesLoader::getVertexTangent(const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3, const glm::vec2 uv1, const glm::vec2 uv2, const glm::vec2 uv3)
@@ -703,6 +699,7 @@ Texture::~Texture()
 	vkDestroyImageView(c.device, textureImageView, nullptr);
 	vkFreeMemory(c.device, textureImageMemory, nullptr);
 	c.memAllocObjects--;
+	//c.destroyBuffer(c.device, textureImage, textureImageMemory);
 }
 
 TextureLoader::TextureLoader(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode)
@@ -787,9 +784,7 @@ std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned ch
 	r.commander.generateMipmaps(textureImage, imageFormat, texWidth, texHeight, mipLevels);
 
 	// Cleanup the staging buffer and its memory
-	vkDestroyBuffer(r.c.device, stagingBuffer, nullptr);
-	vkFreeMemory(r.c.device, stagingBufferMemory, nullptr);
-	r.c.memAllocObjects--;
+	r.c.destroyBuffer(r.c.device, stagingBuffer, stagingBufferMemory);
 
 	return std::pair(textureImage, textureImageMemory);
 }

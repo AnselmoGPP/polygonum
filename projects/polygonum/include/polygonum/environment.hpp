@@ -207,10 +207,11 @@ public:
 	VkQueue						graphicsQueue;		//!< Opaque handle to a queue object (computer graphics).
 	VkQueue						presentQueue;		//!< Opaque handle to a queue object (presentation to window surface).
 
-	int memAllocObjects;							//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount). Incremented each vkAllocateMemory call; decremented each vkFreeMemory call.
+	int memAllocObjects;							//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount). Incremented each vkAllocateMemory call; decremented each vkFreeMemory call. Increments when creating an image or buffer; decrements when destroyed.
 
 	void queueWaitIdle(VkQueue queue, std::mutex* waitMutex);
 	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);   //!< Creates a Vulkan buffer (VkBuffer and VkDeviceMemory).Used as friend in modelData, UBO and Texture.
+	void destroyBuffer(VkDevice device, VkBuffer buffer, VkDeviceMemory memory);
 	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 	void destroy();
@@ -482,7 +483,6 @@ protected:
 	friend ModelData;
 	friend UBO;
 	friend VertexesLoader;
-	//friend Texture;
 	friend TextureLoader;
 
 	VulkanCore c;

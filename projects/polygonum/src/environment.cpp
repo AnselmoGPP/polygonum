@@ -17,7 +17,8 @@ bool QueueFamilyIndices::isComplete()
 	return	graphicsFamily.has_value() && presentFamily.has_value();
 }
 
-Image::Image(VulkanCore& core) : c(core), image(nullptr), memory(nullptr), view(nullptr), sampler(nullptr) { }
+Image::Image(VulkanCore& core) :
+	c(core), image(nullptr), memory(nullptr), view(nullptr), sampler(nullptr) { }
 
 void Image::createFullImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImageAspectFlags aspectFlags)
 {
@@ -1618,6 +1619,13 @@ void VulkanCore::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMem
 	memAllocObjects++;
 
 	vkBindBufferMemory(device, buffer, bufferMemory, 0);	// Associate this memory with the buffer. If the offset (4th parameter) is non-zero, it's required to be divisible by memRequirements.alignment.
+}
+
+void VulkanCore::destroyBuffer(VkDevice device, VkBuffer buffer, VkDeviceMemory memory)
+{
+	vkDestroyBuffer(device, buffer, nullptr);
+	vkFreeMemory(device, memory, nullptr);
+	memAllocObjects--;
 }
 
 RenderPipeline::RenderPipeline(VulkanCore& core, SwapChain& swapChain, Commander& commander)
