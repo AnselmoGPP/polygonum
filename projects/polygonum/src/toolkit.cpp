@@ -1,13 +1,19 @@
-#include<iostream>
+﻿#include<iostream>
 #include <chrono>
 #include <thread>
 
 #include "polygonum/toolkit.hpp"
-#include "polygonum/physics.hpp"
 
 
 double pi = 3.141592653589793238462;
 double e  = 2.718281828459045235360;
+
+glm::vec3 xAxis(1, 0, 0);
+glm::vec3 yAxis(0, 1, 0);
+glm::vec3 zAxis(0, 0, 1);
+glm::vec3 zero(0, 0, 0);
+
+glm::vec4 noRotQuat = { 1, 0, 0, 0 };
 
 void printArgs() { std::cout << std::endl; }
 
@@ -68,8 +74,6 @@ uint64_t appendInt(uint64_t first, uint64_t second)
 }
 
 float getSphereArea(float radius) { return 4 * 3.141592653589793238462 * radius * radius; }
-
-// Model Matrix -----------------------------------------------------------------
 
 glm::mat4 getModelMatrix() { return glm::mat4(1.0f); }
 
@@ -299,10 +303,6 @@ bool Frustum::isInFrustum(const Sphere& sphere) const
 
 	return true;   // Sphere is inside or intersects the frustum
 }
-
-
-// Vertex sets -----------------------------------------------------------------
-
 
 SqrMesh::SqrMesh(size_t sideCount, float sideLength) 
 	: sideCount(sideCount), sideLength(sideLength), vertexCount(sideCount * sideCount)
@@ -972,4 +972,117 @@ std::string Timer::getDate()
 	std::chrono::system_clock::time_point timePoint = std::chrono::system_clock::now();
 	std::time_t date = std::chrono::system_clock::to_time_t(timePoint);
 	return std::ctime(&date);
+}
+
+float angleBetween(glm::vec3 a, glm::vec3 b, glm::vec3 origin)
+{
+	// A·B = |A|*|B|*cos(θ);   θ = acos( (A·B)/(|A|*|B|) )     (|X| is the length of vector X)
+
+	float dotP = glm::dot(glm::normalize(a - origin), glm::normalize(b - origin));
+	dotP = glm::clamp(dotP, -1.f, 1.f);			// if (dotP > 1) dotP =  1; else if (dotP < -1) dotP = -1;
+
+	return glm::acos(dotP);
+}
+
+float angleBetween(glm::vec3 a, glm::vec3 b)
+{
+	// A·B = |A|*|B|*cos(θ);   θ = acos( (A·B)/(|A|*|B|) )     (|X| is the length of vector X)
+
+	float adjacent = glm::dot(glm::normalize(a), glm::normalize(b));
+	adjacent = glm::clamp(adjacent, -1.f, 1.f);			// if (dotP > 1) dotP =  1; else if (dotP < -1) dotP = -1;
+
+	return glm::acos(adjacent);
+}
+
+glm::vec4 getRotQuat(glm::vec3 rotAxis, float angle)
+{
+	float cosOp = cos(angle / 2);
+	float sinOp = sin(angle / 2);
+	return glm::vec4(cosOp, sinOp * rotAxis.x, sinOp * rotAxis.y, sinOp * rotAxis.z);
+}
+
+glm::vec3 rotatePoint(const glm::vec4& rotQuat, const glm::vec3& point)
+{
+	glm::vec4 inverseRotQuat(rotQuat.x, -rotQuat.y, -rotQuat.z, -rotQuat.w);
+	glm::vec4 pointQuat(0.f, point);
+	pointQuat = productQuat(productQuat(inverseRotQuat, pointQuat), rotQuat);	//pointQuat = inverseRotQuat * pointQuat * rotQuat;
+	return glm::vec3(pointQuat.y, pointQuat.z, pointQuat.w);
+}
+
+glm::vec4 productQuat(const glm::vec4& q1, const glm::vec4& q2)
+{
+	return glm::vec4(	// q1 * q2
+		q1[0] * q2[0] - q1[1] * q2[1] - q1[2] * q2[2] - q1[3] * q2[3],
+		q1[0] * q2[1] + q1[1] * q2[0] - q1[2] * q2[3] + q1[3] * q2[2],
+		q1[0] * q2[2] + q1[1] * q2[3] + q1[2] * q2[0] - q1[3] * q2[1],
+		q1[0] * q2[3] - q1[1] * q2[2] + q1[2] * q2[1] + q1[3] * q2[0]
+	);
+}
+
+glm::vec4 productQuat(const glm::vec4& q1, const glm::vec4& q2, const glm::vec4& q3)
+{
+	return productQuat(productQuat(q1, q2), q3);	// q1 * q2 * q3
+}
+
+glm::mat3 getRotationMatrix(glm::vec3 rotAxis, float angle)
+{
+	float q0 = cos(angle / 2);
+	float q1 = sin(angle / 2) * rotAxis.x;
+	float q2 = sin(angle / 2) * rotAxis.y;
+	float q3 = sin(angle / 2) * rotAxis.z;
+
+	return glm::mat3(
+		q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3,
+		2 * (q1 * q2 - q0 * q3),
+		2 * (q1 * q3 + q0 * q2),
+
+		2 * (q2 * q1 + q0 * q3),
+		q0 * q0 - q1 * q1 + q2 * q2 - q3 * q3,
+		2 * (q2 * q3 - q0 * q1),
+
+		2 * (q3 * q1 - q0 * q2),
+		2 * (q3 * q2 + q0 * q1),
+		q0 * q0 - q1 * q1 - q2 * q2 + q3 * q3
+	);
+}
+
+glm::mat4 getRotationMatrix(glm::vec4 quat)
+{
+	// Frame rotation matrix
+	return glm::mat4(
+		2 * (quat[0] * quat[0] + quat[1] * quat[1]) - 1,
+		2 * (quat[1] * quat[2] + quat[0] * quat[3]),
+		2 * (quat[1] * quat[3] - quat[0] * quat[2]),
+		0,
+
+		2 * (quat[1] * quat[2] - quat[0] * quat[3]),
+		2 * (quat[0] * quat[0] + quat[2] * quat[2]) - 1,
+		2 * (quat[2] * quat[3] + quat[0] * quat[1]),
+		0,
+
+		2 * (quat[1] * quat[3] + quat[0] * quat[2]),
+		2 * (quat[2] * quat[3] - quat[0] * quat[1]),
+		2 * (quat[0] * quat[0] + quat[3] * quat[3]) - 1,
+		0,
+
+		0, 0, 0, 1);
+
+	// Point rotation matrix (transpose of frame rotation matrix)
+	return glm::mat4(
+		2 * (quat[0] * quat[0] + quat[1] * quat[1]) - 1,
+		2 * (quat[1] * quat[2] - quat[0] * quat[3]),
+		2 * (quat[1] * quat[3] + quat[0] * quat[2]),
+		0,
+
+		2 * (quat[1] * quat[2] + quat[0] * quat[3]),
+		2 * (quat[0] * quat[0] + quat[2] * quat[2]) - 1,
+		2 * (quat[2] * quat[3] - quat[0] * quat[1]),
+		0,
+
+		2 * (quat[1] * quat[3] - quat[0] * quat[2]),
+		2 * (quat[2] * quat[3] + quat[0] * quat[1]),
+		2 * (quat[0] * quat[0] + quat[3] * quat[3]) - 1,
+		0,
+
+		0, 0, 0, 1);
 }

@@ -4,10 +4,8 @@
 #define STB_IMAGE_IMPLEMENTATION		// Import textures
 #include "stb_image.h"
 
-#include "polygonum/environment.hpp"
-#include "polygonum/models.hpp"
 #include "polygonum/importer.hpp"
-#include "polygonum/physics.hpp"
+#include "polygonum/renderer.hpp"
 
 
 const VertexType vt_3   ({ 3 * sizeof(float) }, { VK_FORMAT_R32G32B32_SFLOAT });
@@ -51,6 +49,186 @@ void ResourcesLoader::loadResources(ModelData& model, Renderer& rend)
 
 
 // VERTICES --------------------------------------------------------
+
+VertexType::VertexType(std::initializer_list<size_t> attribsSizes, std::initializer_list<VkFormat> attribsFormats)
+	: attribsFormats(attribsFormats), attribsSizes(attribsSizes), vertexSize(0)
+{
+	for (unsigned i = 0; i < this->attribsSizes.size(); i++)
+		vertexSize += this->attribsSizes[i];
+}
+
+VertexType::VertexType() : vertexSize(0) { }
+
+VertexType::~VertexType()
+{
+#ifdef DEBUG_RESOURCES
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+}
+
+VertexType& VertexType::operator=(const VertexType& obj)
+{
+	if (&obj == this) return *this;
+
+	attribsFormats = obj.attribsFormats;
+	attribsSizes = obj.attribsSizes;
+	vertexSize = obj.vertexSize;
+
+	return *this;
+}
+
+VkVertexInputBindingDescription VertexType::getBindingDescription() const
+{
+	VkVertexInputBindingDescription bindingDescription{};
+	bindingDescription.binding = 0;									// Index of the binding in the array of bindings. We have a single array, so we only have one binding.
+	bindingDescription.stride = vertexSize;							// Number of bytes from one entry to the next.
+	bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;		// VK_VERTEX_INPUT_RATE_ ... VERTEX, INSTANCE (move to the next data entry after each vertex or instance).
+
+	return bindingDescription;
+}
+
+std::vector<VkVertexInputAttributeDescription> VertexType::getAttributeDescriptions() const
+{
+	VkVertexInputAttributeDescription vertexAttrib;
+	uint32_t location = 0;
+	uint32_t offset = 0;
+
+	std::vector<VkVertexInputAttributeDescription> attributeDescriptions;
+
+	for (unsigned i = 0; i < attribsSizes.size(); i++)
+	{
+		vertexAttrib.binding = 0;							// From which binding the per-vertex data comes.
+		vertexAttrib.location = location;					// Directive "location" of the input in the vertex shader.
+		vertexAttrib.format = attribsFormats[i];			// Type of data for the attribute: VK_FORMAT_ ... R32_SFLOAT (float), R32G32_SFLOAT (vec2), R32G32B32_SFLOAT (vec3), R32G32B32A32_SFLOAT (vec4), R64_SFLOAT (64-bit double), R32G32B32A32_UINT (uvec4: 32-bit unsigned int), R32G32_SINT (ivec2: 32-bit signed int)...
+		vertexAttrib.offset = offset;						// Number of bytes since the start of the per-vertex data to read from. // offsetof(VertexPCT, pos);	
+
+		location++;
+		offset += attribsSizes[i];
+		attributeDescriptions.push_back(vertexAttrib);
+	}
+
+	return attributeDescriptions;
+}
+
+VertexSet::VertexSet() : vertexSize(0), buffer(nullptr), capacity(0), numVertex(0) { }
+
+VertexSet::VertexSet(size_t vertexSize)
+	: vertexSize(vertexSize), capacity(8), numVertex(0)
+{
+	this->buffer = new char[capacity * vertexSize];
+}
+
+VertexSet::~VertexSet()
+{
+#ifdef DEBUG_RESOURCES
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+#endif
+
+	if (buffer) delete[] buffer;
+};
+
+VertexSet& VertexSet::operator=(const VertexSet& obj)
+{
+	if (&obj == this) return *this;
+
+	numVertex = obj.numVertex;
+	vertexSize = obj.vertexSize;
+	capacity = obj.capacity;
+
+	delete[] buffer;
+	buffer = new char[capacity * vertexSize];
+	std::memcpy(buffer, obj.buffer, totalBytes());
+
+	return *this;
+}
+
+VertexSet::VertexSet(const VertexSet& obj)
+{
+	numVertex = obj.numVertex;
+	vertexSize = obj.vertexSize;
+	capacity = obj.capacity;
+
+	buffer = new char[capacity * vertexSize];
+	std::memcpy(buffer, obj.buffer, totalBytes());
+}
+
+size_t VertexSet::totalBytes() const { return numVertex * vertexSize; }
+
+size_t VertexSet::size() const { return numVertex; }
+
+char* VertexSet::data() const { return buffer; }
+
+void* VertexSet::getElement(size_t i) const { return &(buffer[i * vertexSize]); }
+
+void VertexSet::printElement(size_t i) const
+{
+	float* ptr = (float*)getElement(i);
+	size_t size = vertexSize / sizeof(float);
+	for (size_t i = 0; i < size; i++)
+		std::cout << *((float*)ptr + i) << ", ";
+	std::cout << std::endl;
+}
+
+void VertexSet::printAllElements() const
+{
+	for (size_t i = 0; i < numVertex; i++)
+		printElement(i);
+}
+
+size_t VertexSet::getNumVertex() const { return numVertex; }
+
+void VertexSet::push_back(const void* element)
+{
+	// Resize buffer if required
+	if (numVertex == capacity)
+		reserve(2 * capacity);
+
+	std::memcpy(&buffer[totalBytes()], (char*)element, vertexSize);
+	numVertex++;
+}
+
+void VertexSet::reserve(unsigned newCapacity)
+{
+	if (newCapacity > capacity)
+	{
+		char* temp = new char[newCapacity * vertexSize];
+		std::memcpy(temp, buffer, totalBytes());
+		delete[] buffer;
+		buffer = temp;
+		capacity = newCapacity;
+	}
+	else if (newCapacity < capacity)
+	{
+		char* temp = new char[newCapacity * vertexSize];
+		std::memcpy(temp, buffer, newCapacity * vertexSize);
+		delete[] buffer;
+		buffer = temp;
+		capacity = newCapacity;
+	}
+}
+
+void VertexSet::reset(size_t vertexSize, size_t numOfVertex, const void* buffer)
+{
+	if (buffer) delete[] this->buffer;
+
+	this->vertexSize = vertexSize;
+	this->numVertex = numOfVertex;
+
+	capacity = pow(2, 1 + (int)(log(numOfVertex) / log(2)));		// log b (M) = ln(M) / ln(b)
+	this->buffer = new char[capacity * vertexSize];
+	std::memcpy(this->buffer, buffer, totalBytes());
+}
+
+void VertexSet::reset(size_t vertexSize)
+{
+	if (buffer) delete[] this->buffer;
+
+	this->vertexSize = vertexSize;
+	numVertex = 0;
+	capacity = 8;
+
+	this->buffer = new char[capacity * vertexSize];
+}
 
 VertexesLoader::VertexesLoader(size_t vertexSize, std::initializer_list<VerticesModifier*> modifiers)
 	: vertexSize(vertexSize), modifiers(modifiers) { }
@@ -685,8 +863,8 @@ void ShaderIncluder::ReleaseInclude(shaderc_include_result* data)
 
 // TEXTURE --------------------------------------------------------
 
-Texture::Texture(VulkanCore& c, const std::string& id, VkImage textureImage, VkDeviceMemory textureImageMemory, VkImageView textureImageView, VkSampler textureSampler)
-	: c(c), id(id), textureImage(textureImage), textureImageMemory(textureImageMemory), textureImageView(textureImageView), textureSampler(textureSampler) { }
+Texture::Texture(const std::string& id, VulkanCore& c, VkImage textureImage, VkDeviceMemory textureImageMemory, VkImageView textureImageView, VkSampler textureSampler)
+	: id(id), texture(c, textureImage, textureImageMemory, textureImageView, textureSampler) { }
 
 Texture::~Texture()
 {
@@ -694,12 +872,12 @@ Texture::~Texture()
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
 
-	vkDestroySampler(c.device, textureSampler, nullptr);
-	vkDestroyImage(c.device, textureImage, nullptr);
-	vkDestroyImageView(c.device, textureImageView, nullptr);
-	vkFreeMemory(c.device, textureImageMemory, nullptr);
-	c.memAllocObjects--;
-	//c.destroyBuffer(c.device, textureImage, textureImageMemory);
+	texture.destroy();
+	//vkDestroySampler(c.device, textureSampler, nullptr);
+	//vkDestroyImage(c.device, textureImage, nullptr);
+	//vkDestroyImageView(c.device, textureImageView, nullptr);
+	//vkFreeMemory(c.device, textureImageMemory, nullptr);
+	//c.memAllocObjects--;
 }
 
 TextureLoader::TextureLoader(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode)
@@ -727,9 +905,9 @@ std::shared_ptr<Texture> TextureLoader::loadTexture(PointersManager<std::string,
 	std::pair<VkImage, VkDeviceMemory> image = createTextureImage(pixels, texWidth, texHeight, mipLevels, r);
 	VkImageView textureImageView             = createTextureImageView(std::get<VkImage>(image), mipLevels, r.c);
 	VkSampler textureSampler                 = createTextureSampler(mipLevels, r.c);
-	
+
 	// Create and save texture object
-	return loadedTextures.emplace(id, r.c, id, std::get<VkImage>(image), std::get<VkDeviceMemory>(image), textureImageView, textureSampler);
+	return loadedTextures.emplace(id, std::ref(id), std::ref(r.c), std::get<VkImage>(image), std::get<VkDeviceMemory>(image), textureImageView, textureSampler);
 }
 
 std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned char* pixels, int32_t texWidth, int32_t texHeight, uint32_t& mipLevels, Renderer& r)

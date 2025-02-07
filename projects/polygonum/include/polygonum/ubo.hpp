@@ -6,8 +6,8 @@
 // Forward declarations ----------
 
 class VulkanCore;
-class Renderer;
 class SwapChain;
+class Renderer;
 
 // Prototypes ----------
 

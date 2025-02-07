@@ -1,7 +1,6 @@
 #include <iostream>
 
 #include "polygonum/ecs.hpp"
-#include "polygonum/commons.hpp"
 
 
 Component::Component()

@@ -5,14 +5,18 @@
 #include <mutex>
 #include <queue>
 #include <cstdint>
+#include <thread>
 //#include <cstdlib>			// EXIT_SUCCESS, EXIT_FAILURE
 //#include <cstdint>			// UINT32_MAX
 //#include <algorithm>			// std::min / std::max
 
 #include "polygonum/toolkit.hpp"
-#include "polygonum/models.hpp"
-#include "polygonum/commons.hpp"
 #include "polygonum/input.hpp"
+
+
+// Forward declarations ----------
+
+class ModelsManager;
 
 
 // Macros & names ----------
@@ -28,7 +32,6 @@ const bool enableValidationLayers = false;
 // Prototypes ----------
 
 class VulkanCore;
-class Renderer;
 
 struct QueueFamilyIndices;
 struct SwapChainSupportDetails;
@@ -43,8 +46,6 @@ class  Commander;
 class RenderPipeline;
 class RP_DS;
 class RP_DS_PP;
-
-class LoadingWorker;
 
 
 // Definitions ----------
@@ -71,7 +72,7 @@ struct SwapChainSupportDetails
 class Image
 {
 public:
-	Image(VulkanCore& core);
+	Image(VulkanCore& core, VkImage image = nullptr, VkDeviceMemory memory = nullptr, VkImageView view = nullptr, VkSampler sampler = nullptr);
 
 	void destroy();
 
@@ -84,8 +85,8 @@ public:
 	
 	VkImage			image;		//!< Image object
 	VkDeviceMemory	memory;		//!< Device memory object
-	VkImageView		view;		//!< References a part of the image to be used (subset of its pixels). Required for being able to access it.
-	VkSampler		sampler;	//!< Images are accessed through image views rather than directly
+	VkImageView		view;		//!< References a part of the image to be used (subset of its pixels). Required for being able to access it (images are accessed through image views rather than directly).
+	VkSampler		sampler;	//!< Sampler object (it applies filtering and transformations to an image). It is a distinct object that provides an interface to extract colors from an image. It can be applied to any image you want(1D, 2D or 3D).
 
 private:
 	VulkanCore& c;
@@ -417,152 +418,6 @@ protected:
 	void createRenderPass() override;
 	void createImageResources() override;
 	void destroyAttachments() override;
-};
-
-/// Reponsible for the loading thread and its processes.
-class LoadingWorker
-{
-public:
-	LoadingWorker(Renderer* renderer, int waitTime);
-	~LoadingWorker();
-
-	static enum Task { none, construct, delet };   //!< Used in LoadingWorker::newTask().
-
-	std::mutex mutModels;   //!< for Renderer::models
-	std::mutex mutTasks;   //!< for LoadingWorker::tasks
-
-	std::mutex mutModelTP;
-
-	std::mutex mutLoad;			//!< for Renderer::modelsToLoad
-	std::mutex mutDelete;		//!< for Renderer::modelsToDelete
-	std::mutex mutResources;	//!< for Renderer::shaders & Renderer::textures
-
-	void start();
-	void stop();
-	void newTask(key64 key, Task task);
-
-private:
-	Renderer& r;
-
-	std::queue<std::pair<key64, LoadingWorker::Task>> tasks;   //!< FIFO queue
-	std::unordered_map<key64, ModelData> modelTP;   //!< Model To Process: A model is moved here temporarily for processing. After processing, it's tranferred to its final destination.
-
-	int						waitTime;				//!< Time (milliseconds) the loading-thread wait till next check.
-	bool					runThread;				//!< Signals whether the secondary thread (loadingThread) should be running.
-	std::thread				thread_loadModels;		//!< Thread for loading new models. Initiated in the constructor. Finished if glfwWindowShouldClose
-
-	/**
-		@brief Load and delete models (including their shaders and textures)
-
-		<ul> Process:
-			<li>  Initializes and moves models from modelsToLoad to models </li>
-			<li>  Deletes models from modelsToDelete </li>
-				<li> Deletes shaders and textures with counter == 0 </li>
-		</ul>
-	*/
-	void thread_loadData(Renderer& renderer, ModelsManager& models, Commander& commander);
-	void extractModel(ModelsManager& models, key64 key);   //!< Extract model from "models" to "modelTP"
-	void returnModel(ModelsManager& models, key64 key);   //!< Extract model from "modelTP" to "models"
-
-};
-
-// LOOK Restart the Renderer object after finishing the render loop
-/**
-*   @brief Responsible for making the rendering (render loop). Manages models, textures, input, camera...
-*
-*	It creates a VulkanEnvironment and, when the user wants, a ModelData (newModel()).
-*/
-class Renderer
-{
-protected:
-	const uint32_t ADDITIONAL_SWAPCHAIN_IMAGES = 3;   //!< (1) Total number of swapchain images = swapChain_capabilities_minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES
-	const uint32_t MAX_FRAMES_IN_FLIGHT = 4;   //!< (2) How many frames should be processed concurrently.
-
-	friend ResourcesLoader;
-	friend LoadingWorker;
-	friend ModelData;
-	friend UBO;
-	friend VertexesLoader;
-	friend TextureLoader;
-
-	VulkanCore c;
-	SwapChain swapChain;					// Final color. Swapchain elements.
-	Commander commander;
-	std::shared_ptr<RenderPipeline> rp;		//!< Render pipeline
-	Timer timer, profiler;
-	ModelsManager models;
-	PointersManager<std::string, Texture> textures;			//!< Set of textures
-	PointersManager<std::string, Shader> shaders;			//!< Set of shaders
-	LoadingWorker worker;
-
-	size_t renderedFramesCount; //!< Number of frames rendered
-	int maxFPS; //!< Maximum FPS (= 30 by default).
-
-	key64 lightingPass; //!< Optional (createLighting())
-	key64 postprocessingPass; //!< Optional (createPostprocessing())
-
-	// Main methods:
-
-	/**
-	*	Acquire image from swap chain, execute command buffer with that image as attachment in the framebuffer, and return the image to the swap chain for presentation.
-	*	This method performs 3 operations asynchronously (the function call returns before the operations are finished, with undefined order of execution):
-	*	<ul>
-	*		<li>vkAcquireNextImageKHR: Acquire an image from the swap chain (imageAvailableSemaphores)</li>
-	*		<li>vkQueueSubmit: Execute the command buffer with that image as attachment in the framebuffer (renderFinishedSemaphores, inFlightFences)</li>
-	*		<li>vkQueuePresentKHR: Return the image to the swap chain for presentation</li>
-	*	</ul>
-	*	Each of the operations depend on the previous one finishing, so we need to synchronize the swap chain events.
-	*	Two ways: semaphores (mainly designed to synchronize within or across command queues. Best fit here) and fences (mainly designed to synchronize your application itself with rendering operation).
-	*	Synchronization examples: https://github.com/KhronosGroup/Vulkan-Docs/wiki/Synchronization-Examples#swapchain-image-acquire-and-present
-	*/
-	/// Draw a frame: Wait for previous command buffer execution, acquire image from swapchain, update states and command buffer, submit command buffer for execution, and present result for display on screen.
-	void drawFrame();
-
-	/// Update uniforms, transformation matrices, add/delete new models/textures. Transformation matrices (MVP) will be generated each frame.
-	void updateStates(uint32_t currentImage);
-
-	/// Callback used by the client for updating states of their models
-	void(*userUpdate) (Renderer& rend);
-
-	void cleanup();   //!< Cleanup after render loop terminates
-	void recreateSwapChain();   //!< Used in drawFrame() in case the window surface changes (like when window resizing), making swap chain no longer compatible with it. Here, we catch these events (when acquiring/submitting an image from/to the swap chain) and recreate the swap chain.
-
-public:
-	// LOOK what if firstModel.size() == 0
-	/// Constructor. Requires a callback for user updates (update model matrix, add models, delete models...).
-	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOinfo globalUBO_vs, UBOinfo globalUBO_fs);
-	virtual ~Renderer();
-
-	UBO globalUBO_vs;
-	UBO globalUBO_fs;
-
-	void renderLoop();	//!< Create command buffer and start render loop.
-
-	key64 newModel(ModelDataInfo& modelInfo);   //!< Create (partially) a new model in the list modelsToLoad. Used for rendering a model.
-	void deleteModel(key64 key);   //!< Move model from list models (or modelsToLoad) to list modelsToDelete. If the model is being fully constructed (by the worker), it waits until it finishes. Note: When the app closes, it destroys Renderer. Thus, don't use this method at app-closing (like in an object destructor): if Renderer is destroyed first, the app may crash.
-	ModelData* getModel(key64 key);
-
-	void setInstances(key64 key, size_t numberOfRenders);
-	void setInstances(std::vector<key64>& keys, size_t numberOfRenders);
-
-	void setMaxFPS(int maxFPS);
-
-	Timer& getTimer();		//!< Returns the timer object (provides access to time data).
-	size_t getRendersCount(key64 key);
-	size_t getFrameCount();
-	size_t getFPS();
-	size_t getModelsCount();
-	size_t getCommandsCount();
-	size_t loadedShaders();	//!< Returns number of shaders in Renderer:shaders
-	size_t loadedTextures();	//!< Returns number of textures in Renderer:textures
-	IOmanager& getIO();			//!< Get access to the IO manager
-	int getMaxMemoryAllocationCount();			//!< Max. number of valid memory objects
-	int getMemAllocObjects();					//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount)
-
-	void createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader);
-	void updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights);
-	void createPostprocessingPass(std::string vertShaderPath, std::string fragShaderPath);
-	void updatePostprocessingPass();
 };
 
 

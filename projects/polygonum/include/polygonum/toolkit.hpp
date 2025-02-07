@@ -9,8 +9,10 @@
 /*
   - Print data
   - MVP Matrix
+  - Bounding ops
   - Vertex sets
   - Maths
+  - Rotations
   - Timer
   - Algorithms
   - Data structures
@@ -23,8 +25,8 @@
 #define PRINT(...) printArgs(__VA_ARGS__)
 
 /// Print file name, line, and function.
-#define FILE_LINE_FUNC \
-    std::cerr << __FILE__ << ", " << __LINE__ << ", " << __func__ << "()" << std::endl;
+#define PRINT_FILE_LINE_FUNC \
+    std::cerr << __FILE__ << ", " << __func__ << " (" << __LINE__ << ")" << std::endl;
 
 /// Helper: Print a single argument
 template<typename T>
@@ -40,6 +42,51 @@ void printArgs(const T& first, const Args&... args)
 
 /// Helper: Base case to stop recursion
 void printArgs();
+
+/// Print the contents of a glm::matX. Useful for debugging.
+template<typename T>
+void printMat(const T& matrix)
+{
+	//const float* pSource = (const float*)glm::value_ptr(matrix);
+	glm::length_t length = matrix.length();
+	float output;
+
+	for (int i = 0; i < length; i++)
+	{
+		for (int j = 0; j < length; j++)
+			std::cout << ((abs(matrix[i][j]) < 0.0001) ? 0 : matrix[i][j]) << "  ";
+		//std::cout << ((abs(pSource[i * length + j]) < 0.0005) ? 0 : pSource[i * length + j]) << "  ";
+
+		std::cout << std::endl;
+	}
+}
+
+/// Print the contents of a glm::vecX. Useful for debugging
+template<typename T>
+void printVec(const T& vec)
+{
+	//const float* pSource = (const float*)glm::value_ptr(matrix);
+	glm::length_t length = vec.length();
+
+	for (int i = 0; i < length; i++)
+		std::cout << ((abs(vec[i]) < 0.0001) ? 0 : vec[i]) << "  ";
+
+	std::cout << std::endl;
+}
+
+/// Print the contents of a T[3] array. Useful for debugging
+template<typename T>
+void printVec(const T& vec, unsigned length)
+{
+	for (int i = 0; i < length; i++)
+		std::cout << ((abs(vec[i]) < 0.0001) ? 0 : vec[i]) << "  ";
+
+	std::cout << std::endl;
+}
+
+/// Print string (or any printable object)
+template<typename T>
+void printS(const T& vec) { std::cout << T << std::endl; }
 
 
 // MVP Matrix -----------------------------------------------------------------
@@ -73,56 +120,14 @@ glm::mat3 toMat3(const T &matrix)
     return result;
 }
 
-/// Print the contents of a glm::matX. Useful for debugging.
-template<typename T>
-void printMat(const T& matrix)
-{
-    //const float* pSource = (const float*)glm::value_ptr(matrix);
-    glm::length_t length = matrix.length();
-    float output;
 
-    for (int i = 0; i < length; i++)
-    {
-        for (int j = 0; j < length; j++)
-            std::cout << ((abs(matrix[i][j]) < 0.0001) ? 0 : matrix[i][j]) << "  ";
-            //std::cout << ((abs(pSource[i * length + j]) < 0.0005) ? 0 : pSource[i * length + j]) << "  ";
-
-        std::cout << std::endl;
-    }
-}
-
-/// Print the contents of a glm::vecX. Useful for debugging
-template<typename T>
-void printVec(const T& vec)
-{
-    //const float* pSource = (const float*)glm::value_ptr(matrix);
-    glm::length_t length = vec.length();
-
-    for (int i = 0; i < length; i++)
-        std::cout << ((abs(vec[i]) < 0.0001) ? 0 : vec[i]) << "  ";
-
-    std::cout << std::endl;
-}
-
-/// Print the contents of a T[3] array. Useful for debugging
-template<typename T>
-void printVec(const T& vec, unsigned length)
-{
-	for (int i = 0; i < length; i++)
-		std::cout << ((abs(vec[i]) < 0.0001) ? 0 : vec[i]) << "  ";
-
-	std::cout << std::endl;
-}
-
-/// Print string (or any printable object)
-template<typename T>
-void printS(const T& vec) { std::cout << T << std::endl; }
+// Bounding ops -----------------------------------------------------------------
 
 struct Plane;
 struct Frustum;
 struct BoundingShape;
-  struct Sphere;
-  struct AABB;
+struct Sphere;
+struct AABB;
 
 // ADT for bounding shapes (usually, polygons) used for enveloping objects.
 struct BoundingShape
@@ -245,11 +250,20 @@ public:
 extern double pi;
 extern double e;
 
+extern glm::vec3 xAxis;
+extern glm::vec3 yAxis;
+extern glm::vec3 zAxis;
+extern glm::vec3 zero;
+
 float getDist(const glm::vec3& a, const glm::vec3& b);
 
 float getSqrDist(const glm::vec3& a, const glm::vec3& b);
 
 glm::vec3 unitVec(glm::vec3& vec);
+
+/// Get angle (radians) between 2 vectors from arbitrary origin
+float angleBetween(glm::vec3 a, glm::vec3 b, glm::vec3 origin);
+float angleBetween(glm::vec3 a, glm::vec3 b);
 
 glm::vec3 reflect(const glm::vec3& lightRay, const glm::vec3& normal);
 
@@ -285,6 +299,25 @@ float safeMod(float a, float b);
 glm::vec3 safeMod(const glm::vec3& a, float b);
 
 float getSlope(const glm::vec3& groundNormal, const glm::vec3& upNormal);
+
+
+// Rotations -----------------------------------------------------------------
+
+extern glm::vec4 noRotQuat;   //!< Quaternion representing no rotation
+
+/// Get rotation quaternion. Quaternions are a 4 dimensional extension of complex numbers. Useful for rotations, and more efficient than Rotation matrices (Euler angles) (https://danceswithcode.net/engineeringnotes/quaternions/quaternions.html).
+glm::vec4 getRotQuat(glm::vec3 rotAxis, float angle);
+
+/// Get the Hamilton product of 2 or 3 quaternions (q1 rotation first, then q2, then q3). The product of two rotation quaternions (A * B) will be equivalent to rotation B followed by rotation A (around the rotation axes the object has at the beginning).
+glm::vec4 productQuat(const glm::vec4& q1, const glm::vec4& q2, const glm::vec4& q3);
+glm::vec4 productQuat(const glm::vec4& q1, const glm::vec4& q2);
+
+/// Use a rotation quaternion for rotating a 3D point. Active rotation (point rotated with respect to coordinate system). 
+glm::vec3 rotatePoint(const glm::vec4& rotQuat, const glm::vec3& point);
+
+/// Get rotation matrix. Use it to rotate a point (rotMatrix * point = point_rotated) (http://answers.google.com/answers/threadview/id/361441.html) (https://www.mathworks.com/help/nav/ref/quaternion.rotmat.html).
+glm::mat3 getRotationMatrix(glm::vec3 rotAxis, float angle);
+glm::mat4 getRotationMatrix(glm::vec4 quat);
 
 
 // Timer -----------------------------------------------------------------

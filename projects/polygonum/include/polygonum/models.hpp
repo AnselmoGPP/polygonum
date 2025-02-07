@@ -4,17 +4,19 @@
 //#include <functional>						// std::function (function wrapper that stores a callable object)
 #include <mutex>
 
-#include "polygonum/vertex.hpp"
 #include "polygonum/ubo.hpp"
 #include "polygonum/importer.hpp"
-#include "polygonum/commons.hpp"
 
-#define LINE_WIDTH 1.0f
 
+// Forward declarations ----------
 
 class Renderer;
 class RenderPipeline;
 
+
+// Definitions ----------
+
+#define LINE_WIDTH 1.0f
 
 struct ModelDataInfo
 {

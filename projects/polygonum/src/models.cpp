@@ -1,7 +1,7 @@
 #include <iostream>
 
 #include "polygonum/models.hpp"
-#include "polygonum/environment.hpp"
+#include "polygonum/renderer.hpp"
 
 
 ModelDataInfo::ModelDataInfo()
@@ -636,8 +636,8 @@ void ModelData::createDescriptorSets()
 		std::vector<VkDescriptorImageInfo> imageInfo(textures.size());
 		for (size_t i = 0; i < textures.size(); i++) {
 			imageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageInfo[i].imageView = textures[i]->textureImageView;
-			imageInfo[i].sampler = textures[i]->textureSampler;
+			imageInfo[i].imageView = textures[i]->texture.view;
+			imageInfo[i].sampler = textures[i]->texture.sampler;
 		}
 
 		// Input attachments
