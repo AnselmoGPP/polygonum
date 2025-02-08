@@ -99,7 +99,7 @@ public:
 
 	void createSwapChain();
 	void destroy();
-	size_t imagesCount();
+	size_t numImages();
 	static SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device, VkSurfaceKHR surface);
 
 	VkSwapchainKHR								swapChain;		//!< Swap chain object.
@@ -300,9 +300,11 @@ public:
 			<li>https://www.reddit.com/r/vulkan/comments/hhoktq/rendering_multiple_objects/ </li>
 		</ul>
 	*/
-	void createCommandBuffers(ModelsManager& models, std::shared_ptr<RenderPipeline> renderPipeline, size_t swapChainImagesCount, size_t frameIndex);
-	void createCommandPool(size_t numFrames);
+	void updateCommandBuffers(ModelsManager& models, std::shared_ptr<RenderPipeline> renderPipeline, size_t swapChainImagesCount, size_t frameIndex);
+	void createCommandPool(size_t numFrames);   //!< Commands in Vulkan (drawing, memory transfers, etc.) are not executed directly using function calls, you have to record all of the operations you want to perform in command buffer objects. After setting up the drawing commands, just tell Vulkan to execute them in the main loop.
+	void createCommandBuffers(size_t numSwapChainImages, size_t numFrames);
 	uint32_t getNextFrame();   //!< Increment currentFrame by one, but loop around when reaching "maxFramesInFlight".
+	size_t numFrames();
 
 	// Single time commands
 	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels);

@@ -8,7 +8,7 @@ void Renderer::recreateSwapChain()
 #ifdef DEBUG_RENDERER
 	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 #endif
-
+	
 	// 1. Get window size.
 	int width = 0, height = 0;
 	//io.getFramebufferSize(&width, &height);
@@ -28,18 +28,18 @@ void Renderer::recreateSwapChain()
 	models.cleanup_pipelines_and_descriptors(&worker.mutModels);
 	rp->destroyRenderPipeline();
 	swapChain.destroy();
-
+	
 	// 4. Create swapchain and related resources.
 	swapChain.createSwapChain();				// Recreate the swap chain.
 
 	rp->createRenderPipeline();
 
 	models.create_pipelines_and_descriptors(&worker.mutModels);
-
+	PRINT("---C");
 	uint32_t frameIndex = commander.getNextFrame();
-	const std::lock_guard<std::mutex> lock(commander.mutCommandPool[frameIndex]);
-	commander.createCommandBuffers(models, rp, swapChain.imagesCount(), frameIndex);   // Command buffers directly depend on the swap chain images.
-	commander.imagesInFlight.resize(swapChain.imagesCount(), VK_NULL_HANDLE);
+	commander.createCommandBuffers(swapChain.numImages(), commander.numFrames());   // Command buffers directly depend on the swap chain images.
+	commander.imagesInFlight.resize(swapChain.numImages(), VK_NULL_HANDLE);
+	PRINT("---D");
 }
 
 Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOinfo globalUBO_vs, UBOinfo globalUBO_fs) :
@@ -155,11 +155,10 @@ void Renderer::drawFrame()
 		//vkWaitForFences(e.c.device, 1, &lastFence, VK_TRUE, UINT64_MAX);
 		vkResetFences(c.device, 1, &commander.framesInFlight[frameIndex]);	// Reset the fence to the unsignaled state.
 
-		const std::lock_guard<std::mutex> lock(commander.mutCommandPool[frameIndex]);		// vkQueueWaitIdle(e.c.graphicsQueue) was called before, in drawFrame()
 		//vkFreeCommandBuffers(e.c.device, e.commandPools[frameIndex], static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());	// Any primary command buffer that is in the recording or executable state and has any element of pCommandBuffers recorded into it, becomes invalid.
-		vkResetCommandPool(c.device, commander.commandPools[frameIndex], 0);
+		//vkResetCommandPool(c.device, commander.commandPools[frameIndex], 0);
 		//vkResetCommandBuffer(commandBuffers[frameIndex], 0);
-		commander.createCommandBuffers(models, rp, swapChain.imagesCount(), frameIndex);
+		commander.updateCommandBuffers(models, rp, swapChain.numImages(), frameIndex);
 	}
 
 #if defined(DEBUG_REND_PROFILER)
@@ -238,7 +237,7 @@ void Renderer::renderLoop()
 	std::cout << typeid(*this).name() << "::" << __func__ << " begin" << std::endl;
 #endif
 
-	commander.createCommandBuffers(models, rp, swapChain.imagesCount(), commander.getNextFrame());
+	commander.updateCommandBuffers(models, rp, swapChain.numImages(), commander.getNextFrame());
 	worker.start();
 
 	timer.startTimer();

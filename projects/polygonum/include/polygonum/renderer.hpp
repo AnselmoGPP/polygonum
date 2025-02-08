@@ -26,6 +26,7 @@ public:
 	void start();
 	void stop();
 	void newTask(key64 key, Task task);
+	void waitIdle();   //!< Wait for loading thread to be idle
 
 private:
 	Renderer& r;

@@ -121,7 +121,7 @@ void SwapChain::destroy()
 	vkDestroySwapchainKHR(c.device, swapChain, nullptr);
 }
 
-size_t SwapChain::imagesCount() { return images.size(); }
+size_t SwapChain::numImages() { return images.size(); }
 
 void DeviceData::fillWithDeviceData(VkPhysicalDevice physicalDevice)
 {
@@ -217,6 +217,7 @@ Commander::Commander(VulkanCore& core, size_t swapChainImagesCount, size_t maxFr
 
 	createSynchronizers(swapChainImagesCount, maxFramesInFlight);
 	createCommandPool(maxFramesInFlight);
+	createCommandBuffers(swapChainImagesCount, maxFramesInFlight);
 }
 
 void Commander::createSynchronizers(size_t numSwapchainImages, size_t numFrames)
@@ -241,7 +242,7 @@ void Commander::createSynchronizers(size_t numSwapchainImages, size_t numFrames)
 			throw std::runtime_error("Failed to create synchronization objects for a frame!");
 }
 
-void Commander::createCommandBuffers(ModelsManager& models, std::shared_ptr<RenderPipeline> renderPipeline, size_t swapChainImagesCount, size_t frameIndex)
+void Commander::updateCommandBuffers(ModelsManager& models, std::shared_ptr<RenderPipeline> renderPipeline, size_t swapChainImagesCount, size_t frameIndex)
 {
 #if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
 	std::cout << typeid(*this).name() << "::" << __func__ << "(" << frameIndex << ") BEGIN" << std::endl;
@@ -249,7 +250,9 @@ void Commander::createCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 
 	commandsCount = 0;
 	VkDeviceSize offsets[] = { 0 };
-
+	ModelData* model;
+	std::vector<VkCommandBuffer>& CBs = commandBuffers[frameIndex];   // Take the command buffers for this frame.
+	/*
 	// Commmand buffer allocation
 	std::vector<VkCommandBuffer>& commandBufferSet = commandBuffers[frameIndex];
 	commandBufferSet.resize(swapChainImagesCount);
@@ -262,17 +265,22 @@ void Commander::createCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 
 	//const std::lock_guard<std::mutex> lock(e.mutCommandPool);	// already called before calling createCommandBuffers() 
 
+	// <<< vkResetCommandBuffer(commandBuffers[frameIndex], 0);
 	if (vkAllocateCommandBuffers(c.device, &allocInfo, commandBufferSet.data()) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate command buffers!");
+	*/
+
+	const std::lock_guard<std::mutex> lock(mutCommandPool[frameIndex]);		// vkQueueWaitIdle(e.c.graphicsQueue) was called before, in drawFrame()
 
 	// Start command buffer recording (one per swapChainImage)
-	ModelData* model;
-
-	for (size_t i = 0; i < commandBufferSet.size(); i++)		// for each SWAPCHAIN IMAGE
+	for (size_t i = 0; i < CBs.size(); i++)		// for each SWAPCHAIN IMAGE
 	{
 #ifdef DEBUG_COMMANDBUFFERS
 	std::cout << "  Command buffer " << i << std::endl;
 #endif
+
+		if(vkResetCommandBuffer(CBs[i], 0) != VK_SUCCESS)
+			throw std::runtime_error("Failed to reset command buffer!");
 
 		// Start command buffer recording
 		VkCommandBufferBeginInfo beginInfo{};
@@ -280,7 +288,7 @@ void Commander::createCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 		beginInfo.flags = 0;			// [Optional] VK_COMMAND_BUFFER_USAGE_ ... ONE_TIME_SUBMIT_BIT (the command buffer will be rerecorded right after executing it once), RENDER_PASS_CONTINUE_BIT (secondary command buffer that will be entirely within a single render pass), SIMULTANEOUS_USE_BIT (the command buffer can be resubmitted while it is also already pending execution).
 		beginInfo.pInheritanceInfo = nullptr;		// [Optional] Only relevant for secondary command buffers. It specifies which state to inherit from the calling primary command buffers.
 
-		if (vkBeginCommandBuffer(commandBufferSet[i], &beginInfo) != VK_SUCCESS)		// If a command buffer was already recorded once, this call resets it. It's not possible to append commands to a buffer at a later time.
+		if (vkBeginCommandBuffer(CBs[i], &beginInfo) != VK_SUCCESS)		// If a command buffer was already recorded once, this call resets it. It's not possible to append commands to a buffer at a later time.
 			throw std::runtime_error("Failed to begin recording command buffer!");
 
 		for (size_t rp = 0; rp < models.keys.size(); rp++)		// for each RENDER PASS (color pass, post-processing...)
@@ -289,13 +297,13 @@ void Commander::createCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 	std::cout << "    Render pass " << rp << std::endl;
 #endif
 
-			vkCmdBeginRenderPass(commandBufferSet[i], &renderPipeline->renderPasses[rp].renderPassInfos[i], VK_SUBPASS_CONTENTS_INLINE);	// Start RENDER PASS. VK_SUBPASS_CONTENTS_INLINE (the render pass commands will be embedded in the primary command buffer itself and no secondary command buffers will be executed), VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS (the render pass commands will be executed from secondary command buffers).
-			//vkCmdNextSubpass(commandBufferSet[i], VK_SUBPASS_CONTENTS_INLINE);						// Start SUBPASS
+			vkCmdBeginRenderPass(CBs[i], &renderPipeline->renderPasses[rp].renderPassInfos[i], VK_SUBPASS_CONTENTS_INLINE);	// Start RENDER PASS. VK_SUBPASS_CONTENTS_INLINE (the render pass commands will be embedded in the primary command buffer itself and no secondary command buffers will be executed), VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS (the render pass commands will be executed from secondary command buffers).
+			//vkCmdNextSubpass(CBs[i], VK_SUBPASS_CONTENTS_INLINE);						// Start SUBPASS
 
 			for (size_t sp = 0; sp < models.keys[rp].size(); sp++)		// for each SUB-PASS
 			{
-				if (sp > 0) vkCmdNextSubpass(commandBufferSet[i], VK_SUBPASS_CONTENTS_INLINE);   // Start SUBPASS
-				//clearDepthBuffer(commandBufferSet[i]);		// Already done in createRenderPass() (loadOp). Previously used for implementing layers (Painter's algorithm).
+				if (sp > 0) vkCmdNextSubpass(CBs[i], VK_SUBPASS_CONTENTS_INLINE);   // Start SUBPASS
+				//clearDepthBuffer(CBs[i]);		// Already done in createRenderPass() (loadOp). Previously used for implementing layers (Painter's algorithm).
 
 				for (key64 key : models.keys[rp][sp])		// for each MODEL
 				{
@@ -306,28 +314,28 @@ void Commander::createCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 					model = &models.data[key];
 					if (model->getActiveInstancesCount() == 0) continue;
 
-					vkCmdBindPipeline(commandBufferSet[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->graphicsPipeline);	// Second parameter: Specifies if the pipeline object is a graphics or compute pipeline.
-					vkCmdBindVertexBuffers(commandBufferSet[i], 0, 1, &model->vert.vertexBuffer, offsets);
+					vkCmdBindPipeline(CBs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->graphicsPipeline);	// Second parameter: Specifies if the pipeline object is a graphics or compute pipeline.
+					vkCmdBindVertexBuffers(CBs[i], 0, 1, &model->vert.vertexBuffer, offsets);
 
 					if (model->vert.indexCount)		// has indices (it doesn't if data represents points)
-						vkCmdBindIndexBuffer(commandBufferSet[i], model->vert.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+						vkCmdBindIndexBuffer(CBs[i], model->vert.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
 					if (model->descriptorSets.size())	// has descriptor set (UBOs, textures, input attachments)
-						vkCmdBindDescriptorSets(commandBufferSet[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->pipelineLayout, 0, 1, &model->descriptorSets[i], 0, 0);
+						vkCmdBindDescriptorSets(CBs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->pipelineLayout, 0, 1, &model->descriptorSets[i], 0, 0);
 
 					if (model->vert.indexCount)		// has indices
-						vkCmdDrawIndexed(commandBufferSet[i], static_cast<uint32_t>(model->vert.indexCount), model->getActiveInstancesCount(), 0, 0, 0);
+						vkCmdDrawIndexed(CBs[i], static_cast<uint32_t>(model->vert.indexCount), model->getActiveInstancesCount(), 0, 0, 0);
 					else
-						vkCmdDraw(commandBufferSet[i], model->vert.vertexCount, model->getActiveInstancesCount(), 0, 0);
+						vkCmdDraw(CBs[i], model->vert.vertexCount, model->getActiveInstancesCount(), 0, 0);
 
 					commandsCount++;
 				}
 			}
 
-			vkCmdEndRenderPass(commandBufferSet[i]);
+			vkCmdEndRenderPass(CBs[i]);
 		}
 
-		if (vkEndCommandBuffer(commandBufferSet[i]) != VK_SUCCESS)
+		if (vkEndCommandBuffer(CBs[i]) != VK_SUCCESS)
 			throw std::runtime_error("Failed to record command buffer!");
 	}
 
@@ -1078,6 +1086,8 @@ uint32_t Commander::getNextFrame()
 	return lastFrame;
 }
 
+size_t Commander::numFrames() {	return maxFramesInFlight; }
+
 void Commander::freeCommandBuffers()
 {
 	for (uint32_t i = 0; i < commandBuffers.size(); i++)
@@ -1128,8 +1138,6 @@ uint32_t VulkanCore::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags p
 	throw std::runtime_error("Failed to find suitable memory type!");
 }
 
-// (11) <<<
-/// Commands in Vulkan (drawing, memory transfers, etc.) are not executed directly using function calls, you have to record all of the operations you want to perform in command buffer objects. After setting up the drawing commands, just tell Vulkan to execute them in the main loop.
 void Commander::createCommandPool(size_t numFrames)
 {
 #if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
@@ -1142,8 +1150,8 @@ void Commander::createCommandPool(size_t numFrames)
 	VkCommandPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 	poolInfo.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value();
-	poolInfo.flags = 0;	// [Optional]  VK_COMMAND_POOL_CREATE_ ... TRANSIENT_BIT (command buffers are rerecorded with new commands very often - may change memory allocation behavior), RESET_COMMAND_BUFFER_BIT (command buffers can be rerecorded individually, instead of reseting all of them together). Not necessary if we just record the command buffers at the beginning of the program and then execute them many times in the main loop.
-
+	poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;	// [Optional]  VK_COMMAND_POOL_CREATE_ ... TRANSIENT_BIT (command buffers are rerecorded with new commands very often - may change memory allocation behavior), RESET_COMMAND_BUFFER_BIT (command buffers can be rerecorded individually, instead of reseting all of them together). Not necessary if we just record the command buffers at the beginning of the program and then execute them many times in the main loop.
+	
 	commandPools.resize(numFrames);
 
 	for(VkCommandPool& commandPool : commandPools)
@@ -1153,6 +1161,25 @@ void Commander::createCommandPool(size_t numFrames)
 #if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
 	std::cout << typeid(*this).name() << "::" << __func__ << " END" << std::endl;
 #endif
+}
+
+void Commander::createCommandBuffers(size_t numSwapChainImages, size_t numFrames)
+{
+	for (size_t i = 0; i < numFrames; i++)
+	{
+		const std::lock_guard<std::mutex> lock(mutCommandPool[i]);
+
+		commandBuffers[i].resize(numSwapChainImages);
+
+		VkCommandBufferAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInfo.commandPool = commandPools[i];
+		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;   // VK_COMMAND_BUFFER_LEVEL_ ... PRIMARY (can be submitted to a queue for execution, but cannot be called from other command buffers), SECONDARY (cannot be submitted directly, but can be called from primary command buffers - useful for reusing common operations from primary command buffers).
+		allocInfo.commandBufferCount = (uint32_t)commandBuffers[i].size();   // Number of buffers to allocate.
+
+		if (vkAllocateCommandBuffers(c.device, &allocInfo, commandBuffers[i].data()) != VK_SUCCESS)
+			throw std::runtime_error("Failed to allocate command buffers!");
+	}
 }
 
 void Commander::transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t mipLevels)
@@ -1683,7 +1710,7 @@ void RenderPass::createFramebuffers(VulkanCore& c, SwapChain& swapChain)
 
 void RenderPass::createRenderPassInfo(SwapChain& swapChain)
 {
-	renderPassInfos.resize(swapChain.imagesCount());
+	renderPassInfos.resize(swapChain.numImages());
 
 	for (unsigned i = 0; i < renderPassInfos.size(); i++)
 	{
@@ -1717,7 +1744,7 @@ RP_DS::RP_DS(VulkanCore& core, SwapChain& swapChain, Commander& commander)
 
 	// Attachments -------------------------
 
-	std::vector<std::vector<std::vector<VkImageView*>>> allAttachments(swapChain.imagesCount());	// Attachments per swapchain image, per render pass.
+	std::vector<std::vector<std::vector<VkImageView*>>> allAttachments(swapChain.numImages());	// Attachments per swapchain image, per render pass.
 	for (unsigned i = 0; i < allAttachments.size(); i++)
 		allAttachments[i] = {
 			std::vector<VkImageView*>{ &position.view, &albedo.view, &normal.view, &specRoug.view, &depth.view },			// RP1. Color attachment differs for every swap chain image, but the same depth image can be used by all of them because only a single subpass is running at the same time due to our semaphores.
@@ -1725,7 +1752,7 @@ RP_DS::RP_DS(VulkanCore& core, SwapChain& swapChain, Commander& commander)
 	};
 
 	for (unsigned i = 0; i < renderPasses.size(); i++)
-		for (unsigned j = 0; j < swapChain.imagesCount(); j++)
+		for (unsigned j = 0; j < swapChain.numImages(); j++)
 			renderPasses[i].attachments.push_back(allAttachments[j][i]);
 
 	// clearValues -------------------------
@@ -2106,7 +2133,7 @@ RP_DS_PP::RP_DS_PP(VulkanCore& core, SwapChain& swapChain, Commander& commander)
 	};
 
 	// Attachments (order convention: input attachments, depth attachment, color attachments)
-	std::vector<std::vector<std::vector<VkImageView*>>> allAttachments(swapChain.imagesCount());	// Attachments per swapchain image, per render pass.
+	std::vector<std::vector<std::vector<VkImageView*>>> allAttachments(swapChain.numImages());	// Attachments per swapchain image, per render pass.
 	for (unsigned i = 0; i < allAttachments.size(); i++)
 		allAttachments[i] = {
 			std::vector<VkImageView*>{ &depth.view, &position.view, &albedo.view, &normal.view, &specRoug.view },	// RP1. Color attachment differs for every swap chain image, but the same depth image can be used by all of them because only a single subpass is running at the same time due to our semaphores.
@@ -2116,7 +2143,7 @@ RP_DS_PP::RP_DS_PP(VulkanCore& core, SwapChain& swapChain, Commander& commander)
 		};
 	
 	for (unsigned i = 0; i < renderPasses.size(); i++)
-		for (unsigned j = 0; j < swapChain.imagesCount(); j++)
+		for (unsigned j = 0; j < swapChain.numImages(); j++)
 			renderPasses[i].attachments.push_back(allAttachments[j][i]);
 
 	// clearValues -------------------------
