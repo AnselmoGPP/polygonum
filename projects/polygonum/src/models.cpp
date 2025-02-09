@@ -88,7 +88,6 @@ ModelData::ModelData(ModelData&& other) noexcept
 	descriptorPool(other.descriptorPool),
 	renderPassIndex(other.renderPassIndex),
 	subpassIndex(other.subpassIndex),
-	layer(other.layer),
 	activeInstances(other.activeInstances),
 	resLoader(other.resLoader),
 	fullyConstructed(other.fullyConstructed),
@@ -129,7 +128,6 @@ ModelData& ModelData::operator=(ModelData&& other) noexcept
 		descriptorPool = other.descriptorPool;
 		renderPassIndex = other.renderPassIndex;
 		subpassIndex = other.subpassIndex;
-		layer = other.layer;
 		activeInstances = other.activeInstances;
 		resLoader = other.resLoader;
 		fullyConstructed = other.fullyConstructed;
@@ -157,7 +155,6 @@ ModelData& ModelData::operator=(ModelData&& other) noexcept
 		other.descriptorPool = other.descriptorPool;
 		other.renderPassIndex = 0;
 		other.subpassIndex = 0;
-		other.layer = 0;
 		other.activeInstances = 0;
 		other.resLoader = nullptr;
 		other.fullyConstructed = false;

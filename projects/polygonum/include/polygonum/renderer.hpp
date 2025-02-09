@@ -9,24 +9,22 @@
 class LoadingWorker
 {
 public:
-	LoadingWorker(Renderer* renderer, int waitTime);
+	LoadingWorker(Renderer* renderer);
 	~LoadingWorker();
 
 	static enum Task { none, construct, delet };   //!< Used in LoadingWorker::newTask().
 
 	std::mutex mutModels;   //!< for Renderer::models
-	std::mutex mutTasks;   //!< for LoadingWorker::tasks
+	std::mutex mutResources;   //!< for Renderer::shaders & Renderer::textures
 
-	std::mutex mutModelTP;
-
-	std::mutex mutLoad;			//!< for Renderer::modelsToLoad
-	std::mutex mutDelete;		//!< for Renderer::modelsToDelete
-	std::mutex mutResources;	//!< for Renderer::shaders & Renderer::textures
+	std::mutex mutTasks;
+	std::condition_variable cond;
 
 	void start();
 	void stop();
 	void newTask(key64 key, Task task);
 	void waitIdle();   //!< Wait for loading thread to be idle
+	size_t numTasks();
 
 private:
 	Renderer& r;
@@ -34,9 +32,8 @@ private:
 	std::queue<std::pair<key64, LoadingWorker::Task>> tasks;   //!< FIFO queue
 	std::unordered_map<key64, ModelData> modelTP;   //!< Model To Process: A model is moved here temporarily for processing. After processing, it's tranferred to its final destination.
 
-	int						waitTime;				//!< Time (milliseconds) the loading-thread wait till next check.
-	bool					runThread;				//!< Signals whether the secondary thread (loadingThread) should be running.
-	std::thread				thread_loadModels;		//!< Thread for loading new models. Initiated in the constructor. Finished if glfwWindowShouldClose
+	bool		stopThread;				//!< Signals whether the secondary thread (loadingThread) should be running.
+	std::thread	thread_loadModels;		//!< Thread for loading new models. Initiated in the constructor. Finished if glfwWindowShouldClose
 
 	/**
 		@brief Load and delete models (including their shaders and textures)

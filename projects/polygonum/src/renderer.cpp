@@ -19,9 +19,10 @@ void Renderer::recreateSwapChain()
 	}
 	std::cout << "New window size: " << width << ", " << height << std::endl;
 
-	// 2. Wait for device and graphics queue to be idle (so we don't touch resources that are in use).
+	// 2. Wait for device, graphics queue, and worker to be idle (so we don't touch resources that are in use).
 	vkDeviceWaitIdle(c.device);
 	c.queueWaitIdle(c.graphicsQueue, &commander.mutQueue);
+	worker.waitIdle();
 
 	// 3. Destroy swapchain and related resources.
 	commander.freeCommandBuffers();
@@ -35,11 +36,10 @@ void Renderer::recreateSwapChain()
 	rp->createRenderPipeline();
 
 	models.create_pipelines_and_descriptors(&worker.mutModels);
-	PRINT("---C");
+	
 	uint32_t frameIndex = commander.getNextFrame();
 	commander.createCommandBuffers(swapChain.numImages(), commander.numFrames());   // Command buffers directly depend on the swap chain images.
-	commander.imagesInFlight.resize(swapChain.numImages(), VK_NULL_HANDLE);
-	PRINT("---D");
+	commander.imagesInFlight.resize(swapChain.numImages(), { VK_NULL_HANDLE, 0 });
 }
 
 Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOinfo globalUBO_vs, UBOinfo globalUBO_fs) :
@@ -53,7 +53,7 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOi
 	maxFPS(30),
 	globalUBO_vs(this, globalUBO_vs),
 	globalUBO_fs(this, globalUBO_fs),
-	worker(this, 500)
+	worker(this)
 {
 #ifdef DEBUG_RENDERER
 	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -95,7 +95,7 @@ void Renderer::drawFrame()
 #if defined(DEBUG_REND_PROFILER)
 	PRINT("- Begin drawFrame: ", profiler.updateTime() * 1000.f);
 #endif
-
+	
 	// 0. Ensure drawFrame() is not executed for the same frame in different threads simultaneously.
 	size_t frameIndex = commander.getNextFrame();
 
@@ -127,17 +127,19 @@ void Renderer::drawFrame()
 #if defined(DEBUG_REND_PROFILER)
 	PRINT("vkAcquireNextImageKHR: ", profiler.updateTime() * 1000.f);
 #endif
-
+	
 	// 3. Check if this image is being used. If used, wait. Then, mark it as used by this frame.
-	if (commander.imagesInFlight[imageIndex] != VK_NULL_HANDLE)   // Check if a previous frame is using this image (i.e. there is its fence to wait on)
+	VkFence& imageInFlight = commander.imagesInFlight[imageIndex].first;
+	size_t associatedFrameIndex = commander.imagesInFlight[imageIndex].second;
+	if (imageInFlight != VK_NULL_HANDLE)   // Check if a previous frame is using this image (i.e. there is its fence to wait on)
 	{
-		//if(e.commands.framesInFlight[frameIndex] != e.commands.imagesInFlight[imageIndex]);
-		//	const std::lock_guard<std::mutex> lock(e.commands.mutFrame[frameIndex]);// <<< FIX
-		vkWaitForFences(c.device, 1, &commander.imagesInFlight[imageIndex], VK_TRUE, UINT64_MAX);
+		if(associatedFrameIndex != frameIndex)
+			const std::lock_guard<std::mutex> lock(commander.mutFrame[associatedFrameIndex]);
+		vkWaitForFences(c.device, 1, &commander.imagesInFlight[imageIndex].first, VK_TRUE, UINT64_MAX);
 	}
-
-	commander.imagesInFlight[imageIndex] = commander.framesInFlight[frameIndex];   // Mark the image as now being in use by this frame
-
+	
+	commander.imagesInFlight[imageIndex] = { commander.framesInFlight[frameIndex], frameIndex };   // Mark the image as now being in use by this frame
+	
 #if defined(DEBUG_REND_PROFILER)
 	PRINT("vkWaitForFences: ", profiler.updateTime() * 1000.f);
 #endif
@@ -154,7 +156,7 @@ void Renderer::drawFrame()
 	{
 		//vkWaitForFences(e.c.device, 1, &lastFence, VK_TRUE, UINT64_MAX);
 		vkResetFences(c.device, 1, &commander.framesInFlight[frameIndex]);	// Reset the fence to the unsignaled state.
-
+		
 		//vkFreeCommandBuffers(e.c.device, e.commandPools[frameIndex], static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());	// Any primary command buffer that is in the recording or executable state and has any element of pCommandBuffers recorded into it, becomes invalid.
 		//vkResetCommandPool(c.device, commander.commandPools[frameIndex], 0);
 		//vkResetCommandBuffer(commandBuffers[frameIndex], 0);
@@ -305,12 +307,12 @@ key64 Renderer::newModel(ModelDataInfo& modelInfo)
 #ifdef DEBUG_RENDERER
 	std::cout << typeid(*this).name() << "::" << __func__ << ": " << modelInfo.name << std::endl;
 #endif
-
+	
 	if (modelInfo.renderPassIndex < models.keys.size() && modelInfo.subpassIndex < models.keys[modelInfo.renderPassIndex].size())
 	{
 		std::pair<std::unordered_map<key64, ModelData>::iterator, bool> result =
 			models.data.emplace(std::make_pair(models.getNewKey(), ModelData(this, modelInfo)));   // Save model object into model list
-
+		
 		worker.newTask(result.first->first, LoadingWorker::construct);   // Schedule task: Construct model
 
 		return result.first->first;
@@ -577,8 +579,8 @@ void Renderer::updatePostprocessingPass()
 }
 
 
-LoadingWorker::LoadingWorker(Renderer* renderer, int waitTime)
-	: r(*renderer), waitTime(waitTime), runThread(false) { }
+LoadingWorker::LoadingWorker(Renderer* renderer)
+	: r(*renderer), stopThread(false) { }
 
 LoadingWorker::~LoadingWorker()
 {
@@ -589,7 +591,8 @@ LoadingWorker::~LoadingWorker()
 
 void LoadingWorker::start()
 {
-	runThread = true;
+	stopThread = false;
+	cond.notify_one();
 	thread_loadModels = std::thread(&LoadingWorker::thread_loadData, this, std::ref(r), std::ref(r.models), std::ref(r.commander));
 }
 
@@ -599,14 +602,28 @@ void LoadingWorker::stop()
 	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 #endif
 
-	runThread = false;
-	if (thread_loadModels.joinable()) thread_loadModels.join();
+	stopThread = true;
+	cond.notify_one();
+
+	if (thread_loadModels.joinable())
+		thread_loadModels.join();
 }
 
 void LoadingWorker::newTask(key64 key, Task task)
 {
+	std::lock_guard lock(mutTasks);
 	tasks.push(std::pair(key, task));
+	cond.notify_one();   // Wake up the loading thread
 }
+
+void LoadingWorker::waitIdle()
+{
+	std::mutex mutWait;
+	std::unique_lock lock(mutWait);
+	cond.wait(lock, [this] { return tasks.empty(); });
+}
+
+size_t LoadingWorker::numTasks() { return tasks.size(); }
 
 void LoadingWorker::extractModel(ModelsManager& models, key64 key)
 {
@@ -641,41 +658,41 @@ void LoadingWorker::thread_loadData(Renderer& renderer, ModelsManager& models, C
 	key64 key;
 	Task task;
 
-	while (runThread)
+	for(;;)
 	{
 #ifdef DEBUG_WORKER
 		std::cout << "- New iteration -----" << std::endl;
 #endif
 
-		if (tasks.size())
+		std::unique_lock lock(mutTasks);
+		cond.wait(lock, [this] { return (!tasks.empty() || stopThread); });   // Wait for new tasks or a stop order.
+		
+		if (tasks.empty() && stopThread) return;   // Stop order executed here
+
+		key = tasks.front().first;   // Get task info
+		task = tasks.front().second;
+		tasks.pop();
+
+		lock.unlock();
+		
+		// Complete task
+		switch (task)
 		{
-			key = tasks.front().first;
-			task = tasks.front().second;
-			tasks.pop();
+		case construct:
+			models.data[key].fullConstruction(renderer);
+			models.data[key].ready = true;
+			commander.updateCommandBuffer = true;
+			break;
 
-			switch (task)
-			{
-			case construct:
-				//extractModel(key);
-				//modelTP.begin()->second.fullConstruction(shaders, textures, mutResources);
-				//returnModel(key);
-				//updateCommandBuffer = true;
-				models.data[key].fullConstruction(renderer);
-				models.data[key].ready = true;
-				commander.updateCommandBuffer = true;
-				break;
+		case delet:
+			extractModel(models, key);
+			modelTP.clear();
+			commander.updateCommandBuffer = true;
+			break;
 
-			case delet:
-				extractModel(models, key);
-				modelTP.clear();
-				commander.updateCommandBuffer = true;
-				break;
-
-			default:
-				break;
-			}
+		default:
+			break;
 		}
-		else sleep(waitTime);
 	}
 
 #ifdef DEBUG_WORKER

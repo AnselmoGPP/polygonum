@@ -226,7 +226,7 @@ void Commander::createSynchronizers(size_t numSwapchainImages, size_t numFrames)
 	imageAvailableSemaphores.resize(numFrames);
 	renderFinishedSemaphores.resize(numFrames);
 	framesInFlight.resize(numFrames);
-	imagesInFlight.resize(numSwapchainImages, VK_NULL_HANDLE);
+	imagesInFlight.resize(numSwapchainImages, { VK_NULL_HANDLE, 0 });
 
 	VkSemaphoreCreateInfo semaphoreInfo{};
 	semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -251,28 +251,11 @@ void Commander::updateCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 	commandsCount = 0;
 	VkDeviceSize offsets[] = { 0 };
 	ModelData* model;
-	std::vector<VkCommandBuffer>& CBs = commandBuffers[frameIndex];   // Take the command buffers for this frame.
-	/*
-	// Commmand buffer allocation
-	std::vector<VkCommandBuffer>& commandBufferSet = commandBuffers[frameIndex];
-	commandBufferSet.resize(swapChainImagesCount);
-
-	VkCommandBufferAllocateInfo allocInfo{};
-	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-	allocInfo.commandPool = commandPools[frameIndex];
-	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;   // VK_COMMAND_BUFFER_LEVEL_ ... PRIMARY (can be submitted to a queue for execution, but cannot be called from other command buffers), SECONDARY (cannot be submitted directly, but can be called from primary command buffers - useful for reusing common operations from primary command buffers).
-	allocInfo.commandBufferCount = (uint32_t)commandBufferSet.size();   // Number of buffers to allocate.
-
-	//const std::lock_guard<std::mutex> lock(e.mutCommandPool);	// already called before calling createCommandBuffers() 
-
-	// <<< vkResetCommandBuffer(commandBuffers[frameIndex], 0);
-	if (vkAllocateCommandBuffers(c.device, &allocInfo, commandBufferSet.data()) != VK_SUCCESS)
-		throw std::runtime_error("Failed to allocate command buffers!");
-	*/
+	std::vector<VkCommandBuffer>& CBs = commandBuffers[frameIndex];   // Take command buffers of this frame (one per swapchain).
 
 	const std::lock_guard<std::mutex> lock(mutCommandPool[frameIndex]);		// vkQueueWaitIdle(e.c.graphicsQueue) was called before, in drawFrame()
 
-	// Start command buffer recording (one per swapChainImage)
+	// Start command buffer recording
 	for (size_t i = 0; i < CBs.size(); i++)		// for each SWAPCHAIN IMAGE
 	{
 #ifdef DEBUG_COMMANDBUFFERS
@@ -1536,14 +1519,6 @@ void Commander::endSingleTimeCommands(uint32_t frameIndex, VkCommandBuffer comma
 	submitInfo.commandBufferCount = 1;
 	submitInfo.pCommandBuffers = &commandBuffer;
 
-	//VkFenceCreateInfo fenceInfo{};
-	//fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-	////fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;   // Reset to signaled state (CB finished execution)
-
-	//VkFence singleTimeFence;
-	//vkCreateFence(core->device, &fenceInfo, nullptr, &singleTimeFence);
-	////vkResetFences(c.device, 1, &singleTimeFence);							// Reset to unsignaled state (CB didn't finish execution).
-
 	vkWaitForFences(c.device, 1, &framesInFlight[frameIndex], VK_TRUE, UINT64_MAX);	// Wait for signaled state
 	vkResetFences(c.device, 1, &framesInFlight[frameIndex]);						// Reset to unsignaled state (CB didn't finish execution).
 
@@ -1554,10 +1529,9 @@ void Commander::endSingleTimeCommands(uint32_t frameIndex, VkCommandBuffer comma
 	}
 	
 	vkWaitForFences(c.device, 1, &framesInFlight[frameIndex], VK_TRUE, UINT64_MAX);	// Wait for signaled state
-	//vkDestroyFence(core->device, framesInFlight[frameIndex], nullptr);
 
 	// Clean up the command buffer used.
-	vkFreeCommandBuffers(c.device, commandPools[frameIndex], 1, &commandBuffer);
+	//vkFreeCommandBuffers(c.device, commandPools[frameIndex], 1, &commandBuffer);
 }
 
 /**

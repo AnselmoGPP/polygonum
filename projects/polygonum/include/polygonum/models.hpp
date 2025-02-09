@@ -124,7 +124,7 @@ public:
 
 	uint32_t					 renderPassIndex;		//!< Index of the renderPass used (0 for rendering geometry, 1 for post processing)
 	uint32_t					 subpassIndex;
-	size_t						 layer;					//!< Layer where this model will be drawn (Painter's algorithm).
+	//size_t					 layer;					//!< Layer where this model will be drawn (Painter's algorithm).
 
 	ResourcesLoader*			 resLoader;				//!< Info used for loading resources (vertices, indices, shaders, textures). When resources are loaded, this is set to nullptr.
 	bool						 fullyConstructed;		//!< Object fully constructed (i.e. model loaded into Vulkan).
