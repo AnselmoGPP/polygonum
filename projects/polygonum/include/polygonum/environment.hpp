@@ -78,10 +78,6 @@ public:
 
 	void createFullImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImageAspectFlags aspectFlags);   //!< Create image, memory, and view.
 	void createSampler(VkSamplerCreateInfo& samplerInfo);
-
-	static void createImage(VkImage& destImage, VkDeviceMemory& destImageMemory, VulkanCore& core, uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties);
-	static void createImageView(VkImageView& destImageView, VulkanCore& core, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
-	static void createSampler(VkSampler& destSampler, VulkanCore& core, VkSamplerCreateInfo& samplerInfo);
 	
 	VkImage			image;		//!< Image object
 	VkDeviceMemory	memory;		//!< Device memory object
@@ -211,11 +207,16 @@ public:
 	int memAllocObjects;							//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount). Incremented each vkAllocateMemory call; decremented each vkFreeMemory call. Increments when creating an image or buffer; decrements when destroyed.
 
 	void queueWaitIdle(VkQueue queue, std::mutex* waitMutex);
+	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
+	void destroy();
+
 	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer& buffer, VkDeviceMemory& bufferMemory);   //!< Creates a Vulkan buffer (VkBuffer and VkDeviceMemory).Used as friend in modelData, UBO and Texture.
 	void destroyBuffer(VkDevice device, VkBuffer buffer, VkDeviceMemory memory);
-	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
-	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
-	void destroy();
+
+	void createImage(VkImage& destImage, VkDeviceMemory& destMemory, uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties);
+	void createImageView(VkImageView& destImageView, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels);
+	void createSampler(VkSampler& destSampler, VkSamplerCreateInfo& samplerInfo);
+	void destroyImage(Image* image);
 
 private:
 	//const std::vector<const char*> requiredDeviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };	//!< Swap chain: Queue of images that are waiting to be presented to the screen. Our application will acquire such an image to draw to it, and then return it to the queue. Its general purpose is to synchronize the presentation of images with the refresh rate of the screen.
@@ -229,6 +230,7 @@ private:
 
 	int evaluateDevice(VkPhysicalDevice device);
 	VkSampleCountFlagBits getMaxUsableSampleCount(bool getMinimum);
+	uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 };
 
 class Subpass

@@ -11,12 +11,11 @@ void Renderer::recreateSwapChain()
 	
 	// 1. Get window size.
 	int width = 0, height = 0;
-	//io.getFramebufferSize(&width, &height);
-	while (width == 0 || height == 0) // <<<
-	{
+	do {
+		c.io.waitEvents(); // Wait for an event (resize, focus change, etc.)
 		c.io.getFramebufferSize(&width, &height);
-		c.io.waitEvents();
-	}
+	} while (width == 0 || height == 0);
+
 	std::cout << "New window size: " << width << ", " << height << std::endl;
 
 	// 2. Wait for device, graphics queue, and worker to be idle (so we don't touch resources that are in use).

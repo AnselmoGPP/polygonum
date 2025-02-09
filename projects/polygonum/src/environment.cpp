@@ -19,25 +19,21 @@ Image::Image(VulkanCore& core, VkImage image, VkDeviceMemory memory, VkImageView
 
 void Image::createFullImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImageAspectFlags aspectFlags)
 {
-	createImage(image, memory, c, width, height, mipLevels, numSamples, format, tiling, usage, properties);
-	createImageView(view, c, image, format, aspectFlags, mipLevels);
+	c.createImage(image, memory, width, height, mipLevels, numSamples, format, tiling, usage, properties);
+	c.createImageView(view, image, format, aspectFlags, mipLevels);
 }
 
 void Image::createSampler(VkSamplerCreateInfo& samplerInfo)
 {
-	createSampler(sampler, c, samplerInfo);
+	c.createSampler(sampler, samplerInfo);
 }
 
 void Image::destroy()
 {
-	if (memory)  c.memAllocObjects--;
-	if (view)    vkDestroyImageView(c.device, view, nullptr);   // Resolve buffer	(VkImageView)
-	if (image)   vkDestroyImage(c.device, image, nullptr);   // Resolve buffer	(VkImage)
-	if (memory)  vkFreeMemory(c.device, memory, nullptr);   // Resolve buffer	(VkDeviceMemory)
-	if (sampler) vkDestroySampler(c.device, sampler, nullptr);
+	c.destroyImage(this);
 }
 
-void Image::createImage(VkImage& destImage, VkDeviceMemory& destImageMemory, VulkanCore& core, uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties)
+void VulkanCore::createImage(VkImage& destImage, VkDeviceMemory& destMemory, uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties)
 {
 	// Create image objects for letting the shader access the pixel values (better option than setting up the shader to access the pixel values in the buffer). Pixels within an image object are known as texels.
 	VkImageCreateInfo imageInfo{};
@@ -56,27 +52,27 @@ void Image::createImage(VkImage& destImage, VkDeviceMemory& destImageMemory, Vul
 	imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;	// The image will only be used by one queue family: the one that supports graphics (and therefore also) transfer operations.
 	imageInfo.flags = 0;								// [Optional]  There are some optional flags for images that are related to sparse images (images where only certain regions are actually backed by memory). Example: If you were using a 3D texture for a voxel terrain, then you could use this to avoid allocating memory to store large volumes of "air" values.
 
-	if (vkCreateImage(core.device, &imageInfo, nullptr, &destImage) != VK_SUCCESS)
+	if (vkCreateImage(device, &imageInfo, nullptr, &destImage) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create image!");
 
 	// Allocate memory for the image
 	VkMemoryRequirements memRequirements;
-	vkGetImageMemoryRequirements(core.device, destImage, &memRequirements);
+	vkGetImageMemoryRequirements(device, destImage, &memRequirements);
 
 	VkMemoryAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 	allocInfo.allocationSize = memRequirements.size;
-	allocInfo.memoryTypeIndex = core.findMemoryType(memRequirements.memoryTypeBits, properties);
+	allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
 
-	if (vkAllocateMemory(core.device, &allocInfo, nullptr, &destImageMemory) != VK_SUCCESS)
+	if (vkAllocateMemory(device, &allocInfo, nullptr, &destMemory) != VK_SUCCESS)
 		throw std::runtime_error("Failed to allocate image memory!");
 
-	core.memAllocObjects++;
+	memAllocObjects++;
 
-	vkBindImageMemory(core.device, destImage, destImageMemory, 0);
+	vkBindImageMemory(device, destImage, destMemory, 0);
 }
 
-void Image::createImageView(VkImageView& destImageView, VulkanCore& core, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels)
+void VulkanCore::createImageView(VkImageView& destImageView, VkImage image, VkFormat format, VkImageAspectFlags aspectFlags, uint32_t mipLevels)
 {
 	VkImageViewCreateInfo viewInfo{};
 	viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -95,14 +91,28 @@ void Image::createImageView(VkImageView& destImageView, VulkanCore& core, VkImag
 
 	// Note about stereographic 3D applications: For them, you would create a swap chain with multiple layers, and then create multiple image views for each image (one for left eye and another for right eye).
 
-	if (vkCreateImageView(core.device, &viewInfo, nullptr, &destImageView) != VK_SUCCESS)
+	if (vkCreateImageView(device, &viewInfo, nullptr, &destImageView) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create texture image view!");
 }
 
-void Image::createSampler(VkSampler& destSampler, VulkanCore& core, VkSamplerCreateInfo& samplerInfo)
+void VulkanCore::createSampler(VkSampler& destSampler, VkSamplerCreateInfo& samplerInfo)
 {
-	if (vkCreateSampler(core.device, &samplerInfo, nullptr, &destSampler) != VK_SUCCESS)
+	if (vkCreateSampler(device, &samplerInfo, nullptr, &destSampler) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create sampler!");
+}
+
+void VulkanCore::destroyImage(Image* image)
+{
+	if (image->view)
+		vkDestroyImageView(device, image->view, nullptr);   // Resolve buffer	(VkImageView)
+	if (image->image)
+		vkDestroyImage(device, image->image, nullptr);   // Resolve buffer	(VkImage)
+	if (image->memory) {
+		vkFreeMemory(device, image->memory, nullptr);   // Resolve buffer	(VkDeviceMemory)
+		memAllocObjects--;
+	}
+	if (image->sampler)
+		vkDestroySampler(device, image->sampler, nullptr);
 }
 
 SwapChain::SwapChain(VulkanCore& core, uint32_t additionalSwapChainImages)
@@ -995,7 +1005,7 @@ void SwapChain::createSwapChain()
 	views.resize(images.size());
 
 	for (uint32_t i = 0; i < images.size(); i++)
-		Image::createImageView(views[i], c, images[i], imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+		c.createImageView(views[i], images[i], imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, 1);
 }
 
 /// Chooses the surface format (color depth) for the swap chain.
@@ -2009,7 +2019,20 @@ void RP_DS::createImageResources()
 	samplerInfo.mipLodBias = 0.0f;
 
 	// Position -------------------------------------
+	/*
+	c.createImage(
+		position.image, position.memory,
+		swapChain.extent.width, swapChain.extent.height,
+		1, VK_SAMPLE_COUNT_1_BIT,
+		VK_FORMAT_R32G32B32A32_SFLOAT,
+		VK_IMAGE_TILING_OPTIMAL,
+		VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
+	c.createImageView(position.view, position.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_ASPECT_COLOR_BIT, 1);
+
+	c.createSampler(position.sampler, samplerInfo);
+	*/
 	position.createFullImage(
 		swapChain.extent.width,
 		swapChain.extent.height,

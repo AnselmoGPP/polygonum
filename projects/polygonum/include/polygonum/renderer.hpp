@@ -59,8 +59,8 @@ private:
 class Renderer
 {
 protected:
-	const uint32_t ADDITIONAL_SWAPCHAIN_IMAGES = 3;   //!< (1) Total number of swapchain images = swapChain_capabilities_minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES
-	const uint32_t MAX_FRAMES_IN_FLIGHT = 4;   //!< (2) How many frames should be processed concurrently.
+	const uint32_t ADDITIONAL_SWAPCHAIN_IMAGES = 1;   //!< (1) Total number of swapchain images = swapChain_capabilities_minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES
+	const uint32_t MAX_FRAMES_IN_FLIGHT = 3;   //!< (2) How many frames should be processed concurrently.
 
 	friend ResourcesLoader;
 	friend LoadingWorker;

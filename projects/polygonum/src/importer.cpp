@@ -873,11 +873,6 @@ Texture::~Texture()
 	#endif
 
 	texture.destroy();
-	//vkDestroySampler(c.device, textureSampler, nullptr);
-	//vkDestroyImage(c.device, textureImage, nullptr);
-	//vkDestroyImageView(c.device, textureImageView, nullptr);
-	//vkFreeMemory(c.device, textureImageMemory, nullptr);
-	//c.memAllocObjects--;
 }
 
 TextureLoader::TextureLoader(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode)
@@ -941,10 +936,9 @@ std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned ch
 	VkImage			textureImage;
 	VkDeviceMemory	textureImageMemory;
 
-	Image::createImage(
+	r.c.createImage(
 		textureImage,
 		textureImageMemory,
-		r.c,
 		texWidth, texHeight,
 		mipLevels,
 		VK_SAMPLE_COUNT_1_BIT,
@@ -974,7 +968,7 @@ VkImageView TextureLoader::createTextureImageView(VkImage textureImage, uint32_t
 	#endif
 
 	VkImageView imageView;
-	Image::createImageView(imageView, c, textureImage, imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
+	c.createImageView(imageView, textureImage, imageFormat, VK_IMAGE_ASPECT_COLOR_BIT, mipLevels);
 
 	return imageView;
 }
@@ -1017,7 +1011,7 @@ VkSampler TextureLoader::createTextureSampler(uint32_t mipLevels, VulkanCore& c)
 	samplerInfo.mipLodBias = 0.0f;								// Used for changing the lod value. It forces to use lower "lod" and "level" than it would normally use
 
 	VkSampler textureSampler;
-	Image::createSampler(textureSampler, c, samplerInfo);
+	c.createSampler(textureSampler, samplerInfo);
 	return textureSampler;
 
 	/*
