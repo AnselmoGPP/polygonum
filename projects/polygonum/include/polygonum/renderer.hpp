@@ -17,8 +17,8 @@ public:
 	std::mutex mutModels;   //!< for Renderer::models
 	std::mutex mutResources;   //!< for Renderer::shaders & Renderer::textures
 
-	std::mutex mutTasks;
-	std::condition_variable cond;
+	std::mutex mutTasks;   //!< for LoadingWorker::tasks
+	std::condition_variable cond;   //!< for wake up or sleep the loading thread
 
 	void start();
 	void stop();
@@ -60,7 +60,7 @@ class Renderer
 {
 protected:
 	const uint32_t ADDITIONAL_SWAPCHAIN_IMAGES = 1;   //!< (1) Total number of swapchain images = swapChain_capabilities_minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES
-	const uint32_t MAX_FRAMES_IN_FLIGHT = 3;   //!< (2) How many frames should be processed concurrently.
+	const uint32_t MAX_FRAMES_IN_FLIGHT = 2;   //!< (2) How many frames should be processed concurrently.
 
 	friend ResourcesLoader;
 	friend LoadingWorker;

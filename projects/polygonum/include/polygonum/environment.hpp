@@ -274,9 +274,9 @@ public:
 	std::vector<VkFence> framesInFlight;   //!< [frame]. Fence occupied during rendering (CB execution).
 	std::vector<std::pair<VkFence, size_t>> imagesInFlight;   //!< [swapChain image]. std::pair<fence, associated_frameIndex>, Copy of the last fence used for this image. Maps frames in flight by their fences. Tracks for each swap chain image if a frame in flight is currently using it. One per swap chain image.
 
-	std::mutex mutQueue;					//!< Controls that vkQueueSubmit is not used in two threads simultaneously (Environment -> endSingleTimeCommands(), and Renderer -> createCommandBuffers)
-	std::vector<std::mutex> mutCommandPool;   //!< [frame]. The same command pool cannot be used simultaneously in 2 different threads. Problem: It is used at command buffer creation (Renderer, 1st thread, at updateCB), and beginSingleTimeCommands and endSingleTimeCommands (Environment, 2nd thread, indirectly used in loadAndCreateTexture & fullConstruction), and indirectly sometimes (command buffer).
-	std::vector<std::mutex> mutFrame;   //!< [frame]. This prevents two threads from drawing (acquire-update-submit-present) for the same frame.
+	std::mutex mutQueue;   //!< Prevents queues from being used in 2 threads simultaneously (vkQueueSubmit, vkQueuePresentKHR, vkQueueWaitIdle).
+	std::vector<std::mutex> mutCommandPool;   //!< [frame]. Prevents a command pool from being used in 2 threads simultaneously (vkFreeCommandBuffers, vkAllocateCommandBuffers).
+	std::vector<std::mutex> mutFrame;   //!< [frame]. Prevents 2 threads from drawing (acquire-update-submit-present) for the same frame.
 
 	bool updateCommandBuffer;
 	size_t commandsCount;				//!< Number of drawing commands sent to the command buffer. For debugging purposes.

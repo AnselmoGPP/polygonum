@@ -263,8 +263,6 @@ void Commander::updateCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 	ModelData* model;
 	std::vector<VkCommandBuffer>& CBs = commandBuffers[frameIndex];   // Take command buffers of this frame (one per swapchain).
 
-	const std::lock_guard<std::mutex> lock(mutCommandPool[frameIndex]);		// vkQueueWaitIdle(e.c.graphicsQueue) was called before, in drawFrame()
-
 	// Start command buffer recording
 	for (size_t i = 0; i < CBs.size(); i++)		// for each SWAPCHAIN IMAGE
 	{
@@ -1183,8 +1181,6 @@ void Commander::transitionImageLayout(VkImage image, VkFormat format, VkImageLay
 
 	size_t frameIndex = getNextFrame();
 	const std::lock_guard<std::mutex> lock(mutFrame[frameIndex]);
-	
-	const std::lock_guard<std::mutex> lock2(mutCommandPool[frameIndex]);
 
 	VkCommandBuffer commandBuffer = beginSingleTimeCommands(frameIndex);
 
@@ -1301,8 +1297,6 @@ void Commander::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize 
 
 	size_t frameIndex = getNextFrame();
 	const std::lock_guard<std::mutex> lock(mutFrame[frameIndex]);
-	
-	const std::lock_guard<std::mutex> lock2(mutCommandPool[frameIndex]);
 
 	VkCommandBuffer commandBuffer = beginSingleTimeCommands(frameIndex);
 
@@ -1329,8 +1323,6 @@ void Commander::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width
 
 	size_t frameIndex = getNextFrame();
 	const std::lock_guard<std::mutex> lock(mutFrame[frameIndex]);
-	
-	const std::lock_guard<std::mutex> lock2(mutCommandPool[frameIndex]);
 
 	VkCommandBuffer commandBuffer = beginSingleTimeCommands(frameIndex);
 
@@ -1382,8 +1374,6 @@ void Commander::generateMipmaps(VkImage image, VkFormat imageFormat, int32_t tex
 
 	size_t frameIndex = getNextFrame();
 	const std::lock_guard<std::mutex> lock(mutFrame[frameIndex]);
-	
-	const std::lock_guard<std::mutex> lock2(mutCommandPool[frameIndex]);
 
 	VkCommandBuffer commandBuffer = beginSingleTimeCommands(frameIndex);
 
@@ -1493,6 +1483,8 @@ VkCommandBuffer Commander::beginSingleTimeCommands(uint32_t frameIndex)
 	// When are the functions containing these methods used? Under what circumstances?
 
 	// Allocate the command buffer.
+	const std::lock_guard<std::mutex> lock2(mutCommandPool[frameIndex]);
+
 	VkCommandBufferAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;

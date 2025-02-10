@@ -141,7 +141,7 @@ public:
 	std::unordered_map<key64, ModelData> data;   //!< All models (constructed or not). std::unordered_map uses a hash table. Complexity for lookup, insertion, and deletion: O(1) (average) - O(n) (worst-case)
 	vec3<key64> keys;   //!< keys[render pass][subpass][keys]. All keys of all models, distributed per renderpass ad subpass.
 
-	void distributeKeys();
+	void distributeKeys();   //!< Distribute models per render pass and subpass.
 	key64 getNewKey();
 	key64 newKey;
 

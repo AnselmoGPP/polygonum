@@ -408,10 +408,6 @@ void Renderer::updateStates(uint32_t currentImage)
 	std::cout << "Copy UBOs" << std::endl;
 #endif
 
-	const std::lock_guard<std::mutex> lock(worker.mutModels);
-
-	models.distributeKeys();
-
 	void* data;
 	size_t activeBytes;
 	ModelData* model;
@@ -432,6 +428,10 @@ void Renderer::updateStates(uint32_t currentImage)
 	}
 
 	// Local UBOs
+	const std::lock_guard<std::mutex> lock(worker.mutModels);
+
+	models.distributeKeys();
+
 	for (auto it = models.data.begin(); it != models.data.end(); it++)
 		if (it->second.ready)
 		{
