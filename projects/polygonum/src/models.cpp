@@ -263,7 +263,7 @@ void ModelData::createDescriptorSetLayout()
 		VkDescriptorSetLayoutBinding samplerLayoutBinding{};
 		samplerLayoutBinding.binding = bindNumber++;
 		samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		samplerLayoutBinding.descriptorCount = textures.size();
+		samplerLayoutBinding.descriptorCount = static_cast<uint32_t>(textures.size());
 		samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;			// We want to use the combined image sampler descriptor in the fragment shader. It's possible to use texture sampling in the vertex shader (example: to dynamically deform a grid of vertices by a heightmap).
 		samplerLayoutBinding.pImmutableSamplers = nullptr;
 		
@@ -276,7 +276,7 @@ void ModelData::createDescriptorSetLayout()
 		VkDescriptorSetLayoutBinding inputAttachmentLayoutBinding{};
 		inputAttachmentLayoutBinding.binding = bindNumber++;
 		inputAttachmentLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;	// VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-		inputAttachmentLayoutBinding.descriptorCount = r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size();
+		inputAttachmentLayoutBinding.descriptorCount = static_cast<uint32_t>(r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size());
 		inputAttachmentLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 		inputAttachmentLayoutBinding.pImmutableSamplers = nullptr;
 
@@ -721,7 +721,7 @@ void ModelData::createDescriptorSets()
 			descriptor.dstBinding = binding++;
 			descriptor.dstArrayElement = 0;
 			descriptor.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			descriptor.descriptorCount = textures.size();			// LOOK maybe this can be used instead of the for-loop
+			descriptor.descriptorCount = static_cast<uint32_t>(textures.size());   // LOOK maybe this can be used instead of the for-loop
 			descriptor.pBufferInfo = nullptr;
 			descriptor.pImageInfo = imageInfo.data();
 			descriptor.pTexelBufferView = nullptr;
@@ -737,7 +737,7 @@ void ModelData::createDescriptorSets()
 			descriptor.dstBinding = binding++;
 			descriptor.dstArrayElement = 0;
 			descriptor.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;	// VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-			descriptor.descriptorCount = inputAttachInfo.size();
+			descriptor.descriptorCount = static_cast<uint32_t>(inputAttachInfo.size());
 			descriptor.pBufferInfo = nullptr;
 			descriptor.pImageInfo = inputAttachInfo.data();
 			descriptor.pTexelBufferView = nullptr;
@@ -791,7 +791,7 @@ void ModelData::deleteLoader()
 	}
 }
 
-size_t ModelData::getActiveInstancesCount() { return activeInstances; }
+uint32_t ModelData::getActiveInstancesCount() { return activeInstances; }
 
 bool ModelData::setActiveInstancesCount(size_t activeInstancesCount)
 {

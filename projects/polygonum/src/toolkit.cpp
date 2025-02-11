@@ -805,7 +805,7 @@ bool Quicksort_distVec3::isCloser(const glm::vec3& pos1, const glm::vec3& pos2)
 	else return false;
 }
 
-int Quicksort_distVec3::pos(std::vector<glm::vec3>::iterator iter) { return iter - begin; }
+int64_t Quicksort_distVec3::pos(std::vector<glm::vec3>::iterator iter) { return iter - begin; }
 
 
 void Quicksort_distVec3_index::sort(std::vector<glm::vec3>& positions, std::vector<int>& indexVals, const glm::vec3& camPos, int low, int high)
@@ -882,7 +882,7 @@ bool Quicksort_distVec3_index::isCloser(int idx1, int idx2)
 	else return false;
 }
 
-float safeMod(int a, int b)
+int safeMod(int a, int b)
 {
 	if (!b) return 0;	// division by 0 is not safe
 
@@ -919,7 +919,7 @@ void waitForFPS(Timer& timer, int maxFPS)
 {
 	if (maxFPS == 0) return;
 
-	int waitTime = (1.l / maxFPS - timer.getDeltaTime()) * 1000000;    // microseconds (for the sleep)
+	int waitTime = static_cast<int>((1.l / maxFPS - timer.getDeltaTime()) * 1000000);    // microseconds (for the sleep)
 	if (waitTime > 0)
 	{
 		std::this_thread::sleep_for(std::chrono::microseconds(waitTime));
@@ -971,7 +971,7 @@ std::string Timer::getDate()
 {
 	std::chrono::system_clock::time_point timePoint = std::chrono::system_clock::now();
 	std::time_t date = std::chrono::system_clock::to_time_t(timePoint);
-	return std::ctime(&date);
+	return std::string(std::ctime(&date));
 }
 
 float angleBetween(glm::vec3 a, glm::vec3 b, glm::vec3 origin)

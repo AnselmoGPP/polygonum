@@ -57,7 +57,7 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOi
 #ifdef DEBUG_RENDERER
 	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	std::cout << "Main thread ID: " << std::this_thread::get_id() << std::endl;
-	std::cout << "   Hardware concurrency: " << (unsigned int)std::thread::hardware_concurrency << std::endl;
+	std::cout << "   Hardware concurrency: " << (unsigned)std::thread::hardware_concurrency << std::endl;
 #endif
 
 	//if (c.msaaSamples > 1) rw = std::make_shared<RW_MSAA_PP>(*this);
@@ -81,10 +81,13 @@ void Renderer::drawFrame()
 		1. Wait for vkQueueSubmit(graphicsQueue) finish commands execution (framesInFlight).
 		2. Acquire a swapchain image (vkAcquireNextImageKHR) and signal semaphore (imageAvailable) once it's acquired.
 		3. Wait if image is used (imagesInFlight), and mark it as used by this frame (imagesInFlight = framesInFlight).
-		4. Update states.
-		5. Update command buffer.
-		6. Submit command buffer (vkQueueSubmit(graphicsQueue)) for execution. Synchronizers: fence (framesInFlight), waitSemaphore (imageAvailable), signalSemaphore (renderFinished).
-		7. Present image for display on screen (vkQueuePresentKHR(presentQueue)). Synchronizers: waitSemaphore (renderFinished).
+		4. Update states:
+		  4.1. Wait for FPS
+		  4.2. User updates
+		  4.3. Update UBOs
+		  4.4. Update command buffer.
+		5. Submit command buffer (vkQueueSubmit(graphicsQueue)) for execution. Synchronizers: fence (framesInFlight), waitSemaphore (imageAvailable), signalSemaphore (renderFinished).
+		6. Present image for display on screen (vkQueuePresentKHR(presentQueue)). Synchronizers: waitSemaphore (renderFinished).
 	*/
 
 #if defined(DEBUG_RENDERER) || defined(DEBUG_RENDERLOOP)
@@ -92,10 +95,10 @@ void Renderer::drawFrame()
 #endif
 
 #if defined(DEBUG_REND_PROFILER)
-	PRINT("- Begin drawFrame: ", profiler.updateTime() * 1000.f);
+	PRINT("----------\nBegin drawFrame: ", profiler.updateTime() * 1000.f);
 #endif
-	
-	// 0. Ensure drawFrame() is not executed for the same frame in different threads simultaneously.
+
+	// 0. Wait until this frame is available to work with.
 	size_t frameIndex = commander.getNextFrame();
 
 	const std::lock_guard<std::mutex> lock(commander.mutFrame[frameIndex]);
@@ -111,7 +114,7 @@ void Renderer::drawFrame()
 	PRINT("vkWaitForFences: ", profiler.updateTime() * 1000.f);
 #endif
 
-	// 2. Acquire the next available swapchain image. Semaphore will be signal once it's acquired.
+	// 2. Acquire the next available swapchain image. Semaphore will be signaled once it's acquired.
 	uint32_t imageIndex;		// Swap chain image index (0, 1, 2)
 	VkResult result = vkAcquireNextImageKHR(c.device, swapChain.swapChain, UINT64_MAX, commander.imageAvailableSemaphores[frameIndex], VK_NULL_HANDLE, &imageIndex);		// Swap chain is an extension feature. imageIndex: index to the VkImage in our swapChainImages.
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) 					// VK_ERROR_OUT_OF_DATE_KHR: The swap chain became incompatible with the surface and can no longer be used for rendering. Usually happens after window resize.
@@ -126,7 +129,8 @@ void Renderer::drawFrame()
 #if defined(DEBUG_REND_PROFILER)
 	PRINT("vkAcquireNextImageKHR: ", profiler.updateTime() * 1000.f);
 #endif
-	
+
+
 	// 3. Check if this image is being used. If used, wait. Then, mark it as used by this frame.
 	VkFence& imageInFlight = commander.imagesInFlight[imageIndex].first;
 	size_t associatedFrameIndex = commander.imagesInFlight[imageIndex].second;
@@ -141,32 +145,44 @@ void Renderer::drawFrame()
 	
 #if defined(DEBUG_REND_PROFILER)
 	PRINT("vkWaitForFences: ", profiler.updateTime() * 1000.f);
+	PRINT("Update states:");
 #endif
 
-	// 4. Update states (user updates & UBOs)
-	updateStates(imageIndex);
+	// 4.1. Wait for FPS
+	timer.updateTime();
+	waitForFPS(timer, maxFPS);
+	timer.reUpdateTime();
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("  waitForFPS: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// 4.2. User updates
+	userUpdate(*((Renderer*)this));   // Update model matrices and other things (user defined)
+
+#if defined(DEBUG_REND_PROFILER)
+	PRINT("  userUpdate: ", profiler.updateTime() * 1000.f);
+#endif
+
+	// 4.3. Update UBOs
+	updateUBOs(imageIndex);
 
 #if defined(DEBUG_REND_PROFILER)
 	PRINT("  Copy UBOs: ", profiler.updateTime() * 1000.f);
 #endif
 
-	// 5. Update command buffer.
+	// 4.4. Update command buffer.
 	if (true)//if (updateCommandBuffer)
 	{
-		//vkWaitForFences(e.c.device, 1, &lastFence, VK_TRUE, UINT64_MAX);
 		vkResetFences(c.device, 1, &commander.framesInFlight[frameIndex]);	// Reset the fence to the unsignaled state.
-		
-		//vkFreeCommandBuffers(e.c.device, e.commandPools[frameIndex], static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());	// Any primary command buffer that is in the recording or executable state and has any element of pCommandBuffers recorded into it, becomes invalid.
-		//vkResetCommandPool(c.device, commander.commandPools[frameIndex], 0);
-		//vkResetCommandBuffer(commandBuffers[frameIndex], 0);
 		commander.updateCommandBuffers(models, rp, swapChain.numImages(), frameIndex);
 	}
 
 #if defined(DEBUG_REND_PROFILER)
-	PRINT("Update command buffer: ", profiler.updateTime() * 1000.f);
+	PRINT("  Update command buffer: ", profiler.updateTime() * 1000.f);
 #endif
 
-	// 6. Submit command buffer to the graphics queue for commands execution (rendering).
+	// 5. Submit command buffer to the graphics queue for commands execution (rendering).
 	VkSemaphore waitSemaphores[] = { commander.imageAvailableSemaphores[frameIndex] };   // Which semaphores to wait on before command buffers execution begins.
 	VkSemaphore signalSemaphores[] = { commander.renderFinishedSemaphores[frameIndex] };   // Which semaphores to signal once the command buffers have finished execution.
 	VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };   // In which stages of the pipeline to wait the semaphore. VK_PIPELINE_STAGE_ ... TOP_OF_PIPE_BIT (ensures that the render passes don't begin until the image is available), COLOR_ATTACHMENT_OUTPUT_BIT (makes the render pass wait for this stage).
@@ -199,7 +215,7 @@ void Renderer::drawFrame()
 	//		- waitStages = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT (ensures that the render passes don't begin until the image is available).
 	//		- waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT (makes the render pass wait for this stage).
 
-	// 7. Presentation: Submit the result back to the swap chain to have it eventually show up on the screen.
+	// 6. Presentation: Submit the result back to the swap chain to have it eventually show up on the screen.
 	VkPresentInfoKHR presentInfo{};
 	presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 	presentInfo.waitSemaphoreCount = 1;
@@ -373,37 +389,8 @@ void Renderer::setMaxFPS(int maxFPS)
 		this->maxFPS = 0;
 }
 
-void Renderer::updateStates(uint32_t currentImage)
+void Renderer::updateUBOs(uint32_t imageIndex)
 {
-#if defined(DEBUG_RENDERER) || defined(DEBUG_RENDERLOOP)
-	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
-#endif
-
-#ifdef DEBUG_RENDERLOOP
-	std::cout << "userUpdate()" << std::endl;
-#endif
-
-	// - USER UPDATES
-
-	timer.updateTime();
-	waitForFPS(timer, maxFPS);
-	timer.reUpdateTime();
-
-#if defined(DEBUG_REND_PROFILER)
-	PRINT("  waitForFPS: ", profiler.updateTime() * 1000.f);
-#endif
-
-	userUpdate(*((Renderer*)this));   // Update model matrices and other things (user defined)
-
-#if defined(DEBUG_REND_PROFILER)
-	PRINT("  userUpdate: ", profiler.updateTime() * 1000.f);
-#endif
-
-	// - COPY DATA FROM UBOS TO GPU MEMORY
-
-	// Copy the data in the uniform buffer object to the current uniform buffer
-	// <<< Using a UBO this way is not the most efficient way to pass frequently changing values to the shader. Push constants are more efficient for passing a small buffer of data to shaders.
-
 #ifdef DEBUG_RENDERLOOP
 	std::cout << "Copy UBOs" << std::endl;
 #endif
@@ -415,16 +402,16 @@ void Renderer::updateStates(uint32_t currentImage)
 	// Global UBOs
 	if (globalUBO_vs.totalBytes)
 	{
-		vkMapMemory(c.device, globalUBO_vs.uboMemories[currentImage], 0, globalUBO_vs.totalBytes, 0, &data);
+		vkMapMemory(c.device, globalUBO_vs.uboMemories[imageIndex], 0, globalUBO_vs.totalBytes, 0, &data);
 		memcpy(data, globalUBO_vs.ubo.data(), globalUBO_vs.totalBytes);
-		vkUnmapMemory(c.device, globalUBO_vs.uboMemories[currentImage]);
+		vkUnmapMemory(c.device, globalUBO_vs.uboMemories[imageIndex]);
 	}
 
 	if (globalUBO_fs.totalBytes)
 	{
-		vkMapMemory(c.device, globalUBO_fs.uboMemories[currentImage], 0, globalUBO_fs.totalBytes, 0, &data);
+		vkMapMemory(c.device, globalUBO_fs.uboMemories[imageIndex], 0, globalUBO_fs.totalBytes, 0, &data);
 		memcpy(data, globalUBO_fs.ubo.data(), globalUBO_fs.totalBytes);
-		vkUnmapMemory(c.device, globalUBO_fs.uboMemories[currentImage]);
+		vkUnmapMemory(c.device, globalUBO_fs.uboMemories[imageIndex]);
 	}
 
 	// Local UBOs
@@ -440,17 +427,17 @@ void Renderer::updateStates(uint32_t currentImage)
 			activeBytes = model->vsUBO.numActiveSubUbos * model->vsUBO.subUboSize;
 			if (activeBytes)
 			{
-				vkMapMemory(c.device, model->vsUBO.uboMemories[currentImage], 0, activeBytes, 0, &data);	// Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
+				vkMapMemory(c.device, model->vsUBO.uboMemories[imageIndex], 0, activeBytes, 0, &data);	// Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
 				memcpy(data, model->vsUBO.ubo.data(), activeBytes);											// Copy some data in that memory. Copies a number of bytes (sizeof(ubo)) from a source (ubo) to a destination (data).
-				vkUnmapMemory(c.device, model->vsUBO.uboMemories[currentImage]);							// "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
+				vkUnmapMemory(c.device, model->vsUBO.uboMemories[imageIndex]);							// "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
 			}
 
 			activeBytes = model->fsUBO.numActiveSubUbos * model->fsUBO.subUboSize;
 			if (activeBytes)
 			{
-				vkMapMemory(c.device, model->fsUBO.uboMemories[currentImage], 0, activeBytes, 0, &data);
+				vkMapMemory(c.device, model->fsUBO.uboMemories[imageIndex], 0, activeBytes, 0, &data);
 				memcpy(data, model->fsUBO.ubo.data(), activeBytes);
-				vkUnmapMemory(c.device, model->fsUBO.uboMemories[currentImage]);
+				vkUnmapMemory(c.device, model->fsUBO.uboMemories[imageIndex]);
 			}
 		}
 }
@@ -467,7 +454,7 @@ size_t Renderer::getRendersCount(key64 key)
 
 size_t Renderer::getFrameCount() { return renderedFramesCount; }
 
-size_t Renderer::getFPS() { return std::round(1 / timer.getDeltaTime()); }
+size_t Renderer::getFPS() { return static_cast<size_t>(std::round(1 / timer.getDeltaTime())); }
 
 size_t Renderer::getModelsCount() { return models.data.size(); }
 
@@ -529,7 +516,7 @@ void Renderer::updateLightingPass(glm::vec3& camPos, Light* lights, unsigned num
 	//	//...
 	//}
 
-	for (int i = 0; i < models.data[lightingPass].fsUBO.numActiveSubUbos; i++)
+	for (uint32_t i = 0; i < models.data[lightingPass].fsUBO.numActiveSubUbos; i++)
 	{
 		dest = models.data[lightingPass].fsUBO.getSubUboPtr(i);
 		memcpy(dest, &camPos, sizes::vec4);

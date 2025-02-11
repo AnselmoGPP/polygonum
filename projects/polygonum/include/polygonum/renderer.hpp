@@ -12,7 +12,7 @@ public:
 	LoadingWorker(Renderer* renderer);
 	~LoadingWorker();
 
-	static enum Task { none, construct, delet };   //!< Used in LoadingWorker::newTask().
+	enum Task { none, construct, delet };   //!< Used in LoadingWorker::newTask().
 
 	std::mutex mutModels;   //!< for Renderer::models
 	std::mutex mutResources;   //!< for Renderer::shaders & Renderer::textures
@@ -60,7 +60,7 @@ class Renderer
 {
 protected:
 	const uint32_t ADDITIONAL_SWAPCHAIN_IMAGES = 1;   //!< (1) Total number of swapchain images = swapChain_capabilities_minImageCount + ADDITIONAL_SWAPCHAIN_IMAGES
-	const uint32_t MAX_FRAMES_IN_FLIGHT = 2;   //!< (2) How many frames should be processed concurrently.
+	const uint32_t MAX_FRAMES_IN_FLIGHT = 10;   //!< (2) How many frames should be processed concurrently.
 
 	friend ResourcesLoader;
 	friend LoadingWorker;
@@ -102,11 +102,11 @@ protected:
 	/// Draw a frame: Wait for previous command buffer execution, acquire image from swapchain, update states and command buffer, submit command buffer for execution, and present result for display on screen.
 	void drawFrame();
 
-	/// Update uniforms, transformation matrices, add/delete new models/textures. Transformation matrices (MVP) will be generated each frame.
-	void updateStates(uint32_t currentImage);
-
-	/// Callback used by the client for updating states of their models
+	/// Callback used by the client for updating states of their models.
 	void(*userUpdate) (Renderer& rend);
+
+	/// Copy data from UBOs to GPU memory. This is not the most efficient way to pass frequently changing values to the shader. Push constants are more efficient for passing a small buffer of data to shaders.
+	void updateUBOs(uint32_t imageIndex);
 
 	void cleanup();   //!< Cleanup after render loop terminates
 	void recreateSwapChain();   //!< Used in drawFrame() in case the window surface changes (like when window resizing), making swap chain no longer compatible with it. Here, we catch these events (when acquiring/submitting an image from/to the swap chain) and recreate the swap chain.

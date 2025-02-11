@@ -23,7 +23,7 @@ struct ModelDataInfo
 	ModelDataInfo();
 
 	const char* name;
-	size_t activeInstances;						//!< <= maxDescriptorsCount_vs
+	uint32_t activeInstances;						//!< <= maxDescriptorsCount_vs
 	VkPrimitiveTopology topology;				//!< Primitive topology (VK_PRIMITIVE_TOPOLOGY_ ... POINT_LIST, LINE_LIST, LINE_STRIP, TRIANGLE_LIST, TRIANGLE_STRIP). Used when creating the graphics pipeline.
 	VertexType vertexType;						//!< VertexType defines the characteristics of a vertex (size and type of the vertex' attributes: Position, Color, Texture coordinates, Normals...).
 	VertexesLoader* vertexesLoader;				//!< Info for loading vertices from any source.
@@ -57,7 +57,6 @@ public:
 	ModelData& ModelData::operator=(ModelData&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
 
 private:
-
 	Renderer* r;
 	VkPrimitiveTopology primitiveTopology;		//!< Primitive topology (VK_PRIMITIVE_TOPOLOGY_ ... POINT_LIST, LINE_LIST, LINE_STRIP, TRIANGLE_LIST, TRIANGLE_STRIP). Used when creating the graphics pipeline.
 	VertexType vertexType;
@@ -65,7 +64,7 @@ private:
 	VkCullModeFlagBits cullMode;				//!< VK_CULL_MODE_BACK_BIT, VK_CULL_MODE_NONE, ...
 	UBO* globalUBO_vs;
 	UBO* globalUBO_fs;
-	size_t activeInstances;		//!< Number of renderings (<= vsDynUBO.dynBlocksCount). Can be set with setRenderCount.
+	uint32_t activeInstances;		//!< Number of renderings (<= vsDynUBO.dynBlocksCount). Can be set with setRenderCount.
 
 	/// Layout for the descriptor set (descriptor: handle or pointer into a resource (buffer, sampler, texture...))
 	void createDescriptorSetLayout();
@@ -106,7 +105,7 @@ public:
 	void recreate_pipeline_and_descriptors();   //!< Creates graphic pipeline and descriptor sets. Called for window resizing (by Renderer::recreateSwapChain()).
 
 	bool setActiveInstancesCount(size_t activeInstancesCount);	//!< Set number of active instances (<= vsUBO.maxUBOcount).
-	size_t getActiveInstancesCount();
+	uint32_t getActiveInstancesCount();
 
 	VkPipelineLayout			 pipelineLayout;		//!< Pipeline layout. Allows to use uniform values in shaders (globals similar to dynamic state variables that can be changed at drawing time to alter the behavior of your shaders without having to recreate them).
 	VkPipeline					 graphicsPipeline;		//!< Opaque handle to a pipeline object.

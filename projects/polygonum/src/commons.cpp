@@ -44,6 +44,6 @@ void copyCString(const char*& destination, const char* source)
 {
 	size_t siz = strlen(source) + 1;
 	char* address = new char[siz];
-	strncpy(address, source, siz);
+	strncpy(address, source, siz);  //strncpy_s(address, siz, source, _TRUNCATE);
 	destination = address;
 }

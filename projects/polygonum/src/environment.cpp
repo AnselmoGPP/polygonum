@@ -417,8 +417,8 @@ bool ValLayers::checkValidationLayerSupport()
 	// Print "requiredLayers" and "availableLayers"
 	#ifdef DEBUG_ENV_INFO
 		std::cout << "   Required validation layers: \n";
-		for (size_t i = 0; i < requiredLayers.size(); ++i)
-			std::cout << "      " << requiredLayers[i] << '\n';
+		for (size_t i = 0; i < requiredValidationLayers.size(); ++i)
+			std::cout << "      " << requiredValidationLayers[i] << '\n';
 
 		std::cout << "   Available validation layers: \n";
 		for (size_t i = 0; i < layerCount; ++i)
@@ -991,7 +991,7 @@ void SwapChain::createSwapChain()
 	vkGetSwapchainImagesKHR(c.device, swapChain, &imageCount, images.data());
 	
 	#ifdef DEBUG_ENV_INFO
-		std::cout << "   Swap chain images: " << swapChain.images.size() << std::endl;
+		std::cout << "   Swap chain images: " << images.size() << std::endl;
 	#endif
 
 	// 1.5. Save format and extent for future use
@@ -1179,7 +1179,7 @@ void Commander::transitionImageLayout(VkImage image, VkFormat format, VkImageLay
 	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
 #endif
 
-	size_t frameIndex = getNextFrame();
+	uint32_t frameIndex = getNextFrame();
 	const std::lock_guard<std::mutex> lock(mutFrame[frameIndex]);
 
 	VkCommandBuffer commandBuffer = beginSingleTimeCommands(frameIndex);
@@ -1295,7 +1295,7 @@ void Commander::copyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize 
 	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
 #endif
 
-	size_t frameIndex = getNextFrame();
+	uint32_t frameIndex = getNextFrame();
 	const std::lock_guard<std::mutex> lock(mutFrame[frameIndex]);
 
 	VkCommandBuffer commandBuffer = beginSingleTimeCommands(frameIndex);
@@ -1321,7 +1321,7 @@ void Commander::copyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width
 	std::cout << typeid(*this).name() << "::" << __func__ << " BEGIN" << std::endl;
 #endif
 
-	size_t frameIndex = getNextFrame();
+	uint32_t frameIndex = getNextFrame();
 	const std::lock_guard<std::mutex> lock(mutFrame[frameIndex]);
 
 	VkCommandBuffer commandBuffer = beginSingleTimeCommands(frameIndex);
@@ -1372,7 +1372,7 @@ void Commander::generateMipmaps(VkImage image, VkFormat imageFormat, int32_t tex
 		// It's uncommon to generate the mipmap levels at runtime anyway. Usually they are pregenerated and stored in the texture file alongside the base level to improve loading speed. <<<<<
 	}
 
-	size_t frameIndex = getNextFrame();
+	uint32_t frameIndex = getNextFrame();
 	const std::lock_guard<std::mutex> lock(mutFrame[frameIndex]);
 
 	VkCommandBuffer commandBuffer = beginSingleTimeCommands(frameIndex);
@@ -1673,7 +1673,7 @@ void RenderPass::createFramebuffers(VulkanCore& c, SwapChain& swapChain)
 		VkFramebufferCreateInfo framebufferInfo{};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		framebufferInfo.renderPass = renderPass;							// A framebuffer can only be used with the render passes that it is compatible with, which roughly means that they use the same number and type of attachments.
-		framebufferInfo.attachmentCount = attachments_2[i].size();
+		framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments_2[i].size());
 		framebufferInfo.pAttachments = attachments_2[i].data();				// Objects that should be bound to the respective attachment descriptions in the render pass pAttachment array.
 		framebufferInfo.width = swapChain.extent.width;
 		framebufferInfo.height = swapChain.extent.height;
@@ -1733,8 +1733,8 @@ RP_DS::RP_DS(VulkanCore& core, SwapChain& swapChain, Commander& commander)
 
 	// clearValues -------------------------
 
-	VkClearColorValue background = { 0.20, 0.59, 1.00, 1.00 };
-	VkClearColorValue zeros = { 0.0, 0.0, 0.0, 0.0 };
+	VkClearColorValue background = { 0.20f, 0.59f, 1.00f, 1.00f };
+	VkClearColorValue zeros = { 0.0f, 0.0f, 0.0f, 0.0f };
 	size_t i = 0;
 
 	renderPasses[i].clearValues.resize(5);						// One per attachment (MSAA color buffer, resolve color buffer, depth buffer...). The order of clearValues should be identical to the order of your attachments.
@@ -1956,7 +1956,7 @@ void RP_DS::createRenderPass()
 	subpass21.pResolveAttachments = nullptr;
 	subpass21.pDepthStencilAttachment = nullptr;
 	std::vector<VkAttachmentReference> inputAttachments21 = { positionAttRef_2, albedoAttRef_2, normalAttRef_2, specRougAttRef_2 };
-	subpass21.inputAttachmentCount = inputAttachments21.size();
+	subpass21.inputAttachmentCount = static_cast<uint32_t>(inputAttachments21.size());
 	subpass21.pInputAttachments = inputAttachments21.data();	// <<< Can't input attachments read per-sample? Only per-pixel?
 	subpass21.preserveAttachmentCount;
 	subpass21.pPreserveAttachments;
@@ -2137,8 +2137,8 @@ RP_DS_PP::RP_DS_PP(VulkanCore& core, SwapChain& swapChain, Commander& commander)
 
 	// clearValues -------------------------
 
-	VkClearColorValue background = { 0.20, 0.59, 1.00, 1.00 };
-	VkClearColorValue zeros = { 0.0, 0.0, 0.0, 0.0 };
+	VkClearColorValue background = { 0.20f, 0.59f, 1.00f, 1.00f };
+	VkClearColorValue zeros = { 0.0f, 0.0f, 0.0f, 0.0f };
 	size_t i = 0;
 
 	renderPasses[i].clearValues.resize(5);				// One per attachment (MSAA color buffer, resolve color buffer, depth buffer...). The order of clearValues should be identical to the order of your attachments.

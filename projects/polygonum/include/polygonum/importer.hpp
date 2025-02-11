@@ -77,7 +77,7 @@ extern std::vector<uint16_t   > noIndices;			//!< Vector with 0 indices
 class VertexType
 {
 public:
-	VertexType(std::initializer_list<size_t> attribsSizes, std::initializer_list<VkFormat> attribsFormats);	//!< Constructor. Set the size (bytes) and type of each vertex attribute (Position, Color, Texture coords, Normal, other...).
+	VertexType(std::initializer_list<uint32_t> attribsSizes, std::initializer_list<VkFormat> attribsFormats);	//!< Constructor. Set the size (bytes) and type of each vertex attribute (Position, Color, Texture coords, Normal, other...).
 	VertexType();
 	~VertexType();
 	VertexType& operator=(const VertexType& obj);				//!< Copy assignment operator overloading. Required for copying a VertexSet object.
@@ -86,8 +86,8 @@ public:
 	std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions() const;	//!< Used for passing the format, location and offset of each vertex attribute to the graphics pipeline.
 
 	std::vector<VkFormat> attribsFormats;			//!< Format (VkFormat) of each vertex attribute. E.g.: VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32_SFLOAT...
-	std::vector<size_t> attribsSizes;				//!< Size of each attribute type. E.g.: 3 * sizeof(float)...
-	size_t vertexSize;								//!< Size (bytes) of a vertex object
+	std::vector<uint32_t> attribsSizes;				//!< Size of each attribute type. E.g.: 3 * sizeof(float)...
+	uint32_t vertexSize;								//!< Size (bytes) of a vertex object
 };
 
 /// VertexSet serves as a container for any object type, similarly to a std::vector, but storing such objects directly in bytes (char array). This allows ModelData objects store different Vertex types in a clean way (otherwise, templates and inheritance would be required, but code would be less clean).
@@ -107,19 +107,19 @@ public:
 	char* data() const;
 	void push_back(const void* element);
 	void reserve(unsigned size);
-	void reset(size_t vertexSize, size_t numOfVertex, const void* buffer);	//!< Similar to a copy constructor, but just using its parameters instead of an already existing object.
-	void reset(size_t vertexSize);
+	void reset(uint32_t vertexSize, uint32_t numOfVertex, const void* buffer);	//!< Similar to a copy constructor, but just using its parameters instead of an already existing object.
+	void reset(uint32_t vertexSize);
 
 	// Debugging purposes
 	void* getElement(size_t i) const;		//!< Get pointer to element
 	void printElement(size_t i) const;		//!< Print vertex floats
 	void printAllElements() const;	//!< Print vertex floats of all elements
-	size_t getNumVertex() const;
+	uint32_t getNumVertex() const;
 
 private:
 	char* buffer;			// Set of vertex objects stored directly in bytes
-	size_t capacity;		// (resizable) Maximum number of vertex objects that fit in buffer
-	size_t numVertex;		// Number of vertex objects stored in buffer
+	unsigned int capacity;	// (resizable) Maximum number of vertex objects that fit in buffer
+	uint32_t numVertex;		// Number of vertex objects stored in buffer
 };
 
 /// Container for Vertexes (position, color, texture coordinates...) and Indices.
@@ -182,7 +182,7 @@ class VertexesLoader
 protected:
 	VertexesLoader(size_t vertexSize, std::initializer_list<VerticesModifier*> modifiers);
 
-	const size_t vertexSize;	//!< Size (bytes) of a vertex object
+	const uint32_t vertexSize;	//!< Size (bytes) of a vertex object
 	std::vector<VerticesModifier*> modifiers;
 	
 	virtual void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources) = 0;   //!< Get vertexes and indices from source. Subclasses define this.
@@ -204,7 +204,7 @@ public:
 /// Pass all the vertices at construction time. Call to getRawData will pass these vertices.
 class VL_fromBuffer : public VertexesLoader
 {
-	VL_fromBuffer(const void* verticesData, size_t vertexSize, size_t vertexCount, const std::vector<uint16_t>& indices, std::initializer_list<VerticesModifier*> modifiers);
+	VL_fromBuffer(const void* verticesData, uint32_t vertexSize, uint32_t vertexCount, const std::vector<uint16_t>& indices, std::initializer_list<VerticesModifier*> modifiers);
 
 	VertexSet rawVertices;
 	std::vector<uint16_t> rawIndices;

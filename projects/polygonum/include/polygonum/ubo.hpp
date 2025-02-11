@@ -146,8 +146,8 @@ public:
 	UBO(UBO&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
 	UBO& operator=(UBO&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
 
-	size_t						maxNumSubUbos;			//!< Max. possible number of descriptors. This has to be fixed because it's fixed in the shader.
-	size_t						numActiveSubUbos;		//!< Number of descriptors used (must be <= maxDescriptors). 
+	uint32_t					maxNumSubUbos;			//!< Max. possible number of descriptors. This has to be fixed because it's fixed in the shader.
+	uint32_t					numActiveSubUbos;		//!< Number of descriptors used (must be <= maxDescriptors). 
 	VkDeviceSize				subUboSize;				//!< Size (bytes) of each aligned descriptor (example: 4) (at least, minUBOffsetAlignment)
 	size_t						totalBytes;				//!< Size (bytes) of the set of UBOs (example: 12)
 

@@ -294,7 +294,7 @@ uint64_t appendInt(uint64_t first, uint64_t second);
 float getSphereArea(float radius);
 
 /// Get modulus safely (if b == 0, this returns 0).
-float safeMod(int a, int b);
+int safeMod(int a, int b);
 float safeMod(float a, float b);
 glm::vec3 safeMod(const glm::vec3& a, float b);
 
@@ -453,7 +453,7 @@ class Quicksort_distVec3
 	float sqrDist2;
 
     // Testing
-    int pos(std::vector<glm::vec3>::iterator iter);                     //!< Get vector index
+	int64_t pos(std::vector<glm::vec3>::iterator iter);                     //!< Get vector index
     std::vector<glm::vec3>::iterator begin;
 
 public:

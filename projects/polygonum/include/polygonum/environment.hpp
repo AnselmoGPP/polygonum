@@ -35,8 +35,8 @@ class VulkanCore;
 
 struct QueueFamilyIndices;
 struct SwapChainSupportDetails;
-struct Image;
-struct SwapChain;
+class Image;
+class SwapChain;
 struct DeviceData;
 
 class  Subpass;

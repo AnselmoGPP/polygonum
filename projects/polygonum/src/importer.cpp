@@ -50,7 +50,7 @@ void ResourcesLoader::loadResources(ModelData& model, Renderer& rend)
 
 // VERTICES --------------------------------------------------------
 
-VertexType::VertexType(std::initializer_list<size_t> attribsSizes, std::initializer_list<VkFormat> attribsFormats)
+VertexType::VertexType(std::initializer_list<uint32_t> attribsSizes, std::initializer_list<VkFormat> attribsFormats)
 	: attribsFormats(attribsFormats), attribsSizes(attribsSizes), vertexSize(0)
 {
 	for (unsigned i = 0; i < this->attribsSizes.size(); i++)
@@ -175,7 +175,7 @@ void VertexSet::printAllElements() const
 		printElement(i);
 }
 
-size_t VertexSet::getNumVertex() const { return numVertex; }
+uint32_t VertexSet::getNumVertex() const { return numVertex; }
 
 void VertexSet::push_back(const void* element)
 {
@@ -207,19 +207,19 @@ void VertexSet::reserve(unsigned newCapacity)
 	}
 }
 
-void VertexSet::reset(size_t vertexSize, size_t numOfVertex, const void* buffer)
+void VertexSet::reset(uint32_t vertexSize, uint32_t numOfVertex, const void* buffer)
 {
 	if (buffer) delete[] this->buffer;
 
 	this->vertexSize = vertexSize;
 	this->numVertex = numOfVertex;
 
-	capacity = pow(2, 1 + (int)(log(numOfVertex) / log(2)));		// log b (M) = ln(M) / ln(b)
+	capacity = static_cast<unsigned>(pow(2, 1 + (int)(log(numOfVertex) / log(2))));		// log b (M) = ln(M) / ln(b)
 	this->buffer = new char[capacity * vertexSize];
 	std::memcpy(this->buffer, buffer, totalBytes());
 }
 
-void VertexSet::reset(size_t vertexSize)
+void VertexSet::reset(uint32_t vertexSize)
 {
 	if (buffer) delete[] this->buffer;
 
@@ -315,7 +315,7 @@ void VertexesLoader::createIndexBuffer(const std::vector<uint16_t>& rawIndices, 
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
 
-	result.indexCount = rawIndices.size();
+	result.indexCount = static_cast<uint32_t>(rawIndices.size());
 
 	if (rawIndices.size() == 0) return;
 
@@ -360,9 +360,9 @@ glm::vec3 VertexesLoader::getVertexTangent(const glm::vec3& v1, const glm::vec3&
 	glm::vec3 uvDiff2 = glm::vec3(uv3, 0) - glm::vec3(uv1, 0);
 
 	glm::vec3 denominator = (uvDiff1 * edge2 - uvDiff2 * edge1);
-	if (abs(denominator.x) < 0.0001) denominator.x = 0.0001;			// Handle cases where the denominator approaches zero (which can happen when the triangle's texture coordinates are aligned)
-	if (abs(denominator.y) < 0.0001) denominator.y = 0.0001;
-	if (abs(denominator.z) < 0.0001) denominator.z = 0.0001;
+	if (abs(denominator.x) < 0.0001f) denominator.x = 0.0001f;			// Handle cases where the denominator approaches zero (which can happen when the triangle's texture coordinates are aligned)
+	if (abs(denominator.y) < 0.0001f) denominator.y = 0.0001f;
+	if (abs(denominator.z) < 0.0001f) denominator.z = 0.0001f;
 
 	//glm::vec3 tangent   = glm::normalize((uvDiff2 * edge1 - uvDiff1 * edge2) / denominator);
 	//glm::vec3 biTangent = glm::normalize((uvDiff1 * edge2 - uvDiff2 * edge1) / denominator);
@@ -370,7 +370,7 @@ glm::vec3 VertexesLoader::getVertexTangent(const glm::vec3& v1, const glm::vec3&
 	return glm::normalize((uvDiff2 * edge1 - uvDiff1 * edge2) / denominator);
 }
 
-VL_fromBuffer::VL_fromBuffer(const void* verticesData, size_t vertexSize, size_t vertexCount, const std::vector<uint16_t>& indices, std::initializer_list<VerticesModifier*> modifiers)
+VL_fromBuffer::VL_fromBuffer(const void* verticesData, uint32_t vertexSize, uint32_t vertexCount, const std::vector<uint16_t>& indices, std::initializer_list<VerticesModifier*> modifiers)
 	: VertexesLoader(vertexSize, modifiers)
 {
 	rawVertices.reset(vertexSize, vertexCount, verticesData);
@@ -1187,7 +1187,7 @@ float OpticalDepthTable::opticalDepth(glm::vec3 rayOrigin, glm::vec3 rayDir, flo
 	float stepSize = rayLength / (numOptDepthPoints - 1);
 	float opticalDepth = 0;
 
-	for (int i = 0; i < numOptDepthPoints; i++)
+	for (unsigned i = 0; i < numOptDepthPoints; i++)
 	{
 		opticalDepth += densityAtPoint(point) * stepSize;
 		point += rayDir * stepSize;
