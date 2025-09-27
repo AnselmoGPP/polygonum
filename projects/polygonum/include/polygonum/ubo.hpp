@@ -122,43 +122,43 @@ struct Material
 };
 
 
-struct UBOinfo
+struct UBOsArrayInfo
 {
-	UBOinfo(size_t maxNumSubUbos, size_t numActiveSubUbos, size_t minSubUboSize);
-	UBOinfo();
+	UBOsArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t minUboSize);
+	UBOsArrayInfo();
 
-	size_t maxNumSubUbos;
-	size_t numActiveSubUbos;
-	size_t minSubUboSize;
+	size_t maxNumUbos;
+	size_t numActiveUbos;
+	size_t minUboSize;
 };
 
-/// Container for a composite UBO (i.e., a UBO containing one or more sub-UBOs, which are useful for instance rendering).
-struct UBO
+/// Container for a binding of uniform buffers, which is an array of uniform buffer descriptors (UBOs). Multiple UBOs are useful for instance rendering.
+struct UBOsArray
 {
 private:
 	VulkanCore* c;
 	SwapChain* swapChain;
 
 public:
-	UBO(Renderer* renderer, UBOinfo uboInfo);
-	UBO();
-	~UBO() = default;
-	UBO(UBO&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
-	UBO& operator=(UBO&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
+	UBOsArray(Renderer* renderer, UBOsArrayInfo UBOsArrayInfo);
+	UBOsArray();
+	~UBOsArray() = default;
+	UBOsArray(UBOsArray&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
+	UBOsArray& operator=(UBOsArray&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
 
-	uint32_t					maxNumSubUbos;			//!< Max. possible number of descriptors. This has to be fixed because it's fixed in the shader.
-	uint32_t					numActiveSubUbos;		//!< Number of descriptors used (must be <= maxDescriptors). 
-	VkDeviceSize				subUboSize;				//!< Size (bytes) of each aligned descriptor (example: 4) (at least, minUBOffsetAlignment)
-	size_t						totalBytes;				//!< Size (bytes) of the set of UBOs (example: 12)
+	uint32_t					maxNumUbos;			//!< Max. possible number of descriptors. This is fixed because it's fixed in the shader.
+	uint32_t					numActiveUbos;		//!< Number of descriptors used (must be <= maxDescriptors). 
+	VkDeviceSize				uboSize;			//!< Size (bytes) of each aligned descriptor (example: 4) (at least, minUBOffsetAlignment)
+	size_t						totalBytes;			//!< Size (bytes) of the array of UBOs (example: 12)
 
-	std::vector<uint8_t>		ubo;					//!< Stores the UBO that will be passed to vertex shader (MVP, M for normals, light...). Its attributes are aligned to 16-byte boundary.
-	std::vector<VkBuffer>		uboBuffers;				//!< Opaque handle to a buffer object (here, uniform buffer). One for each swap chain image.
-	std::vector<VkDeviceMemory>	uboMemories;			//!< Opaque handle to a device memory object (here, memory for the uniform buffer). One for each swap chain image.
+	std::vector<uint8_t>		binding;			//!< Array of UBOs will be passed to vertex shader (MVP, M for normals, light...). Its attributes are aligned to 16-byte boundary.
+	std::vector<VkBuffer>		bindingBuffers;		//!< Opaque handle to a buffer object (here, a binding). One for each swap chain image.
+	std::vector<VkDeviceMemory>	bindingMemories;	//!< Opaque handle to a device memory object (here, memory for the binding). One for each swap chain image.
 
-	bool setNumActiveSubUbos(size_t count);				//!< Set the value of activeUBOs. Returns false if > maxUBOcount;
-	uint8_t* getSubUboPtr(size_t subUboIndex);
-	void createUBO();									//!< Create uniform buffers (type of descriptors that can be bound) (VkBuffer & VkDeviceMemory), one for each swap chain image. At least one is created (if count == 0, a buffer of size "range" is created).
-	void destroyUBO();				//!< Destroy the uniform buffers (VkBuffer) and their memories (VkDeviceMemory).
+	bool setNumActiveUbos(size_t count);			//!< Set the value of activeUBOs. Returns false if > maxUBOcount;
+	uint8_t* getUboPtr(size_t uboIndex);
+	void createBinding();								//!< Create uniform buffers (type of descriptors that can be bound) (VkBuffer & VkDeviceMemory), one for each swap chain image. At least one is created (if count == 0, a buffer of size "range" is created).
+	void destroyBinding();				//!< Destroy the uniform buffers (VkBuffer) and their memories (VkDeviceMemory).
 };
 
 /// Model-View-Projection matrix as a UBO (Uniform buffer object) (https://www.opengl-tutorial.org/beginners-tutorials/tutorial-3-matrices/)

@@ -29,12 +29,12 @@ struct ModelDataInfo
 	VertexesLoader* vertexesLoader;				//!< Info for loading vertices from any source.
 	std::vector<ShaderLoader*> shadersInfo;		//!< Shaders info
 	std::vector<TextureLoader*> texturesInfo;	//!< Textures info
-	size_t maxDescriptorsCount_vs;				//!< Max. number of active instances
-	size_t maxDescriptorsCount_fs;
-	size_t UBOsize_vs;
-	size_t UBOsize_fs;
-	UBO* globalUBO_vs;
-	UBO* globalUBO_fs;
+	size_t maxNumUbos_vs;				//!< Max. number of active instances
+	size_t maxNumUbos_fs;
+	size_t uboSize_vs;
+	size_t uboSize_fs;
+	UBOsArray* globalUBO_vs;
+	UBOsArray* globalUBO_fs;
 	bool transparency;
 	uint32_t renderPassIndex;					//!< 0 (geometry pass), 1 (lighting pass), 2 (forward pass), 3 (postprocessing pass)
 	uint32_t subpassIndex;
@@ -62,8 +62,8 @@ private:
 	VertexType vertexType;
 	bool hasTransparencies;						//!< Flags if textures contain transparencies (alpha channel)
 	VkCullModeFlagBits cullMode;				//!< VK_CULL_MODE_BACK_BIT, VK_CULL_MODE_NONE, ...
-	UBO* globalUBO_vs;
-	UBO* globalUBO_fs;
+	UBOsArray* globalUBO_vs;
+	UBOsArray* globalUBO_fs;
 	uint32_t activeInstances;		//!< Number of renderings (<= vsDynUBO.dynBlocksCount). Can be set with setRenderCount.
 
 	/// Layout for the descriptor set (descriptor: handle or pointer into a resource (buffer, sampler, texture...))
@@ -115,8 +115,8 @@ public:
 
 	VertexData					 vert;					//!< Vertex data + Indices
 
-	UBO							 vsUBO;					//!< Stores the set of UBOs that will be passed to the vertex shader
-	UBO							 fsUBO;					//!< Stores the UBO that will be passed to the fragment shader
+	UBOsArray					 vsUBOs;				//!< Stores the set of UBOs that will be passed to the vertex shader
+	UBOsArray					 fsUBOs;				//!< Stores the UBO that will be passed to the fragment shader
 	VkDescriptorSetLayout		 descriptorSetLayout;	//!< Opaque handle to a descriptor set layout object (combines all of the descriptor bindings).
 	VkDescriptorPool			 descriptorPool;		//!< Opaque handle to a descriptor pool object.
 	std::vector<VkDescriptorSet> descriptorSets;		//!< List. Opaque handle to a descriptor set object. One for each swap chain image.

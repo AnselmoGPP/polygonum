@@ -65,7 +65,7 @@ protected:
 	friend ResourcesLoader;
 	friend LoadingWorker;
 	friend ModelData;
-	friend UBO;
+	friend UBOsArray;
 	friend VertexesLoader;
 	friend TextureLoader;
 
@@ -114,11 +114,11 @@ protected:
 public:
 	// LOOK what if firstModel.size() == 0
 	/// Constructor. Requires a callback for user updates (update model matrix, add models, delete models...).
-	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOinfo globalUBO_vs, UBOinfo globalUBO_fs);
+	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOsArrayInfo globalUBO_vs, UBOsArrayInfo globalUBO_fs);
 	virtual ~Renderer();
 
-	UBO globalUBO_vs;
-	UBO globalUBO_fs;
+	UBOsArray globalUBO_vs;
+	UBOsArray globalUBO_fs;
 
 	void renderLoop();	//!< Create command buffer and start render loop.
 

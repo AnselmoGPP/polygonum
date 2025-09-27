@@ -15,108 +15,108 @@ namespace sizes {
 	//size_t lightSize;
 }
 
-UBOinfo::UBOinfo(size_t maxNumSubUbos, size_t numActiveSubUbos, size_t minSubUboSize)
-	: maxNumSubUbos(maxNumSubUbos), numActiveSubUbos(numActiveSubUbos), minSubUboSize(minSubUboSize) { }
+UBOsArrayInfo::UBOsArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t minUboSize)
+	: maxNumUbos(maxNumUbos), numActiveUbos(numActiveUbos), minUboSize(minUboSize) { }
 
-UBOinfo::UBOinfo()
-	: maxNumSubUbos(0), numActiveSubUbos(0), minSubUboSize(0) { }
+UBOsArrayInfo::UBOsArrayInfo()
+	: maxNumUbos(0), numActiveUbos(0), minUboSize(0) { }
 
-UBO::UBO(Renderer* renderer, UBOinfo uboInfo) :
+UBOsArray::UBOsArray(Renderer* renderer, UBOsArrayInfo UBOsArrayInfo) :
 	c(&renderer->c),
 	swapChain(&renderer->swapChain),
-	maxNumSubUbos(uboInfo.maxNumSubUbos),
-	subUboSize(uboInfo.minSubUboSize ? c->deviceData.minUniformBufferOffsetAlignment * (1 + uboInfo.minSubUboSize / c->deviceData.minUniformBufferOffsetAlignment) : 0),
-	totalBytes(subUboSize* maxNumSubUbos),
-	ubo(totalBytes)
+	maxNumUbos(UBOsArrayInfo.maxNumUbos),
+	uboSize(UBOsArrayInfo.minUboSize ? c->deviceData.minUniformBufferOffsetAlignment * (1 + UBOsArrayInfo.minUboSize / c->deviceData.minUniformBufferOffsetAlignment) : 0),
+	totalBytes(uboSize* maxNumUbos),
+	binding(totalBytes)
 {
-	setNumActiveSubUbos(uboInfo.numActiveSubUbos);
+	setNumActiveUbos(UBOsArrayInfo.numActiveUbos);
 }
 
-UBO::UBO() 
-	: c(nullptr), swapChain(nullptr), maxNumSubUbos(0), numActiveSubUbos(0), subUboSize(0), totalBytes(0), ubo(0), uboBuffers(0), uboMemories(0)
+UBOsArray::UBOsArray()
+	: c(nullptr), swapChain(nullptr), maxNumUbos(0), numActiveUbos(0), uboSize(0), totalBytes(0), binding(0), bindingBuffers(0), bindingMemories(0)
 { };
 
-UBO::UBO(UBO&& other) noexcept
+UBOsArray::UBOsArray(UBOsArray&& other) noexcept
 	: c(other.c),
 	swapChain(other.swapChain),
-	maxNumSubUbos(other.maxNumSubUbos),
-	numActiveSubUbos(other.numActiveSubUbos),
-	subUboSize(other.subUboSize),
+	maxNumUbos(other.maxNumUbos),
+	numActiveUbos(other.numActiveUbos),
+	uboSize(other.uboSize),
 	totalBytes(other.totalBytes)
 {
-	ubo = std::move(other.ubo);
-	uboBuffers = std::move(other.uboBuffers);
-	uboMemories = std::move(other.uboMemories);
+	binding = std::move(other.binding);
+	bindingBuffers = std::move(other.bindingBuffers);
+	bindingMemories = std::move(other.bindingMemories);
 }
 
-UBO& UBO::operator=(UBO&& other) noexcept
+UBOsArray& UBOsArray::operator=(UBOsArray&& other) noexcept
 {
 	if (this != &other)
 	{
 		// Transfer resources ownership
 		c = other.c;
 		swapChain = other.swapChain,
-		maxNumSubUbos = other.maxNumSubUbos;
-		numActiveSubUbos = other.numActiveSubUbos;
-		subUboSize = other.subUboSize;
+		maxNumUbos = other.maxNumUbos;
+		numActiveUbos = other.numActiveUbos;
+		uboSize = other.uboSize;
 		totalBytes = other.totalBytes;
 
-		ubo = std::move(other.ubo);
-		uboBuffers = std::move(other.uboBuffers);
-		uboMemories = std::move(other.uboMemories);
+		binding = std::move(other.binding);
+		bindingBuffers = std::move(other.bindingBuffers);
+		bindingMemories = std::move(other.bindingMemories);
 
 		// Leave other in valid state
-		other.maxNumSubUbos = 0;
-		other.numActiveSubUbos = 0;
-		other.subUboSize = 0;
+		other.maxNumUbos = 0;
+		other.numActiveUbos = 0;
+		other.uboSize = 0;
 		other.totalBytes = 0;
 
-		other.ubo.clear();
-		other.uboBuffers.clear();
-		other.uboMemories.clear();
+		other.binding.clear();
+		other.bindingBuffers.clear();
+		other.bindingMemories.clear();
 	}
 	return *this;
 }
 
-uint8_t* UBO::getSubUboPtr(size_t descriptorIndex) { return ubo.data() + descriptorIndex * subUboSize; }
+uint8_t* UBOsArray::getUboPtr(size_t uboIndex) { return binding.data() + uboIndex * uboSize; }
 
-bool UBO::setNumActiveSubUbos(size_t count)
+bool UBOsArray::setNumActiveUbos(size_t count)
 {
-	if (count > maxNumSubUbos)
+	if (count > maxNumUbos)
 	{
-		numActiveSubUbos = maxNumSubUbos;
+		numActiveUbos = maxNumUbos;
 		return false;
 	}
 
-	numActiveSubUbos = count;
+	numActiveUbos = count;
 	return true;
 }
 
 // (21)
-void UBO::createUBO()
+void UBOsArray::createBinding()
 {
-	if (!maxNumSubUbos) return;
+	if (!maxNumUbos) return;
 
-	uboBuffers.resize(swapChain->images.size());
-	uboMemories.resize(swapChain->images.size());
+	bindingBuffers.resize(swapChain->images.size());
+	bindingMemories.resize(swapChain->images.size());
 	
 	//destroyUniformBuffers();		// Not required since Renderer calls this first
 
-	if (subUboSize)
+	if (uboSize)
 		for (size_t i = 0; i < swapChain->images.size(); i++)
 			c->createBuffer(
-				maxNumSubUbos == 0 ? subUboSize : totalBytes,
+				maxNumUbos == 0 ? uboSize : totalBytes,
 				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-				uboBuffers[i],
-				uboMemories[i]);
+				bindingBuffers[i],
+				bindingMemories[i]);
 }
 
-void UBO::destroyUBO()
+void UBOsArray::destroyBinding()
 {
-	if (subUboSize)
+	if (uboSize)
 		for (size_t i = 0; i < swapChain->images.size(); i++)
-			c->destroyBuffer(c->device, uboBuffers[i], uboMemories[i]);
+			c->destroyBuffer(c->device, bindingBuffers[i], bindingMemories[i]);
 }
 
 Material::Material(glm::vec3& diffuse, glm::vec3& specular, float shininess)

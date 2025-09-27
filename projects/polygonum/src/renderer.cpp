@@ -41,7 +41,7 @@ void Renderer::recreateSwapChain()
 	commander.imagesInFlight.resize(swapChain.numImages(), { VK_NULL_HANDLE, 0 });
 }
 
-Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOinfo globalUBO_vs, UBOinfo globalUBO_fs) :
+Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOsArrayInfo globalUBO_vs, UBOsArrayInfo globalUBO_fs) :
 	c(width, height),
 	swapChain(c, ADDITIONAL_SWAPCHAIN_IMAGES),
 	commander(c, swapChain.images.size(), MAX_FRAMES_IN_FLIGHT),
@@ -64,8 +64,8 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOi
 	//else rw = std::make_shared<RW_PP>(*this);
 
 	// Create UBOs
-	if (this->globalUBO_vs.totalBytes) this->globalUBO_vs.createUBO();
-	if (this->globalUBO_fs.totalBytes) this->globalUBO_fs.createUBO();
+	if (this->globalUBO_vs.totalBytes) this->globalUBO_vs.createBinding();
+	if (this->globalUBO_fs.totalBytes) this->globalUBO_fs.createBinding();
 }
 
 Renderer::~Renderer()
@@ -299,8 +299,8 @@ void Renderer::cleanup()
 
 	models.data.clear();   // lock_guard (worker.mutModels) not necessary before this because worker stopped the loading thread.
 
-	if (globalUBO_vs.totalBytes) globalUBO_vs.destroyUBO();
-	if (globalUBO_fs.totalBytes) globalUBO_fs.destroyUBO();
+	if (globalUBO_vs.totalBytes) globalUBO_vs.destroyBinding();
+	if (globalUBO_fs.totalBytes) globalUBO_fs.destroyBinding();
 
 	commander.freeCommandBuffers();
 	commander.destroySynchronizers();
@@ -402,16 +402,16 @@ void Renderer::updateUBOs(uint32_t imageIndex)
 	// Global UBOs
 	if (globalUBO_vs.totalBytes)
 	{
-		vkMapMemory(c.device, globalUBO_vs.uboMemories[imageIndex], 0, globalUBO_vs.totalBytes, 0, &data);
-		memcpy(data, globalUBO_vs.ubo.data(), globalUBO_vs.totalBytes);
-		vkUnmapMemory(c.device, globalUBO_vs.uboMemories[imageIndex]);
+		vkMapMemory(c.device, globalUBO_vs.bindingMemories[imageIndex], 0, globalUBO_vs.totalBytes, 0, &data);
+		memcpy(data, globalUBO_vs.binding.data(), globalUBO_vs.totalBytes);
+		vkUnmapMemory(c.device, globalUBO_vs.bindingMemories[imageIndex]);
 	}
 
 	if (globalUBO_fs.totalBytes)
 	{
-		vkMapMemory(c.device, globalUBO_fs.uboMemories[imageIndex], 0, globalUBO_fs.totalBytes, 0, &data);
-		memcpy(data, globalUBO_fs.ubo.data(), globalUBO_fs.totalBytes);
-		vkUnmapMemory(c.device, globalUBO_fs.uboMemories[imageIndex]);
+		vkMapMemory(c.device, globalUBO_fs.bindingMemories[imageIndex], 0, globalUBO_fs.totalBytes, 0, &data);
+		memcpy(data, globalUBO_fs.binding.data(), globalUBO_fs.totalBytes);
+		vkUnmapMemory(c.device, globalUBO_fs.bindingMemories[imageIndex]);
 	}
 
 	// Local UBOs
@@ -424,20 +424,20 @@ void Renderer::updateUBOs(uint32_t imageIndex)
 		{
 			model = &it->second;
 
-			activeBytes = model->vsUBO.numActiveSubUbos * model->vsUBO.subUboSize;
+			activeBytes = model->vsUBOs.numActiveUbos * model->vsUBOs.uboSize;
 			if (activeBytes)
 			{
-				vkMapMemory(c.device, model->vsUBO.uboMemories[imageIndex], 0, activeBytes, 0, &data);	// Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
-				memcpy(data, model->vsUBO.ubo.data(), activeBytes);											// Copy some data in that memory. Copies a number of bytes (sizeof(ubo)) from a source (ubo) to a destination (data).
-				vkUnmapMemory(c.device, model->vsUBO.uboMemories[imageIndex]);							// "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
+				vkMapMemory(c.device, model->vsUBOs.bindingMemories[imageIndex], 0, activeBytes, 0, &data);	// Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
+				memcpy(data, model->vsUBOs.binding.data(), activeBytes);											// Copy some data in that memory. Copies a number of bytes (sizeof(ubo)) from a source (ubo) to a destination (data).
+				vkUnmapMemory(c.device, model->vsUBOs.bindingMemories[imageIndex]);							// "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
 			}
 
-			activeBytes = model->fsUBO.numActiveSubUbos * model->fsUBO.subUboSize;
+			activeBytes = model->fsUBOs.numActiveUbos * model->fsUBOs.uboSize;
 			if (activeBytes)
 			{
-				vkMapMemory(c.device, model->fsUBO.uboMemories[imageIndex], 0, activeBytes, 0, &data);
-				memcpy(data, model->fsUBO.ubo.data(), activeBytes);
-				vkUnmapMemory(c.device, model->fsUBO.uboMemories[imageIndex]);
+				vkMapMemory(c.device, model->fsUBOs.bindingMemories[imageIndex], 0, activeBytes, 0, &data);
+				memcpy(data, model->fsUBOs.binding.data(), activeBytes);
+				vkUnmapMemory(c.device, model->fsUBOs.bindingMemories[imageIndex]);
 			}
 		}
 }
@@ -491,10 +491,10 @@ void Renderer::createLightingPass(unsigned numLights, std::string vertShaderPath
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
 	modelInfo.texturesInfo = usedTextures;
-	modelInfo.maxDescriptorsCount_vs = 0;
-	modelInfo.maxDescriptorsCount_fs = 1;
-	modelInfo.UBOsize_vs = 0;
-	modelInfo.UBOsize_fs = sizes::vec4 + numLights * sizeof(Light);	// camPos,  n * LightPosDir (2*vec4),  n * LightProps (6*vec4);
+	modelInfo.maxNumUbos_vs = 0;
+	modelInfo.maxNumUbos_fs = 1;
+	modelInfo.uboSize_vs = 0;
+	modelInfo.uboSize_fs = sizes::vec4 + numLights * sizeof(Light);	// camPos,  n * LightPosDir (2*vec4),  n * LightProps (6*vec4);
 	modelInfo.globalUBO_vs;
 	modelInfo.globalUBO_fs;
 	modelInfo.transparency = false;
@@ -516,9 +516,9 @@ void Renderer::updateLightingPass(glm::vec3& camPos, Light* lights, unsigned num
 	//	//...
 	//}
 
-	for (uint32_t i = 0; i < models.data[lightingPass].fsUBO.numActiveSubUbos; i++)
+	for (uint32_t i = 0; i < models.data[lightingPass].fsUBOs.numActiveUbos; i++)
 	{
-		dest = models.data[lightingPass].fsUBO.getSubUboPtr(i);
+		dest = models.data[lightingPass].fsUBOs.getUboPtr(i);
 		memcpy(dest, &camPos, sizes::vec4);
 		dest += sizes::vec4;
 		memcpy(dest, lights, numLights * sizeof(Light));
@@ -546,10 +546,10 @@ void Renderer::createPostprocessingPass(std::string vertShaderPath, std::string 
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
 	modelInfo.texturesInfo = usedTextures;
-	modelInfo.maxDescriptorsCount_vs = 0;
-	modelInfo.maxDescriptorsCount_fs = 0;
-	modelInfo.UBOsize_vs = 0;
-	modelInfo.UBOsize_fs = 0;
+	modelInfo.maxNumUbos_vs = 0;
+	modelInfo.maxNumUbos_fs = 0;
+	modelInfo.uboSize_vs = 0;
+	modelInfo.uboSize_fs = 0;
 	modelInfo.globalUBO_vs;
 	modelInfo.globalUBO_fs;
 	modelInfo.transparency = false;

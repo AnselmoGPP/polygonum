@@ -6,7 +6,9 @@
 
 
 ## Table of Contents
++ [Overview](#overview)
 + [Installation](#installation)
++ [Usage](#usage)
 + [Architecture](#architecture)
     + [Overview](#overview)
     + [VulkanCore](#vulkancore)
@@ -25,6 +27,92 @@
     + [TimerSet](#timerset)
 + [Links](#links)
 
+
+## Overview
+
+## Installation
+
+## Usage
+
+Start by creating a `Renderer` instance.
+
+```
+#include "polygonum/renderer.hpp"
+
+Renderer ren(callback, width, height, UBOinfo globalDesc_vs, globalDesc_fs);
+```
+
+- `callback`: Function for making updates (update model matrix, add models, delete models...) that will be executed each render loop iteration.
+- `width` & `height`: Dimensions of the window in pixels.
+- `globalDesc_XX`: Description of a global descriptor. Useful for data used in many shaders.
+  - `globalDesc_vs`: Global descriptor for the vertex shader (for View matrix, Projection matrix, time, camera position…).
+  - `globalDesc_fs`: Global descriptor for the fragment shader (for lights, time, camera position…).
+
+Set maximum number of FPS (Frames Per Second) with `ren.setMaxFPS(30);`.
+
+Load resources (shaders and textures):
+
+```
+std::vector<ShaderLoader*> shaders;
+shaders.push_back(SL_fromFile::factory("../resources/house.vert"));
+shaders.push_back(SL_fromFile::factory("../resources/house.frag"));
+
+std::vector<TextureLoader*> textures;
+textures.push_back(TL_fromFile::factory("../resources/fachade.png", imageFormat, addressMode));
+textures.push_back(TL_fromFile::factory("../resources/windows.jpg", imageFormat, addressMode));
+```
+
+Create a 3D object (model):
+
+```
+ModelDataInfo modelInfo;
+modelInfo.name = "house";
+modelInfo.activeInstances = 0;
+modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+modelInfo.vertexType = vt_332;			// <<< vt_332 is required when loading data from file
+modelInfo.vertexesLoader = VL_fromFile::factory("../resources/grass.obj");
+modelInfo.shadersInfo = shaders;
+modelInfo.texturesInfo = textures;
+modelInfo.maxDescriptorsCount_vs = 6000;
+modelInfo.maxDescriptorsCount_fs = uboInfo.maxDescriptorsCount_fs;
+modelInfo.UBOsize_vs = uboInfo.UBOsize_vs;
+modelInfo.UBOsize_fs = uboInfo.UBOsize_fs;
+modelInfo.globalUBO_vs = &renderer.globalUBO_vs;
+modelInfo.globalUBO_fs = &renderer.globalUBO_fs;
+modelInfo.transparency = false;
+modelInfo.renderPassIndex = 0;
+modelInfo.cullMode = VK_CULL_MODE_NONE;
+
+key64 model = ren.newModel(modelInfo);
+```
+
+- `name`: Unique identifier.
+- `activeInstances`: number of rendered instances to start with.
+- `topology`: Type of primitives to generate.
+- `vertexType`: Types and size of the vertex attributes.
+- `vertexesLoader`/`shadersInfo`/`texturesInfo`: Where to get the vertices/shader/textures.
+- `maxDescriptorsCount_vs`: Max. number of descriptors for vertex shader.
+- `maxDescriptorsCount_fs`: 
+- `UBOsize_vs`: 
+- `UBOsize_fs`: 
+- `globalUBO_vs`: 
+- `globalUBO_fs`: 
+- `transparency`: 
+- `renderPassIndex`: 
+- `cullMode`: 
+
+Global descriptors are saved in the Renderer. Then, user passes them to model at creation. 
+
+One descriptor set (DS) per image in the swapchain. Each model has one ds. Each DS may contain these descriptors:
+
+0. (Global) Uniform buffer
+1. Uniform buffer
+2. (Global) Uniform buffer
+3. Uniform buffer
+4. Textures
+5. Textures (input attachment)?
+
+Check the **example projects** to see actual working code.
 
 ## Architecture
 
@@ -48,6 +136,27 @@
   - `LoadingWorker`
   - `UBO`
   - `TimerSet`
+
+Installation:
+
+- Compiler extern libraries
+- Compile polygonum
+- Add headers and binaries to your project
+
+For debugging the engine:
+
+- Include polygonum project among your own projects (no need to compile it).
+- Now you… 
+  - have access to source code (hpp & cpp) from your solution.
+  - can set breakpoints in its code.
+  - can modify its code: modify it from your solution, then open Polygonum solution and compile.
+
+
+class ModelData::createDescriptorSets (lightingPass)
+Validation layer: Validation Warning: [ WARNING-CoreValidation-AllocateDescriptorSets-WrongType ] Object 0: handle = 0x8f1c31000000006d, type = VK_OBJECT_TYPE_DESCRIPTOR_POOL; | MessageID = 0xf79f6125 | vkAllocateDescriptorSets(): pAllocateInfo->pSetLayouts[0] binding 1 was created with VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but the Descriptor Pool was not created with this type and returned VK_ERROR_OUT_OF_POOL_MEMORY
+Validation layer: Validation Warning: [ WARNING-CoreValidation-AllocateDescriptorSets-WrongType ] Object 0: handle = 0x8f1c31000000006d, type = VK_OBJECT_TYPE_DESCRIPTOR_POOL; | MessageID = 0xf79f6125 | vkAllocateDescriptorSets(): pAllocateInfo->pSetLayouts[1] binding 1 was created with VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but the Descriptor Pool was not created with this type and returned VK_ERROR_OUT_OF_POOL_MEMORY
+Error: -1000069000
+
 
 
 ### VulkanCore

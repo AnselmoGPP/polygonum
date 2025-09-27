@@ -88,6 +88,7 @@ private:
 	VulkanCore& c;
 };
 
+/// Creates swap-chain and its images.
 class SwapChain
 {
 public:
@@ -115,6 +116,7 @@ private:
 	const uint32_t additionalSwapChainImages;
 };
 
+/// Useful device data.
 struct DeviceData
 {
 	void fillWithDeviceData(VkPhysicalDevice physicalDevice);
@@ -153,6 +155,7 @@ private:
 	VkFormat findSupportedFormat(VkPhysicalDevice physicalDevice, const std::vector<VkFormat>& candidates, VkImageTiling tiling, VkFormatFeatureFlags features);
 };
 
+/// Validation layers data.
 class ValLayers
 {
 public:
@@ -173,6 +176,7 @@ private:
 	VkResult CreateDebugUtilsMessengerEXT(const VkDebugUtilsMessengerCreateInfoEXT* pCreateInfo, const VkAllocationCallbacks* pAllocator, VkDebugUtilsMessengerEXT* pDebugMessenger);
 };
 
+/// Get required extensions (names) and check if they're supported.
 class Extensions
 {
 public:
@@ -183,6 +187,7 @@ public:
 	bool checkExtensionSupport(const char* const* requiredExtensions, uint32_t reqExtCount);   // Check if extensions (for GLFW and Validation layers) are supported. For creating Vulkan instance. 
 };
 
+/// Builds and keeps core elements: Instance, Surface, Physical device, Logical device, Queues.
 class VulkanCore
 {
 public:
@@ -261,6 +266,7 @@ public:
 	std::vector<VkClearValue> clearValues;					//!< One per attachment.
 };
 
+/// Manages command pools, command buffers, and related synchronizers.
 class Commander
 {
 public:
@@ -386,7 +392,7 @@ protected:
 };
 
 /**
-  Render pipeline containing Deferred shading(lighting pass + geometry pass) + forward shading + post - processing
+  Render pipeline containing Deferred shading(lighting pass + geometry pass) + forward shading + postprocessing
 
   RP1::SP1 (Geometry pass):
     IA (0)
