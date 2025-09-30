@@ -33,8 +33,8 @@ struct ModelDataInfo
 	size_t maxNumUbos_fs;
 	size_t uboSize_vs;
 	size_t uboSize_fs;
-	UBOsArray* globalUBO_vs;
-	UBOsArray* globalUBO_fs;
+	UBOsArray* globalBinding_vs;
+	UBOsArray* globalBinding_fs;
 	bool transparency;
 	uint32_t renderPassIndex;					//!< 0 (geometry pass), 1 (lighting pass), 2 (forward pass), 3 (postprocessing pass)
 	uint32_t subpassIndex;
@@ -50,13 +50,6 @@ struct ModelDataInfo
 */
 class ModelData
 {
-public:
-	ModelData(Renderer* renderer = nullptr, ModelDataInfo& modelInfo = ModelDataInfo());   //!< Construct an object for rendering
-	virtual ~ModelData();
-	ModelData(ModelData&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
-	ModelData& ModelData::operator=(ModelData&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
-
-private:
 	Renderer* r;
 	VkPrimitiveTopology primitiveTopology;		//!< Primitive topology (VK_PRIMITIVE_TOPOLOGY_ ... POINT_LIST, LINE_LIST, LINE_STRIP, TRIANGLE_LIST, TRIANGLE_STRIP). Used when creating the graphics pipeline.
 	VertexType vertexType;
@@ -99,6 +92,11 @@ private:
 	void deleteLoader();
 
 public:
+	ModelData(Renderer* renderer = nullptr, ModelDataInfo& modelInfo = ModelDataInfo());   //!< Construct an object for rendering
+	virtual ~ModelData();
+	ModelData(ModelData&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
+	ModelData& ModelData::operator=(ModelData&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
+
 	ModelData& fullConstruction(Renderer &rend);   //!< Creates graphic pipeline and descriptor sets, and loads data for creating buffers (vertex, indices, textures). Useful in a second thread
 
 	void cleanup_pipeline_and_descriptors();   //!< Destroys graphic pipeline and descriptor sets. Called by destructor, and for window resizing (by Renderer::recreateSwapChain()::cleanupSwapChain()).

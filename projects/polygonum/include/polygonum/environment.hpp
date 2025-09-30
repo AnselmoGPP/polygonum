@@ -415,7 +415,7 @@ class RP_DS_PP : public RenderPipeline
 {
 public:
 	RP_DS_PP(VulkanCore& core, SwapChain& swapChain, Commander& commander);
-
+	
 	Image position;
 	Image albedo;
 	Image normal;

@@ -41,33 +41,6 @@ void Renderer::recreateSwapChain()
 	commander.imagesInFlight.resize(swapChain.numImages(), { VK_NULL_HANDLE, 0 });
 }
 
-Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOsArrayInfo globalUBO_vs, UBOsArrayInfo globalUBO_fs) :
-	c(width, height),
-	swapChain(c, ADDITIONAL_SWAPCHAIN_IMAGES),
-	commander(c, swapChain.images.size(), MAX_FRAMES_IN_FLIGHT),
-	rp(std::make_shared<RP_DS_PP>(c, swapChain, commander)),
-	models(rp),
-	userUpdate(graphicsUpdate),
-	renderedFramesCount(0),
-	maxFPS(30),
-	globalUBO_vs(this, globalUBO_vs),
-	globalUBO_fs(this, globalUBO_fs),
-	worker(this)
-{
-#ifdef DEBUG_RENDERER
-	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
-	std::cout << "Main thread ID: " << std::this_thread::get_id() << std::endl;
-	std::cout << "   Hardware concurrency: " << (unsigned)std::thread::hardware_concurrency << std::endl;
-#endif
-
-	//if (c.msaaSamples > 1) rw = std::make_shared<RW_MSAA_PP>(*this);
-	//else rw = std::make_shared<RW_PP>(*this);
-
-	// Create UBOs
-	if (this->globalUBO_vs.totalBytes) this->globalUBO_vs.createBinding();
-	if (this->globalUBO_fs.totalBytes) this->globalUBO_fs.createBinding();
-}
-
 Renderer::~Renderer()
 {
 #ifdef DEBUG_RENDERER
@@ -269,7 +242,7 @@ void Renderer::renderLoop()
 		c.io.pollEvents();	// Check for events (processes only those events that have already been received and then returns immediately)
 		drawFrame();
 
-		if (c.io.getKey(GLFW_KEY_ESCAPE) == GLFW_PRESS)
+		if (c.io.isKeyPressed(GLFW_KEY_ESCAPE))
 			c.io.setWindowShouldClose(true);
 
 #ifdef DEBUG_RENDERLOOP
@@ -299,8 +272,8 @@ void Renderer::cleanup()
 
 	models.data.clear();   // lock_guard (worker.mutModels) not necessary before this because worker stopped the loading thread.
 
-	if (globalUBO_vs.totalBytes) globalUBO_vs.destroyBinding();
-	if (globalUBO_fs.totalBytes) globalUBO_fs.destroyBinding();
+	if (globalBinding_vs.totalBytes) globalBinding_vs.destroyBinding();
+	if (globalBinding_fs.totalBytes) globalBinding_fs.destroyBinding();
 
 	commander.freeCommandBuffers();
 	commander.destroySynchronizers();
@@ -400,18 +373,18 @@ void Renderer::updateUBOs(uint32_t imageIndex)
 	ModelData* model;
 
 	// Global UBOs
-	if (globalUBO_vs.totalBytes)
+	if (globalBinding_vs.totalBytes)
 	{
-		vkMapMemory(c.device, globalUBO_vs.bindingMemories[imageIndex], 0, globalUBO_vs.totalBytes, 0, &data);
-		memcpy(data, globalUBO_vs.binding.data(), globalUBO_vs.totalBytes);
-		vkUnmapMemory(c.device, globalUBO_vs.bindingMemories[imageIndex]);
+		vkMapMemory(c.device, globalBinding_vs.bindingMemories[imageIndex], 0, globalBinding_vs.totalBytes, 0, &data);
+		memcpy(data, globalBinding_vs.binding.data(), globalBinding_vs.totalBytes);
+		vkUnmapMemory(c.device, globalBinding_vs.bindingMemories[imageIndex]);
 	}
 
-	if (globalUBO_fs.totalBytes)
+	if (globalBinding_fs.totalBytes)
 	{
-		vkMapMemory(c.device, globalUBO_fs.bindingMemories[imageIndex], 0, globalUBO_fs.totalBytes, 0, &data);
-		memcpy(data, globalUBO_fs.binding.data(), globalUBO_fs.totalBytes);
-		vkUnmapMemory(c.device, globalUBO_fs.bindingMemories[imageIndex]);
+		vkMapMemory(c.device, globalBinding_fs.bindingMemories[imageIndex], 0, globalBinding_fs.totalBytes, 0, &data);
+		memcpy(data, globalBinding_fs.binding.data(), globalBinding_fs.totalBytes);
+		vkUnmapMemory(c.device, globalBinding_fs.bindingMemories[imageIndex]);
 	}
 
 	// Local UBOs
@@ -442,15 +415,7 @@ void Renderer::updateUBOs(uint32_t imageIndex)
 		}
 }
 
-Timer& Renderer::getTimer() { return timer; }
-
-size_t Renderer::getRendersCount(key64 key)
-{
-	if (models.data.find(key) != models.data.end())
-		return models.data[key].getActiveInstancesCount();
-	else
-		return 0;
-}
+long double Renderer::getDeltaTime() const { return timer.getDeltaTime(); }
 
 size_t Renderer::getFrameCount() { return renderedFramesCount; }
 
@@ -469,101 +434,6 @@ IOmanager& Renderer::getIO() { return c.io; }
 int Renderer::getMaxMemoryAllocationCount() { return c.deviceData.maxMemoryAllocationCount; }
 
 int Renderer::getMemAllocObjects() { return c.memAllocObjects; }
-
-void Renderer::createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader)
-{
-	std::vector<float> v_quad;	// [4 * 5]
-	std::vector<uint16_t> i_quad;
-	getScreenQuad(v_quad, i_quad, 1.f, 0.f);	// <<< The parameter zValue doesn't represent height (otherwise, this value should serve for hiding one plane behind another).
-
-	std::vector<ShaderLoader*> usedShaders{
-		SL_fromFile::factory(vertShaderPath),
-		SL_fromFile::factory(fragShaderPath, { SMod::changeHeader(fragToolsHeader) })
-	};
-
-	std::vector<TextureLoader*> usedTextures{ };
-
-	ModelDataInfo modelInfo;
-	modelInfo.name = "lightingPass";
-	modelInfo.activeInstances = 1;
-	modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	modelInfo.vertexType = vt_32;
-	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
-	modelInfo.shadersInfo = usedShaders;
-	modelInfo.texturesInfo = usedTextures;
-	modelInfo.maxNumUbos_vs = 0;
-	modelInfo.maxNumUbos_fs = 1;
-	modelInfo.uboSize_vs = 0;
-	modelInfo.uboSize_fs = sizes::vec4 + numLights * sizeof(Light);	// camPos,  n * LightPosDir (2*vec4),  n * LightProps (6*vec4);
-	modelInfo.globalUBO_vs;
-	modelInfo.globalUBO_fs;
-	modelInfo.transparency = false;
-	modelInfo.renderPassIndex = 1;
-	modelInfo.subpassIndex = 0;
-
-	lightingPass = newModel(modelInfo);
-}
-
-void Renderer::updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights)
-{
-	if (models.data.find(lightingPass) == models.data.end()) return;
-
-	uint8_t* dest;
-
-	//for (int i = 0; i < lightingPass->vsUBO.numActiveDescriptors; i++)
-	//{
-	//	dest = lightingPass->vsUBO.getDescriptorPtr(i);
-	//	//...
-	//}
-
-	for (uint32_t i = 0; i < models.data[lightingPass].fsUBOs.numActiveUbos; i++)
-	{
-		dest = models.data[lightingPass].fsUBOs.getUboPtr(i);
-		memcpy(dest, &camPos, sizes::vec4);
-		dest += sizes::vec4;
-		memcpy(dest, lights, numLights * sizeof(Light));
-	}
-}
-
-void Renderer::createPostprocessingPass(std::string vertShaderPath, std::string fragShaderPath)
-{
-	std::vector<float> v_quad;	// [4 * 5]
-	std::vector<uint16_t> i_quad;
-	getScreenQuad(v_quad, i_quad, 1.f, 0.f);	// <<< The parameter zValue doesn't represent heigth (otherwise, this value should serve for hiding one plane behind another).
-
-	std::vector<ShaderLoader*> usedShaders{
-		SL_fromFile::factory(vertShaderPath),
-		SL_fromFile::factory(fragShaderPath)
-	};
-
-	std::vector<TextureLoader*> usedTextures{ };
-
-	ModelDataInfo modelInfo;
-	modelInfo.name = "postprocessingPass";
-	modelInfo.activeInstances = 1;
-	modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	modelInfo.vertexType = vt_32;
-	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
-	modelInfo.shadersInfo = usedShaders;
-	modelInfo.texturesInfo = usedTextures;
-	modelInfo.maxNumUbos_vs = 0;
-	modelInfo.maxNumUbos_fs = 0;
-	modelInfo.uboSize_vs = 0;
-	modelInfo.uboSize_fs = 0;
-	modelInfo.globalUBO_vs;
-	modelInfo.globalUBO_fs;
-	modelInfo.transparency = false;
-	modelInfo.renderPassIndex = 3;
-	modelInfo.subpassIndex = 0;
-
-	postprocessingPass = newModel(modelInfo);
-}
-
-void Renderer::updatePostprocessingPass()
-{
-	// No code necessary here
-}
-
 
 LoadingWorker::LoadingWorker(Renderer* renderer)
 	: r(*renderer), stopThread(false) { }
@@ -684,4 +554,102 @@ void LoadingWorker::thread_loadData(Renderer& renderer, ModelsManager& models, C
 #ifdef DEBUG_WORKER
 	std::cout << "- " << typeid(*this).name() << "::" << __func__ << " (end)" << std::endl;
 #endif
+}
+
+Help_RP_DS_PP::Help_RP_DS_PP() : lightingPass(0), postprocessingPass(0) { }
+
+void Help_RP_DS_PP::createLightingPass(Renderer& ren, unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader)
+{
+	std::vector<float> v_quad;	// [4 * 5]
+	std::vector<uint16_t> i_quad;
+	getScreenQuad(v_quad, i_quad, 1.f, 0.f);	// <<< The parameter zValue doesn't represent height (otherwise, this value should serve for hiding one plane behind another).
+
+	std::vector<ShaderLoader*> usedShaders{
+		SL_fromFile::factory(vertShaderPath),
+		SL_fromFile::factory(fragShaderPath, { SMod::changeHeader(fragToolsHeader) })
+	};
+
+	std::vector<TextureLoader*> usedTextures{ };
+
+	ModelDataInfo modelInfo;
+	modelInfo.name = "lightingPass";
+	modelInfo.activeInstances = 1;
+	modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	modelInfo.vertexType = vt_32;
+	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
+	modelInfo.shadersInfo = usedShaders;
+	modelInfo.texturesInfo = usedTextures;
+	modelInfo.maxNumUbos_vs = 0;
+	modelInfo.maxNumUbos_fs = 1;
+	modelInfo.uboSize_vs = 0;
+	modelInfo.uboSize_fs = sizes::vec4 + numLights * sizeof(Light);	// camPos,  n * LightPosDir (2*vec4),  n * LightProps (6*vec4);
+	modelInfo.globalBinding_vs;
+	modelInfo.globalBinding_fs;
+	modelInfo.transparency = false;
+	modelInfo.renderPassIndex = 1;
+	modelInfo.subpassIndex = 0;
+
+	lightingPass = ren.newModel(modelInfo);
+}
+
+void Help_RP_DS_PP::createPostprocessingPass(Renderer& ren, std::string vertShaderPath, std::string fragShaderPath)
+{
+	std::vector<float> v_quad;	// [4 * 5]
+	std::vector<uint16_t> i_quad;
+	getScreenQuad(v_quad, i_quad, 1.f, 0.f);	// <<< The parameter zValue doesn't represent heigth (otherwise, this value should serve for hiding one plane behind another).
+
+	std::vector<ShaderLoader*> usedShaders{
+		SL_fromFile::factory(vertShaderPath),
+		SL_fromFile::factory(fragShaderPath)
+	};
+
+	std::vector<TextureLoader*> usedTextures{ };
+
+	ModelDataInfo modelInfo;
+	modelInfo.name = "postprocessingPass";
+	modelInfo.activeInstances = 1;
+	modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	modelInfo.vertexType = vt_32;
+	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
+	modelInfo.shadersInfo = usedShaders;
+	modelInfo.texturesInfo = usedTextures;
+	modelInfo.maxNumUbos_vs = 0;
+	modelInfo.maxNumUbos_fs = 0;
+	modelInfo.uboSize_vs = 0;
+	modelInfo.uboSize_fs = 0;
+	modelInfo.globalBinding_vs;
+	modelInfo.globalBinding_fs;
+	modelInfo.transparency = false;
+	modelInfo.renderPassIndex = 3;
+	modelInfo.subpassIndex = 0;
+
+	postprocessingPass = ren.newModel(modelInfo);
+}
+
+void Help_RP_DS_PP::updateLightingPass(Renderer& ren, glm::vec3& camPos, Light* lights, unsigned numLights)
+{
+	//if (models.data.find(lightingPass) == models.data.end()) return;
+	ModelData* model = ren.getModel(lightingPass);
+	if (!model) return;
+
+	uint8_t* dest;
+
+	//for (int i = 0; i < model->vsUBOs.numActiveUbos; i++)
+	//{
+	//	dest = model->vsUBOs.getUboPtr(i);
+	//	//...
+	//}
+
+	for (uint32_t i = 0; i < model->fsUBOs.numActiveUbos; i++)
+	{
+		dest = model->fsUBOs.getUboPtr(i);
+		memcpy(dest, &camPos, sizes::vec4);
+		dest += sizes::vec4;
+		memcpy(dest, lights, numLights * sizeof(Light));
+	}
+}
+
+void Help_RP_DS_PP::updatePostprocessingPass(Renderer& ren)
+{
+	// No code necessary here
 }

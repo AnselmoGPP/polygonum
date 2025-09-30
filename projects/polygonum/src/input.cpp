@@ -63,9 +63,13 @@ void IOmanager::destroy()
 	glfwTerminate();				// GLFW
 }
 
-int IOmanager::getKey(int key) { return glfwGetKey(window, key); }
+bool IOmanager::isKeyPressed(int key) { return glfwGetKey(window, key) == GLFW_PRESS; }
 
-int IOmanager::getMouseButton(int button) { return glfwGetMouseButton(window, button); }
+bool IOmanager::isKeyReleased(int key) { return glfwGetKey(window, key) == GLFW_RELEASE; }
+
+bool IOmanager::isMouseButtonPressed(int button) { return glfwGetMouseButton(window, button) == GLFW_PRESS; }
+
+bool IOmanager::isMouseButtonReleased(int button) { return glfwGetMouseButton(window, button) == GLFW_RELEASE; }
 
 void IOmanager::getCursorPos(double* xpos, double* ypos) { glfwGetCursorPos(window, xpos, ypos); }
 

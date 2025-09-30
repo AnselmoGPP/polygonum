@@ -31,8 +31,10 @@ public:
 	void destroy();
 
 	// Input (keys, mouse)
-	int getKey(int key);
-	int getMouseButton(int button);
+	bool isKeyPressed(int key);
+	bool isKeyReleased(int key);
+	bool isMouseButtonPressed(int button);
+	bool isMouseButtonReleased(int button);
 	void getCursorPos(double* xpos, double* ypos);
 	void setInputMode(int mode, int value);
 	void pollEvents();							//!< Check for events (processes only those events that have already been received and then returns immediately)
@@ -40,9 +42,9 @@ public:
 
 	// Callbacks
 	float getYscrollOffset();			//!< Get YscrollOffset value and reset it (set to 0).
-	bool framebufferResized = false;	//!< Many drivers/platforms trigger VK_ERROR_OUT_OF_DATE_KHR after window resize, but it's not guaranteed. This variable handles resizes explicitly.
-	static void framebufferResizeCallback(GLFWwindow* window, int width, int height);		//!< Callback for window resizing (called when window is resized).
 	static void mouseScroll_callback(GLFWwindow* window, double xoffset, double yoffset);	//!< Callback for mouse scroll (called when mouse is scrolled).
+	static void framebufferResizeCallback(GLFWwindow* window, int width, int height);		//!< Callback for window resizing (called when window is resized).
+	bool framebufferResized = false;	//!< Many drivers/platforms trigger VK_ERROR_OUT_OF_DATE_KHR after window resize, but it's not guaranteed. This variable handles resizes explicitly.
 };
 
 #endif

@@ -4,6 +4,9 @@
 #include "polygonum/environment.hpp"
 #include "polygonum/models.hpp"
 
+class LoadingWorker;
+class Renderer;
+class Help_RP_DS_PP;
 
 /// Reponsible for the loading thread and its processes.
 class LoadingWorker
@@ -82,10 +85,8 @@ protected:
 	size_t renderedFramesCount; //!< Number of frames rendered
 	int maxFPS; //!< Maximum FPS (= 30 by default).
 
-	key64 lightingPass; //!< Optional (createLighting())
-	key64 postprocessingPass; //!< Optional (createPostprocessing())
-
-	// Main methods:
+	/// Callback used by the client for updating states of their models.
+	void(*userUpdate) (Renderer& rend);
 
 	/**
 	*	Acquire image from swap chain, execute command buffer with that image as attachment in the framebuffer, and return the image to the swap chain for presentation.
@@ -102,9 +103,6 @@ protected:
 	/// Draw a frame: Wait for previous command buffer execution, acquire image from swapchain, update states and command buffer, submit command buffer for execution, and present result for display on screen.
 	void drawFrame();
 
-	/// Callback used by the client for updating states of their models.
-	void(*userUpdate) (Renderer& rend);
-
 	/// Copy data from UBOs to GPU memory. This is not the most efficient way to pass frequently changing values to the shader. Push constants are more efficient for passing a small buffer of data to shaders.
 	void updateUBOs(uint32_t imageIndex);
 
@@ -112,41 +110,82 @@ protected:
 	void recreateSwapChain();   //!< Used in drawFrame() in case the window surface changes (like when window resizing), making swap chain no longer compatible with it. Here, we catch these events (when acquiring/submitting an image from/to the swap chain) and recreate the swap chain.
 
 public:
-	// LOOK what if firstModel.size() == 0
 	/// Constructor. Requires a callback for user updates (update model matrix, add models, delete models...).
-	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOsArrayInfo globalUBO_vs, UBOsArrayInfo globalUBO_fs);
-	virtual ~Renderer();
+	template <typename RP = RP_DS_PP>
+	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOsArrayInfo globalUBO_vs, UBOsArrayInfo globalUBO_fs, RP* renderPipeline);
+	~Renderer();
 
-	UBOsArray globalUBO_vs;
-	UBOsArray globalUBO_fs;
+	UBOsArray globalBinding_vs;
+	UBOsArray globalBinding_fs;
 
 	void renderLoop();	//!< Create command buffer and start render loop.
 
 	key64 newModel(ModelDataInfo& modelInfo);   //!< Create (partially) a new model in the list modelsToLoad. Used for rendering a model.
 	void deleteModel(key64 key);   //!< Move model from list models (or modelsToLoad) to list modelsToDelete. If the model is being fully constructed (by the worker), it waits until it finishes. Note: When the app closes, it destroys Renderer. Thus, don't use this method at app-closing (like in an object destructor): if Renderer is destroyed first, the app may crash.
+
 	ModelData* getModel(key64 key);
+	IOmanager& getIO();			//!< Get access to the IO manager
 
 	void setInstances(key64 key, size_t numberOfRenders);
 	void setInstances(std::vector<key64>& keys, size_t numberOfRenders);
 
 	void setMaxFPS(int maxFPS);
 
-	Timer& getTimer();		//!< Returns the timer object (provides access to time data).
-	size_t getRendersCount(key64 key);
+	long double getDeltaTime() const;
 	size_t getFrameCount();
 	size_t getFPS();
 	size_t getModelsCount();
 	size_t getCommandsCount();
 	size_t loadedShaders();	//!< Returns number of shaders in Renderer:shaders
 	size_t loadedTextures();	//!< Returns number of textures in Renderer:textures
-	IOmanager& getIO();			//!< Get access to the IO manager
+
 	int getMaxMemoryAllocationCount();			//!< Max. number of valid memory objects
 	int getMemAllocObjects();					//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount)
+};
 
-	void createLightingPass(unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader);
-	void updateLightingPass(glm::vec3& camPos, Light* lights, unsigned numLights);
-	void createPostprocessingPass(std::string vertShaderPath, std::string fragShaderPath);
-	void updatePostprocessingPass();
+
+template <typename RP>
+Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, UBOsArrayInfo globalUBO_vs, UBOsArrayInfo globalUBO_fs, RP* renderPipeline = nullptr) :
+	c(width, height),
+	swapChain(c, ADDITIONAL_SWAPCHAIN_IMAGES),
+	commander(c, swapChain.images.size(), MAX_FRAMES_IN_FLIGHT),
+	rp(std::make_shared<RP>(c, swapChain, commander)),
+	models(rp),
+	userUpdate(graphicsUpdate),
+	renderedFramesCount(0),
+	maxFPS(30),
+	globalBinding_vs(this, globalUBO_vs),
+	globalBinding_fs(this, globalUBO_fs),
+	worker(this)
+{
+#ifdef DEBUG_RENDERER
+	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
+	std::cout << "Main thread ID: " << std::this_thread::get_id() << std::endl;
+	std::cout << "   Hardware concurrency: " << (unsigned)std::thread::hardware_concurrency << std::endl;
+#endif
+
+	//if (c.msaaSamples > 1) rw = std::make_shared<RW_MSAA_PP>(*this);
+	//else rw = std::make_shared<RW_PP>(*this);
+
+	// Create UBOs
+	if (this->globalBinding_vs.totalBytes) this->globalBinding_vs.createBinding();
+	if (this->globalBinding_fs.totalBytes) this->globalBinding_fs.createBinding();
+}
+
+/// Helper class for the RP_DS_PP render pipeline. Used to create and update the Lighting pass and Post-processing pass.
+class Help_RP_DS_PP
+{
+public:
+	Help_RP_DS_PP();
+
+	key64 lightingPass;
+	key64 postprocessingPass;
+
+	void createLightingPass(Renderer& ren, unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader);
+	void createPostprocessingPass(Renderer& ren, std::string vertShaderPath, std::string fragShaderPath);
+
+	void updateLightingPass(Renderer& ren, glm::vec3& camPos, Light* lights, unsigned numLights);
+	void updatePostprocessingPass(Renderer& ren);
 };
 
 #endif

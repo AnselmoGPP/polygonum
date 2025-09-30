@@ -2,13 +2,19 @@
 
 <br>![Khronos Vulkan logo](https://raw.githubusercontent.com/AnselmoGPP/VulkRend/master/files/Vulkan_logo.png)
 
-**Polygonum** is a low-level graphics engine (as a C++ library), that makes it much easier to render computer graphics with [Vulkan®](https://www.khronos.org/vulkan/).
+**Polygonum** is a low-level graphics engine (C++ library) that makes it much easier to render computer graphics with [Vulkan®](https://www.khronos.org/vulkan/).
 
 
 ## Table of Contents
 + [Overview](#overview)
 + [Installation](#installation)
 + [Usage](#usage)
+  + [Initialization](#initialization)
+  + [Load 3D object](#load-3d-object)
+  + [Render pipeline](#render-pipeline)
+  + [Bindings](#bindings)
+  + [Update bindings](#update-bindings)
+  + [Interfaces](#interfaces)
 + [Architecture](#architecture)
     + [Overview](#overview)
     + [VulkanCore](#vulkancore)
@@ -30,27 +36,37 @@
 
 ## Overview
 
+object to render (model)
+
+
 ## Installation
 
+
 ## Usage
+
+To see actual working code, check the **example projects**.
+
+### Initialization
 
 Start by creating a `Renderer` instance.
 
 ```
 #include "polygonum/renderer.hpp"
 
-Renderer ren(callback, width, height, UBOinfo globalDesc_vs, globalDesc_fs);
+Renderer ren(update, width, height, globalDesc_vs, globalDesc_fs);
 ```
 
-- `callback`: Function for making updates (update model matrix, add models, delete models...) that will be executed each render loop iteration.
+- `update`: Callback function for making updates (update model matrix, add models, delete models…) that will be executed each render loop iteration. More about this below.
 - `width` & `height`: Dimensions of the window in pixels.
 - `globalDesc_XX`: Description of a global descriptor. Useful for data used in many shaders.
-  - `globalDesc_vs`: Global descriptor for the vertex shader (for View matrix, Projection matrix, time, camera position…).
-  - `globalDesc_fs`: Global descriptor for the fragment shader (for lights, time, camera position…).
+  - `globalDesc_vs`: Information about the global descriptor for the vertex shader (for View matrix, Projection matrix, time, camera position…).
+  - `globalDesc_fs`: Information about the global descriptor for the fragment shader (for lights, time, camera position…).
 
-Set maximum number of FPS (Frames Per Second) with `ren.setMaxFPS(30);`.
+After this, you can start the render loop, load 3D models, and update their states.
 
-Load resources (shaders and textures):
+### Load 3D object
+
+Get resources information (shaders and textures):
 
 ```
 std::vector<ShaderLoader*> shaders;
@@ -69,50 +85,300 @@ ModelDataInfo modelInfo;
 modelInfo.name = "house";
 modelInfo.activeInstances = 0;
 modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-modelInfo.vertexType = vt_332;			// <<< vt_332 is required when loading data from file
+modelInfo.vertexType = vt_332;
 modelInfo.vertexesLoader = VL_fromFile::factory("../resources/grass.obj");
 modelInfo.shadersInfo = shaders;
 modelInfo.texturesInfo = textures;
-modelInfo.maxDescriptorsCount_vs = 6000;
-modelInfo.maxDescriptorsCount_fs = uboInfo.maxDescriptorsCount_fs;
-modelInfo.UBOsize_vs = uboInfo.UBOsize_vs;
-modelInfo.UBOsize_fs = uboInfo.UBOsize_fs;
-modelInfo.globalUBO_vs = &renderer.globalUBO_vs;
-modelInfo.globalUBO_fs = &renderer.globalUBO_fs;
+modelInfo.maxNumUbos_vs = 6000;
+modelInfo.maxNumUbos_fs = 0;
+modelInfo.uboSize_vs = 2 * (4 * 4 * sizeof(float));
+modelInfo.uboSize_fs = 0;
+modelInfo.globalBinding_vs = &renderer.globalUBO_vs;
+modelInfo.globalBinding_fs = &renderer.globalUBO_fs;
 modelInfo.transparency = false;
-modelInfo.renderPassIndex = 0;
+modelInfo.renderPassIndex = 2;
 modelInfo.cullMode = VK_CULL_MODE_NONE;
 
-key64 model = ren.newModel(modelInfo);
+key64 modelKey = ren.newModel(modelInfo);
 ```
 
 - `name`: Unique identifier.
-- `activeInstances`: number of rendered instances to start with.
+- `activeInstances`: Number of rendered instances to start with.
 - `topology`: Type of primitives to generate.
-- `vertexType`: Types and size of the vertex attributes.
+- `vertexType`: Types and sizes of vertex attributes (`vt_332` is required when loading data from file).
 - `vertexesLoader`/`shadersInfo`/`texturesInfo`: Where to get the vertices/shader/textures.
-- `maxDescriptorsCount_vs`: Max. number of descriptors for vertex shader.
-- `maxDescriptorsCount_fs`: 
-- `UBOsize_vs`: 
-- `UBOsize_fs`: 
-- `globalUBO_vs`: 
-- `globalUBO_fs`: 
-- `transparency`: 
-- `renderPassIndex`: 
-- `cullMode`: 
+- `maxNumUbos_vs`: Max. number of ubos of the local binding for vertex shader.
+- `maxNumUbos_fs`: Max. number of ubos of the local binding for fragment shader.
+- `uboSize_vs`: Size of a ubo of the local binding for vertex shader.
+- `uboSize_fs`: Size of a ubo of the local binding for fragment shader.
+- `globalBinding_vs`: Pointer to global binding for vertex shader.
+- `globalBinding_fs`: Pointer to global binding for fragment shader.
+- `transparency`: Activate for vertex transparency (determined by the vertex alpha value). Only applicable to forward shading (render pass 2).
+- `renderPassIndex`: Render pipeline stage where the object will be rendered.
+- `cullMode`: Apply backface culling.
 
-Global descriptors are saved in the Renderer. Then, user passes them to model at creation. 
+Start rendering:
 
-One descriptor set (DS) per image in the swapchain. Each model has one ds. Each DS may contain these descriptors:
+```
+ren.renderLoop();
+```
 
-0. (Global) Uniform buffer
+### Render pipeline
+
+The default render pipeline (RP) implemented for Polygonum has 4 render passes:
+
+0. **Geometry shading**: Outputs a set of scene images, one per material (`position`, `albedo`, `normal`, `specularity_roughness`).
+1. **Lighting shading**: Makes lighting computations for each pixel using the images from pass 0 to generate the scene image.
+2. **Forward shading**: Additional objects added to the scene, but making lighting computations for each fragment.
+3. **Post-processing**: Apply post-processing effects to the scene image.
+
+In Forward shading (typical way of rendering), the expensive lighting computations are done for each fragment. This can be optimized applying Deferred shading (geometry shading + lighting shading), where the lighting computations are done for each pixel, though this prevents the creation of transparencies.
+
+The lighting pass (render pass 1) and post-processing pass (render pass 3) can be implemented by the user using quads and their own shaders. However, this is not necessary since `Renderer` provides functions to create and update them easily. The required shaders are in `polygonum/resources/shaders`.
+
+```
+Help_RP_DS_PP rpHelp;
+
+int main()
+{
+  Renderer ren(update, width, height, globalDesc_vs, globalDesc_fs);
+
+  // Create lighting pass:
+  std::string vertShaderPath("../../extern/polygonum/resources/shaders/lightingPass_v.vert");
+  std::string fragShaderPath("../../extern/polygonum/resources/shaders/lightingPass_f.frag");
+  std::string fragToolsHeader("../../extern/polygonum/resources/shaders/fragTools.vert");
+  rpHelp.createLightingPass(ren, numberOfLights, vertShaderPath, fragShaderPath, fragToolsHeader);
+  
+  // Create post-processing pass:
+  vertShaderPath = std::string("../../extern/polygonum/resources/shaders/postprocessing_v.vert"); 
+  fragShaderPath = std::string("../../extern/polygonum/resources/shaders/postprocessing_f.frag");
+  rpHelp.createPostprocessingPass(ren, vertShaderPath, fragShaderPath);
+  
+  // ...  
+}
+
+void update(Renderer& rend)
+{
+  rpHelp.updateLightingPass(ren, camPos, lights, numberOfLights);
+  rpHelp.updatePostprocessingPass(ren);  
+}
+```
+
+It's possible to implement your own custom RP. The default RP is defined by class `RP_DS_PP`, which inherits from `RenderPipeline`. To implement your own RP, you have to define it in a new class that inherits from `RenderPipeline`. Then, you can create a `Renderer` object that uses your RP by passing an additional argument (a null pointer of such type) to the constructor that specifies the new RP class type.
+
+```
+Renderer ren(update, width, height, globalDesc_vs, globalDesc_fs, (NewRenderPipeline*)nullptr);
+```
+
+### Bindings
+
+**Descriptor sets** are Vulkan objects used for passing data to shaders. They contain a set of **bindings**, each one having a type. Typical types are uniform buffers (UBOs) and samplers (textures). The data we directly pass to the shader is Vertex data (vertex attributes) and Bindings (arrays of UBOs and arrays of textures).
+
+Polygonum allows to pass up to 4 bindings to the shaders, each one containing an array of uniform buffer (UB descriptors): each shader (vertex and fragment) can receive 2 bindings, where one is local/specific to the object (kept in the object), and the other is global (kept in the renderer). Global bindings can be used by many objects, and contain only one UBO. Use cases example:
+
+- __Vertex shader__:
+  - __Global binding__ (1st): Useful for View matrix (V), Projection matrix (P), camera position, and time.
+  - __Local binding__ (2nd): Useful for Model matrix (M) and Normal matrix (N). When rendering n instances, this binding has n UBs (each instance need its own Model matrix).
+- __Fragment shader__:
+  - __Global binding__ (3rd): Useful for lighting parameters (for the forward pass), camera position, and time.
+  - __Local binding__ (4th): Useful for lighting parameters (for the lighting pass), camera position and time. Least used binding.
+
+In the shaders, you declare the descriptor set (`set = 0`) and the binding (`binding = 2`) for each visible binding. This binding index depends on which ubos exist for a given model. If all of them exist, they are indexed as shown below; otherwise, the indices follow the same order, but adapting to the existing bindings. Example containing all bindings:
+
+0. Uniform buffer (global)
 1. Uniform buffer
-2. (Global) Uniform buffer
+2. Uniform buffer (global)
 3. Uniform buffer
 4. Textures
-5. Textures (input attachment)?
+5. Textures (input attachment)
 
-Check the **example projects** to see actual working code.
+```
+// **Vertex shader**
+
+layout(set = 0, binding = 0) uniform globalUbo {
+    mat4 view;
+    mat4 proj;
+    vec4 camPos_t;
+} gUbo;
+
+layout(set = 0, binding = 1) uniform ubobject {
+    mat4 model;					// mat4
+    mat4 normalMatrix;			// mat3
+} ubo;
+```
+
+```
+// **Fragment shader**
+
+layout(set = 0, binding = 2) uniform globalUbo {
+    vec4 test;
+} gUbo;
+
+layout(set = 0, binding = 3) uniform ubobject
+{
+	vec4 camPos;
+	Light lights[NUMLIGHTS];
+} ubo;
+
+layout(set = 0, binding  = 4) uniform sampler2D texSampler[3];
+
+layout(set = 0, binding = 5) uniform sampler2D inputAttachments[4];	// Position, Albedo, Normal, Specular_roughness (sampler2D for single-sample | sampler2DMS for multisampling)
+```
+
+### Update bindings
+
+The user can update the states of his objects by modifying the **uniform buffers** (the UBOs contained in the bindings) passed to the shaders. This can be done in the callback function passed to the renderer's constructor at the beginning. Example:
+
+```
+void update(Renderer& ren)
+{
+  // Compute needed data (like transformation matrices):
+  
+  glm::mat4 modelMat = getModelMatrix(scale, rotQuad, pos);   // for scaling, rotating, and translating objects.
+  glm::mat4 normalMat = glm::transpose(glm::inverse(modelMat));   // 3x3 model matrix for normals (used if non-uniform scaling is applied).
+  glm::mat4 viewMat = glm::lookAt(camPos, camPos + front, camUp);   // for moving camera.
+  glm::mat4 projMat = glm::perspective(fov, aspectRatio, nearViewPlane, farViewPlane);   // for projection.
+  proj[1][1] *= -1;   // GLM returns the Y clip coordinate inverted.
+  glm::vec4 camPos_time = glm::vec4(camPos, time);
+
+  // Send data to shaders:
+
+  uint8_t* dest;
+  int sizeVec4 = sizeof(glm::vec4);
+  int sizeMat4 = sizeof(glm::mat4);
+  
+  dest = ren.globalBinding_vs.getUboPtr(0);   // Update global binding for vertex shader
+  memcpy(dest, &viewMat, sizeMat4);
+  dest += sizeMat4;
+  memcpy(dest, &projMat, sizeMat4);
+  dest += sizeMat4;
+  memcpy(dest, &camPos_time, sizeVec4);
+
+  dest = ren.globalBinding_fs.getUboPtr(0);   // Update global binding for fragment shader
+  memcpy(dest, &camPos_time, sizeVec4);
+  dest += sizeVec4;
+  memcpy(dest, lights.data(), lights.size());
+
+  ModelData* model = ren.getModel(modelKey);
+
+  for (int i = 0; i < model->vsUBOs.numActiveUbos; i++)   // Update model's binding for vertex shader
+  {
+      dest = model->vsUBOs.getUboPtr(i);
+      memcpy(dest, &modelMat, sizeMat4);
+      dest += sizeMat4;
+      memcpy(dest, &normalMat, sizeMat4);
+  }
+  
+  for (int i = 0; i < model->fsUBOs.numActiveUbos; i++)   // Update model's binding for fragment shader
+  {
+      dest = model->fsUBOs.getUboPtr(i);
+      memcpy(dest, &camPos_numLights, sizeVec4);
+      dest += sizeVec4;
+      memcpy(dest, lights.data(), lights.size());
+  }
+
+  rpHelp.updateLightingPass(ren, camPos, lights.data(), lights.size());
+  
+  rpHelp.updatePostprocessingPass(ren);
+}
+```
+
+### Interfaces
+
+`Renderer` interface:
+
+- Updates:
+  - `key64 newModel(ModelDataInfo& modelInfo)`: Create a model for rendering (asynchronous operation). You have to pass some data (vertex data, shaders, textures, binding buffers).
+  - `void deleteModel(key64 key)`: Remove model from memory. `Renderer`'s destructor calls this to destroy all remaining models.
+  - `setInstances(...)`: Modify the number of rendered instances of one or more models. This number coincides with `model->vsUBOs.numActiveUbos` and cannot be bigger than `model->vsUBOs.maxNumUbos_vs`.
+    - `void setInstances(key64 key, size_t numberOfRenders)`
+    - `void setInstances(std::vector<key64>& keys, size_t numberOfRenders)`
+  - `void setMaxFPS(int maxFPS)`: Set maximum frames per second allowed.
+- Access:
+  - `ModelData* getModel(key64 key)`: Get pointer to a loaded model.
+  - `IOmanager& getIO()`: Get access to the I/O manager.
+- Information:
+  - `size_t getFrameCount()`: Number of rendered frames.
+  - `long double getDeltaTime()`: Time elapsed between the two last frames.
+  - `size_t getFPS()`: Current frames per second.
+  - `size_t getModelsCount()`: Number of loaded models.
+  - `size_t getCommandsCount()`: Number of drawing commands sent to the command buffer.
+  - `size_t loadedShaders()`: Number of shaders in `Renderer:shaders`.
+  - `size_t loadedTextures()`: Number of textures in `Renderer:textures`
+  - `int getMaxMemoryAllocationCount()`: Max. number of valid memory objects.
+  - `int getMemAllocObjects()`: Number of memory allocated objects (must be ≤ `maxMemoryAllocationCount`).
+  
+`ModelData` interface: Get access with `Renderer::getModel(key64 key)`.
+
+- `bool setActiveInstancesCount(size_t activeInstancesCount)`: Set number of rendered instances.
+- `uint32_t getActiveInstancesCount()`: Number of rendered instances.
+- `name`: Name given by the user to the model.
+- `vsUBOs`: Vertex shader binding.
+- `fsUBOs`: Fragment shader binding.
+- `ready`: Flagged if the model is loaded in `Renderer` and is ready for rendering.
+
+`IOmanager` interface: Get access with `Renderer::getIO()`. Keys are denoted with GLFW key codes (`GLFW_KEY_A`, `GLFW_MOUSE_BUTTON_LEFT`, `GLFW_JOYSTICK_5`…).
+
+- `void getFramebufferSize(int* width, int* height)`: Window width and height in pixels.
+- `float getAspectRatio()`: Window aspect ratio.
+- `bool isKeyPressed(int key)`: Check if a key is pressed.
+- `bool isKeyReleased(int key)`: Check if a key was released.
+- `bool isMouseButtonPressed(int button)`: Check if a mouse button is pressed.
+- `bool isMouseButtonReleased(int button)`: Check if a mouse button is released.
+- `void getCursorPos(double* xpos, double* ypos)`: Get cursor position.
+- `void setInputMode(int mode, int value)`: Set input mode.
+  
+`Help_RP_DS_PP` interface: Helper class for the `RP_DS_PP` render pipeline for implementing the lighting pass and post-processing pass.
+
+- `void createLightingPass(Renderer& ren, unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader)`
+- `void createPostprocessingPass(Renderer& ren, std::string vertShaderPath, std::string fragShaderPath)`
+- `void updateLightingPass(Renderer& ren, glm::vec3& camPos, Light* lights, unsigned numLights)`
+- `void updatePostprocessingPass(Renderer& ren)`
+
+### Toolkit
+
+The header toolkit (`#include "toolkit"`) includes a wide range of helpful utilities.
+
+- ****:
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+- ****:
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+- ****:
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+- ****:
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+  - ``: 
+
+
+
+
+
+
+
+
 
 ## Architecture
 
