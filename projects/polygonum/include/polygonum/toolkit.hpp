@@ -106,20 +106,6 @@ glm::mat4 getViewMatrix(glm::vec3& camPos, glm::vec3& front, glm::vec3& camUp);
 // Projection matrix
 glm::mat4 getProjMatrix(float fovy, float aspectRatio, float nearViewPlane, float farViewPlane);
 
-/// Get a mat3 from a mat4
-template<typename T>
-glm::mat3 toMat3(const T &matrix)
-{
-    //const float* pSource = (const float*)glm::value_ptr(matrix);
-    glm::mat3 result;
-
-    for (int i = 0; i < 3; i++)
-        for (int j = 0; j < 3; j++)
-            result[i][j] = matrix[i][j];
-
-    return result;
-}
-
 
 // Bounding ops -----------------------------------------------------------------
 
@@ -208,14 +194,8 @@ size_t getLongAxis(std::vector<float>& vertexDestination, std::vector<uint16_t>&
 /// Get a set of lines that form a grid
 size_t getGrid(std::vector<float>& vertexDestination, std::vector<uint16_t>& indicesDestination, int stepSize, size_t stepsPerSide, float height, glm::vec3 color);
 
-/// DELETE (Local space) Get a VertexPT of a square (vertSize x horSize), its indices, and number of vertices (4). Used for draws that use MVP matrix (example: sun).
-size_t getQuad(std::vector<float>& destVertex, std::vector<uint16_t>& destIndices, float vertSize, float horSize, float zValue);
-
-/// DELETE (NDC space) Get a VertexPT of a square (vertSize x horSize), its indices, and number of vertices (4). Used for draws that doesn't use MVP matrix (example: reticule).
-size_t getPlaneNDC(std::vector<float>& vertexDestination, std::vector<uint16_t>& indicesDestination, float vertSize, float horSize);
-
-/// Get vertex data (NDC space vertices & UVs coordinates) and indices of a screen quad. Used for draws that doesn't use MVP matrix (example: reticule or postprocessing effect).
-void getScreenQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float radius, float zValue);
+/// Get vertex data (NDC space vertices & UVs coordinates) and indices of a screen quad. Used for draws that doesn't use MVP matrix (example: reticule or postprocessing effects).
+void getScreenQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float zValue = 0.f, float radius = 1.f);
 
 // Quads
 extern std::vector<float> v_YZquad;
@@ -604,6 +584,7 @@ public:
 	}
 };
 
+/// Used as parent of Shader and Texture.
 template<typename K, typename E>
 class InterfaceForPointersManagerElements
 {

@@ -562,7 +562,7 @@ void Help_RP_DS_PP::createLightingPass(Renderer& ren, unsigned numLights, std::s
 {
 	std::vector<float> v_quad;	// [4 * 5]
 	std::vector<uint16_t> i_quad;
-	getScreenQuad(v_quad, i_quad, 1.f, 0.f);	// <<< The parameter zValue doesn't represent height (otherwise, this value should serve for hiding one plane behind another).
+	getScreenQuad(v_quad, i_quad);	// <<< The parameter zValue doesn't represent height (otherwise, this value should serve for hiding one plane behind another).
 
 	std::vector<ShaderLoader*> usedShaders{
 		SL_fromFile::factory(vertShaderPath),
@@ -596,7 +596,7 @@ void Help_RP_DS_PP::createPostprocessingPass(Renderer& ren, std::string vertShad
 {
 	std::vector<float> v_quad;	// [4 * 5]
 	std::vector<uint16_t> i_quad;
-	getScreenQuad(v_quad, i_quad, 1.f, 0.f);	// <<< The parameter zValue doesn't represent heigth (otherwise, this value should serve for hiding one plane behind another).
+	getScreenQuad(v_quad, i_quad);	// <<< The parameter zValue doesn't represent heigth (otherwise, this value should serve for hiding one plane behind another).
 
 	std::vector<ShaderLoader*> usedShaders{
 		SL_fromFile::factory(vertShaderPath),

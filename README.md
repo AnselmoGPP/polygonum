@@ -337,9 +337,32 @@ void update(Renderer& ren)
 
 ### Toolkit
 
-The header toolkit (`#include "toolkit"`) includes a wide range of helpful utilities.
+The header toolkit (`#include "toolkit"`) includes a wide range of helpful utilities:
 
-- ****:
+- **Print data**:
+  - `PRINT(…)`: Print a variable number of arguments.
+  - `PRINT_FILE_LINE_FUNC`: Print file name, line, and function.
+  - `printMat(const T& matrix)`: Print a glm::matX.
+  - `printVec(const T& vec)`: Print a glm::vecX.
+  - `printS(const T& vec)`: Print string (or any printable object)
+- **MVP matrix**:
+  - `glm::mat4 getModelMatrix()`: Basic model matrix (makes no transformation).
+  - `glm::mat4 getModelMatrix(const glm::vec3& scale, const glm::vec4& rotQuat, const glm::vec3& translation)`: Model matrix.
+  - `glm::mat4 getModelMatrixForNormals(const glm::mat4& modelMatrix)`: Model matrix for Normals. It's really a mat3, but a mat4 is returned because it is easier to pass to shader since mat4 is aligned with 16 bytes. Normals are passed to fragment shader in world coordinates, so they have to be multiplied by the model matrix (MM) first (this MM should not include the translation part, so we just take the upper-left 3x3 part). However, non-uniform scaling can distort normals, so we have to create a specific MM especially tailored for normal vectors: `mat3(transpose(inverse(model))) * vec3(normal)`.
+  - `glm::mat4 getViewMatrix(glm::vec3& camPos, glm::vec3& front, glm::vec3& camUp)`: View matrix.
+  - `glm::mat4 getProjMatrix(float fovy, float aspectRatio, float nearViewPlane, float farViewPlane)`: Projection matrix.
+- **Bounding shapes**:
+  - `struct Frustum`: Contains the 6 planes of a frustum, and can check if an object is inside/outside it.
+  - `BoundingShape`: ADT for bounding shapes (usually polygons) used for enveloping objects. 
+    - `Point`
+	- `Plane`
+    - `Sphere` 
+    - `AABB`: Axis Aligned Bounding Box.
+- **Vertex sets**:
+  - `size_t getAxis(std::vector<float>& vertexDestination, std::vector<uint16_t>& indicesDestination, float lengthFromCenter, float colorIntensity)`: 
+  - `size_t getLongAxis(std::vector<float>& vertexDestination, std::vector<uint16_t>& indicesDestination, float lengthFromCenter, float colorIntensity)`: 
+  - `size_t getGrid(std::vector<float>& vertexDestination, std::vector<uint16_t>& indicesDestination, int stepSize, size_t stepsPerSide, float height, glm::vec3 color)`: 
+  - `void getScreenQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float zValue = 0.f, float radius = 1.f)`: Get vertex data (NDCs & UVs) and indices of a screen quad. Used for draws that doesn't use MVP matrix (example: reticule or postprocessing effects).
   - ``: 
   - ``: 
   - ``: 
@@ -347,32 +370,12 @@ The header toolkit (`#include "toolkit"`) includes a wide range of helpful utili
   - ``: 
   - ``: 
   - ``: 
-- ****:
   - ``: 
   - ``: 
   - ``: 
   - ``: 
   - ``: 
   - ``: 
-  - ``: 
-- ****:
-  - ``: 
-  - ``: 
-  - ``: 
-  - ``: 
-  - ``: 
-  - ``: 
-  - ``: 
-- ****:
-  - ``: 
-  - ``: 
-  - ``: 
-  - ``: 
-  - ``: 
-  - ``: 
-  - ``: 
-
-
 
 
 

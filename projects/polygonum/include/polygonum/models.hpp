@@ -7,12 +7,16 @@
 #include "polygonum/ubo.hpp"
 #include "polygonum/importer.hpp"
 
-
 // Forward declarations ----------
 
 class Renderer;
 class RenderPipeline;
 
+// Declarations ----------
+
+struct ModelDataInfo;
+class ModelData;
+class ModelsManager;
 
 // Definitions ----------
 
@@ -97,7 +101,7 @@ public:
 	ModelData(ModelData&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
 	ModelData& ModelData::operator=(ModelData&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
 
-	ModelData& fullConstruction(Renderer &rend);   //!< Creates graphic pipeline and descriptor sets, and loads data for creating buffers (vertex, indices, textures). Useful in a second thread
+	ModelData& fullConstruction(Renderer &ren);   //!< Creates graphic pipeline and descriptor sets, and loads data for creating buffers (vertex, indices, textures). Useful in a second thread
 
 	void cleanup_pipeline_and_descriptors();   //!< Destroys graphic pipeline and descriptor sets. Called by destructor, and for window resizing (by Renderer::recreateSwapChain()::cleanupSwapChain()).
 	void recreate_pipeline_and_descriptors();   //!< Creates graphic pipeline and descriptor sets. Called for window resizing (by Renderer::recreateSwapChain()).

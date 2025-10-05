@@ -28,9 +28,7 @@ void ResourcesLoader::loadResources(ModelData& model, Renderer& rend)
 	#ifdef DEBUG_RESOURCES
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	#endif
-	
-	// <<< why not using Renderer to access destination buffers?
-	
+
 	// Load vertexes and indices
 	vertices->loadVertexes(model.vert, this, rend);
 	
@@ -402,6 +400,11 @@ VertexesLoader* VL_fromFile::clone() { return new VL_fromFile(*this); }
 
 void VL_fromFile::getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources)
 {
+	/*
+		A Scene contains Nodes. Each Node contains Meshes and children Nodes. Meshes contain vertex data. 
+		Get Scene from the file > Process all Nodes > 
+	*/
+
 	this->vertices = &destVertices;
 	this->indices = &destIndices;
 	this->resources = &destResources;
@@ -424,7 +427,6 @@ void VL_fromFile::getRawData(VertexSet& destVertices, std::vector<uint16_t>& des
 void VL_fromFile::processNode(const aiScene* scene, aiNode* node)
 {
 	// Process all node's meshes
-	//aiMesh* mesh;
 	std::vector<aiMesh*> meshes;
 
 	for (unsigned i = 0; i < node->mNumMeshes; i++)

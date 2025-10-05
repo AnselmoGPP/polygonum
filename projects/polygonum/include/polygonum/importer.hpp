@@ -73,7 +73,7 @@ extern std::vector<uint16_t   > noIndices;			//!< Vector with 0 indices
 
 // VERTICES --------------------------------------------------------
 
-/// VertexType defines the characteristics of a vertex. Defines the size and type of attributes the vertex is made of (Position, Color, Texture coordinates, Normals...).
+/// VertexType defines the characteristics of a vertex: size and type of attributes the vertex is made of (Position, Color, Texture coordinates, Normals...).
 class VertexType
 {
 public:
@@ -90,7 +90,7 @@ public:
 	uint32_t vertexSize;								//!< Size (bytes) of a vertex object
 };
 
-/// VertexSet serves as a container for any object type, similarly to a std::vector, but storing such objects directly in bytes (char array). This allows ModelData objects store different Vertex types in a clean way (otherwise, templates and inheritance would be required, but code would be less clean).
+/// Container for any object type, similarly to a std::vector, but storing such objects directly in bytes (char array). This allows ModelData objects store different Vertex types in a clean way (otherwise, templates and inheritance would be required, but code would be less clean).
 class VertexSet
 {
 public:
@@ -122,7 +122,7 @@ private:
 	uint32_t numVertex;		// Number of vertex objects stored in buffer
 };
 
-/// Container for Vertexes (position, color, texture coordinates...) and Indices.
+/// Container for buffers for Vertexes (position, color, texture coordinates...) and Indices.
 struct VertexData
 {
 	// Vertices

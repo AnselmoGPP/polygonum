@@ -91,7 +91,7 @@ glm::mat4 getModelMatrix(const glm::vec3& scale, const glm::vec4& rotQuat, const
 
 glm::mat4 getModelMatrixForNormals(const glm::mat4& modelMatrix)
 {
-	//return toMat3(glm::transpose(glm::inverse(modelMatrix)));
+	//return glm::mat3(glm::transpose(glm::inverse(modelMatrix)));
 	return glm::transpose(glm::inverse(modelMatrix));
 }
 
@@ -422,48 +422,7 @@ size_t getGrid(std::vector<float>& vertexDestination, std::vector<uint16_t>& ind
 	return numVertex;
 }
 
-size_t getQuad(std::vector<float>& destVertex, std::vector<uint16_t>& destIndices, float vertSize, float horSize, float zValue)
-{
-	// XY plane
-	//destVertex = {
-	//	-horSize/2,  vertSize/2, zValue,     0, 0,		// top left
-	//	-horSize/2, -vertSize/2, zValue,     0, 1,		// low left
-	//	 horSize/2, -vertSize/2, zValue,     1, 1,		// low right
-	//	 horSize/2,  vertSize/2, zValue,     1, 0 };	// top right
-
-	// XZ plane
-	//destVertex = {
-	//	-horSize / 2,  vertSize / 2, zValue,     0, 0,		// top left
-	//	-horSize / 2, -vertSize / 2, zValue,     0, 1,		// low left
-	//	 horSize / 2, -vertSize / 2, zValue,     1, 1,		// low right
-	//	 horSize / 2,  vertSize / 2, zValue,     1, 0 };	// top right
-
-	destVertex = {
-	-1,  0, -1,     0, 1,		// low left
-	 1,  0, -1,     1, 1,		// low right
-	 1,  0,  1,     1, 0,		// top right
-	-1,  0,  1,		0, 0 };		// top left
-
-
-	destIndices = std::vector<uint16_t>{ 0, 1, 3,  1, 2, 3 };
-
-	return 4;
-}
-
-size_t getPlaneNDC(std::vector<float>& vertexDestination, std::vector<uint16_t>& indicesDestination, float vertSize, float horSize)
-{
-	vertexDestination = { 
-		-horSize/2, -vertSize/2, 0.f,     0, 0,
-		-horSize/2,  vertSize/2, 0.f,     0, 1,
-		 horSize/2,  vertSize/2, 0.f,     1, 1,
-		 horSize/2, -vertSize/2, 0.f,     1, 0 };
-
-	indicesDestination = std::vector<uint16_t>{ 0, 1, 3,  1, 2, 3 };
-
-	return 4;
-}
-
-void getScreenQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float radius, float zValue)
+void getScreenQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float zValue, float radius)
 {
 	vertices = {
 		-radius,-radius, zValue,  0, 0,

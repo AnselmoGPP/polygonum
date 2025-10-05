@@ -172,14 +172,14 @@ ModelData& ModelData::operator=(ModelData&& other) noexcept
 	return *this;
 }
 
-ModelData& ModelData::fullConstruction(Renderer& rend)
+ModelData& ModelData::fullConstruction(Renderer& ren)
 {
 	#ifdef DEBUG_MODELS
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
 	#endif
 	
 	if (resLoader) {
-		resLoader->loadResources(*this, rend);
+		resLoader->loadResources(*this, ren);
 		deleteLoader();
 	} else std::cout << "Error: No loading info data" << std::endl;
 	
