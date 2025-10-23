@@ -119,15 +119,18 @@ struct Material
 	alignas(16) float shininess;
 };
 
-/// A Binding is an array of descriptors. There're different types of descriptors (UBO, sampler...).
-struct BindingInfo
+/// A UBO array is a type of Binding. A Binding is an array of descriptors. Each descriptor has attributes. There're different types of descriptors (UBO, sampler...).
+struct UbosArrayInfo
 {
-	BindingInfo(size_t maxNumUbos, size_t numActiveUbos, size_t minUboSize);
-	BindingInfo();
+	UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t minUboSize);
+	UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t minUboSize, const std::vector<std::string>& glslLines);
+	UbosArrayInfo();
 
-	size_t maxNumUbos;
-	size_t numActiveUbos;
-	size_t minUboSize;
+	size_t maxNumUbos;   //!< Number of descriptors
+	size_t numActiveUbos;   //!< Descriptors used
+	size_t minUboSize;   //!< Descriptor size
+
+	std::vector<std::string> glslLines;   //!< Used in ShaderCreator
 };
 
 /// Container for a binding of uniform buffers, which is an array of uniform buffer descriptors (UBOs). Multiple UBOs are useful for instance rendering.
@@ -138,7 +141,7 @@ private:
 	SwapChain* swapChain;
 
 public:
-	UBOsArray(Renderer* renderer, BindingInfo bindingInfo);
+	UBOsArray(Renderer* renderer, const UbosArrayInfo& bindingInfo);
 	UBOsArray();
 	~UBOsArray() = default;
 	UBOsArray(UBOsArray&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
@@ -152,6 +155,8 @@ public:
 	std::vector<uint8_t>		binding;			//!< Array of UBOs will be passed to vertex shader (MVP, M for normals, light...). Its attributes are aligned to 16-byte boundary.
 	std::vector<VkBuffer>		bindingBuffers;		//!< Opaque handle to a buffer object (here, a binding). One for each swap chain image.
 	std::vector<VkDeviceMemory>	bindingMemories;	//!< Opaque handle to a device memory object (here, memory for the binding). One for each swap chain image.
+
+	std::vector<std::string> glslLines;   //!< Used in ShaderCreator
 
 	bool setNumActiveUbos(size_t count);			//!< Set the value of activeUBOs. Returns false if > maxUBOcount;
 	uint8_t* getUboPtr(size_t uboIndex);

@@ -515,59 +515,6 @@ struct ResourcesLoader
 
 // OTHERS --------------------------------------------------------
 
-struct BindingInfo0
-{
-	enum BindingType { bt_globalUbo, bt_localUbo, bt_sampler };
-
-	BindingInfo0(BindingType type, unsigned numDescriptors) : type(type), numDescriptors(numDescriptors) {}
-	virtual ~BindingInfo0() { }
-
-	unsigned type;
-	unsigned numDescriptors;
-};
-
-struct BI_globalUbo : public BindingInfo0
-{
-	BI_globalUbo(unsigned uboIndex)
-		: BindingInfo0(bt_globalUbo, 1), uboIndex(uboIndex) {}
-
-	unsigned uboIndex;
-};
-
-struct BI_localUbo : public BindingInfo0
-{
-	struct DescriptorAttrib
-	{
-		unsigned size;
-		std::string glslVar;
-	};
-
-	BI_localUbo(unsigned numDescriptors)
-		: BindingInfo0(bt_localUbo, numDescriptors) {}
-
-	std::vector<DescriptorAttrib> attribs;
-};
-
-struct BI_sampler : public BindingInfo0
-{
-	BI_sampler(unsigned numSamplers)
-		: BindingInfo0(bt_sampler, numSamplers) {}
-};
-
-// Bingings set (descriptor set) info for a model.
-struct BindingsSetInfo
-{
-	struct Descriptor
-	{
-
-
-		std::vector<BindingInfo0*> attributes;   //!< Size & GLSL line
-		unsigned count;   //!< Array of descriptors size
-	};
-
-	vec2<Descriptor> set;   //!< [Set][Binding][DescriptorInfo]
-};
-
 /// Precompute all optical depth values through the atmosphere. Useful for creating a lookup table for atmosphere rendering.
 class OpticalDepthTable
 {

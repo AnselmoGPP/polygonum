@@ -272,8 +272,8 @@ void Renderer::cleanup()
 
 	models.data.clear();   // lock_guard (worker.mutModels) not necessary before this because worker stopped the loading thread.
 
-	if (globalBinding_vs.totalBytes) globalBinding_vs.destroyBinding();
-	if (globalBinding_fs.totalBytes) globalBinding_fs.destroyBinding();
+	for(auto& gUbo : globalUBOs)
+		if (gUbo.totalBytes) gUbo.destroyBinding();
 
 	commander.freeCommandBuffers();
 	commander.destroySynchronizers();
@@ -373,19 +373,13 @@ void Renderer::updateUBOs(uint32_t imageIndex)
 	ModelData* model;
 
 	// Global UBOs
-	if (globalBinding_vs.totalBytes)
-	{
-		vkMapMemory(c.device, globalBinding_vs.bindingMemories[imageIndex], 0, globalBinding_vs.totalBytes, 0, &data);
-		memcpy(data, globalBinding_vs.binding.data(), globalBinding_vs.totalBytes);
-		vkUnmapMemory(c.device, globalBinding_vs.bindingMemories[imageIndex]);
-	}
-
-	if (globalBinding_fs.totalBytes)
-	{
-		vkMapMemory(c.device, globalBinding_fs.bindingMemories[imageIndex], 0, globalBinding_fs.totalBytes, 0, &data);
-		memcpy(data, globalBinding_fs.binding.data(), globalBinding_fs.totalBytes);
-		vkUnmapMemory(c.device, globalBinding_fs.bindingMemories[imageIndex]);
-	}
+	for (auto& gUBO : globalUBOs)
+		if(gUBO.totalBytes)
+		{
+			vkMapMemory(c.device, gUBO.bindingMemories[imageIndex], 0, gUBO.totalBytes, 0, &data);
+			memcpy(data, gUBO.binding.data(), gUBO.totalBytes);
+			vkUnmapMemory(c.device, gUBO.bindingMemories[imageIndex]);
+		}
 
 	// Local UBOs
 	const std::lock_guard<std::mutex> lock(worker.mutModels);

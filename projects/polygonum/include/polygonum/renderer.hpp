@@ -112,11 +112,10 @@ protected:
 public:
 	/// Constructor. Requires a callback for user updates (update model matrix, add models, delete models...).
 	template <typename RP = RP_DS_PP>
-	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, BindingInfo globalUBO_vs, BindingInfo globalUBO_fs, RP* renderPipeline);
+	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, const std::vector<UbosArrayInfo>& globalUBOsInfo, RP* renderPipeline);
 	~Renderer();
 
-	UBOsArray globalBinding_vs;
-	UBOsArray globalBinding_fs;
+	std::vector<UBOsArray> globalUBOs;
 
 	void renderLoop();	//!< Create command buffer and start render loop.
 
@@ -145,7 +144,7 @@ public:
 
 
 template <typename RP>
-Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, BindingInfo globalUBO_vs, BindingInfo globalUBO_fs, RP* renderPipeline = nullptr) :
+Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, const std::vector<UbosArrayInfo>& globalUBOsInfo, RP* renderPipeline = nullptr) :
 	c(width, height),
 	swapChain(c, ADDITIONAL_SWAPCHAIN_IMAGES),
 	commander(c, swapChain.images.size(), MAX_FRAMES_IN_FLIGHT),
@@ -154,8 +153,6 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, Bind
 	userUpdate(graphicsUpdate),
 	renderedFramesCount(0),
 	maxFPS(30),
-	globalBinding_vs(this, globalUBO_vs),
-	globalBinding_fs(this, globalUBO_fs),
 	worker(this)
 {
 #ifdef DEBUG_RENDERER
@@ -168,8 +165,11 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, Bind
 	//else rw = std::make_shared<RW_PP>(*this);
 
 	// Create UBOs
-	if (this->globalBinding_vs.totalBytes) this->globalBinding_vs.createBinding();
-	if (this->globalBinding_fs.totalBytes) this->globalBinding_fs.createBinding();
+	for(const auto& uboInfo : globalUBOsInfo)
+		globalUBOs.push_back(UBOsArray(this, uboInfo));
+
+	for(auto& gUBO : globalUBOs)
+		if (gUBO.totalBytes) gUBO.createBinding();
 }
 
 /// Helper class for the RP_DS_PP render pipeline. Used to create and update the Lighting pass and Post-processing pass.
