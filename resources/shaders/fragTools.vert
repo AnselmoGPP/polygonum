@@ -40,7 +40,7 @@
 //		SpotLightColor
 //		getFragColor
 //	Planar texture:
-//		getNormal
+//		planarNormal
 //		cubemapTex
 //		getTex   (example)
 //	Triplanar texture:
@@ -56,7 +56,6 @@
 		vec3 getGreyScale(vec3 fragColor);
 		//vec3 applyKernel(float kernel[9], sampler2D sampler, vec2 uv);
 //	Others:
-//		planarNormal
 //		getTexScaling
 //		getLowResDist
 //		applyParabolicFog
@@ -589,16 +588,6 @@ vec4 getColor(sampler2D colorMap, vec2 uv, float scale)
 	return texture(colorMap, unpackUV(uv, scale));
 }
 
-// Get normal by applying a normal map (texture) to a normal
-vec4 getNormal(sampler2D normalMap, vec2 uv, float scale, vec3 tangent, vec3 bitangent, vec3 normal)
-{
-	return vec4(
-		normalize(	// TBN matrix * normal_map
-			mat3(normalize(tangent), normalize(bitangent), normalize(normal)) * 
-			unpackNormal(texture(normalMap, unpackUV(uv, scale)).xyz)),
-		1.f);
-}
-
 // Get data from a texture
 vec4 getData(sampler2D dataMap, vec2 uv, float scale)
 {
@@ -624,6 +613,14 @@ float modHeaviside(float x, float a) { return heaviside(x - a); }
 
 // Inverted modified Heaviside function is H(x)=0 when x<a, and H(x)=1 when x>=a;
 float modifiedHeavisideFunction(float x, float a) { return abs(heaviside(x - a) - 1.f); }
+
+// Get final world space normal from a normal map.
+vec3 planarNormal(sampler2D normalMap, vec3 baseNormal, TB tb, vec2 uv, float factor)
+{
+	vec3 tangentSpaceNormal = unpackNormal(texture(normalMap, unpackUV(uv, factor)).xyz);
+	mat3 TBNmatrix = mat3(normalize(tb.tan), normalize(tb.bTan), normalize(baseNormal));
+	return normalize(TBNmatrix * tangentSpaceNormal); // = world space normal
+}
 
 // Use a vector (fragment's position in a cube) to sample from a cubemap
 vec4 cubemapTex(vec3 pos, sampler2D colorMap)
@@ -1028,16 +1025,6 @@ vec3 triplanarNormal(sampler2D tex, uvGradient dzy, uvGradient dxz, uvGradient d
 }
 
 // Others ------------------------------------------------------------------------
-
-// Get normal from the vertex normal (world normal) and a normal map (tangent space normal).
-vec3 planarNormal(sampler2D tex, vec2 UVs, TB tb, vec3 normal, float texFactor)
-{	
-	// Tangen space normal
-	vec3 tnormal = unpackNormal(texture(tex, unpackUV(UVs, texFactor)).xyz);
-	
-	// Final World space normal
-	return mat3(tb.tan, tb.bTan, normal) * tnormal;	// TBN * tnormal  (convert tangent space normal to world space)
-}
 
 // Get ratio (return value) of 2 different texture resolutions (texFactor1, texFactor2). Used for getting textures of different resolutions depending upon distance to fragment, and for mixing them.
 float getTexScaling(float fragDist, float initialTexFactor, float baseDist, float mixRange, inout float texFactor1, inout float texFactor2)

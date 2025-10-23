@@ -377,11 +377,29 @@ The header toolkit (`#include "toolkit"`) includes a wide range of helpful utili
   - ``: 
   - ``: 
 
+### Importing model files
+
+When creating a model, we can import the data from a file (like OBJ files), which will be used by Polygonum to get the vertex data and associated textures (materials). The user can still provide additional textures explicitly.
+
+**Vertex** data taken from file:
+
+- Position
+- UVs (texture coords)
+- Normals
+- Colors
+- Tangents
+
+**Textures** usually provide material data like:
+
+- Albedo
+- Normals
+- Specularity
+- Roughness
+- Height
 
 
 
-
-
+Validation layer: Validation Error: [ UNASSIGNED-Threading-MultipleThreads-Write ] Object 0: handle = 0xdcc8fd0000000012, type = VK_OBJECT_TYPE_FENCE; | MessageID = 0xa05b236e | vkResetFences():  THREADING ERROR : object of type VkFence is simultaneously used in current thread 31104 and thread 37672
 
 ## Architecture
 
@@ -421,10 +439,7 @@ For debugging the engine:
   - can modify its code: modify it from your solution, then open Polygonum solution and compile.
 
 
-class ModelData::createDescriptorSets (lightingPass)
-Validation layer: Validation Warning: [ WARNING-CoreValidation-AllocateDescriptorSets-WrongType ] Object 0: handle = 0x8f1c31000000006d, type = VK_OBJECT_TYPE_DESCRIPTOR_POOL; | MessageID = 0xf79f6125 | vkAllocateDescriptorSets(): pAllocateInfo->pSetLayouts[0] binding 1 was created with VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but the Descriptor Pool was not created with this type and returned VK_ERROR_OUT_OF_POOL_MEMORY
-Validation layer: Validation Warning: [ WARNING-CoreValidation-AllocateDescriptorSets-WrongType ] Object 0: handle = 0x8f1c31000000006d, type = VK_OBJECT_TYPE_DESCRIPTOR_POOL; | MessageID = 0xf79f6125 | vkAllocateDescriptorSets(): pAllocateInfo->pSetLayouts[1] binding 1 was created with VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER but the Descriptor Pool was not created with this type and returned VK_ERROR_OUT_OF_POOL_MEMORY
-Error: -1000069000
+
 
 
 

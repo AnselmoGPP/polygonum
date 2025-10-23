@@ -3,6 +3,8 @@
 
 #include "polygonum/environment.hpp"
 
+#include <unordered_map>
+
 /*
 	1. A VertexesLoader, ShaderLoader and TextureLoader objects are passed to our ModelData.
 	2. ModelData uses it to create a ResourceLoader member.
@@ -41,6 +43,7 @@ class SLModule;
 	class SLM_fromFile;
 	class SLM_fromBuffer;
 class ShaderIncluder;
+class ShaderCreator;
 
 class Texture;
 class TextureLoader;
@@ -55,19 +58,16 @@ class DensityVector;
 
 // Objects ----------
 
-extern const VertexType vt_3;					//!< (Vert)
-extern const VertexType vt_32;					//!< (Vert, UV)
-extern const VertexType vt_33;					//!< (Vert, Color)
-extern const VertexType vt_332;					//!< (Vert, Normal, UV)
-extern const VertexType vt_333;					//!< (Vert, Normal, vertexFixes)
-extern const VertexType vt_3332;				//!< (Vert, Normal, Tangent, UV)
-
 typedef std::list<Shader >::iterator shaderIter;
 typedef std::list<Texture>::iterator texIter;
 
 extern std::vector<TextureLoader> noTextures;		//!< Vector with 0 TextureLoader objects
 extern std::vector<uint16_t   > noIndices;			//!< Vector with 0 indices
 
+// Enums ----------
+
+enum VertAttrib { vaPos, vaNorm, vaTan, vaCol, vaCol4, vaUv, vaFixes, vaBoneWeights, vaBoneIndices, vaInstanceTransform, vaMax };
+enum TexType { tAlb, tSpec, tRoug, tSpecroug, tNorm, tUndef, texMax };
 
 // Definitions ----------
 
@@ -76,8 +76,13 @@ extern std::vector<uint16_t   > noIndices;			//!< Vector with 0 indices
 /// VertexType defines the characteristics of a vertex: size and type of attributes the vertex is made of (Position, Color, Texture coordinates, Normals...).
 class VertexType
 {
+	VertexType(std::initializer_list<uint32_t> attribsSizes, std::initializer_list<VkFormat> attribsFormats);	//!< Not used. Set the size (bytes) and type of each vertex attribute (Position, Color, Texture coords, Normal, other...).
+
+	VkFormat getFormat(VertAttrib attribute);   //!< Maps VertAttrib to VkFormat.
+	unsigned getSize(VkFormat format);   //!< Maps VkFormat to size (bytes).
+
 public:
-	VertexType(std::initializer_list<uint32_t> attribsSizes, std::initializer_list<VkFormat> attribsFormats);	//!< Constructor. Set the size (bytes) and type of each vertex attribute (Position, Color, Texture coords, Normal, other...).
+	VertexType(std::initializer_list<VertAttrib> vertexAttributes);
 	VertexType();
 	~VertexType();
 	VertexType& operator=(const VertexType& obj);				//!< Copy assignment operator overloading. Required for copying a VertexSet object.
@@ -87,7 +92,8 @@ public:
 
 	std::vector<VkFormat> attribsFormats;			//!< Format (VkFormat) of each vertex attribute. E.g.: VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32_SFLOAT...
 	std::vector<uint32_t> attribsSizes;				//!< Size of each attribute type. E.g.: 3 * sizeof(float)...
-	uint32_t vertexSize;								//!< Size (bytes) of a vertex object
+	uint32_t vertexSize;							//!< Size (bytes) of a vertex object
+	std::vector<VertAttrib> attribsTypes; // <<< set to map?
 };
 
 /// Container for any object type, similarly to a std::vector, but storing such objects directly in bytes (char array). This allows ModelData objects store different Vertex types in a clean way (otherwise, templates and inheritance would be required, but code would be less clean).
@@ -359,31 +365,91 @@ public:
 };
 
 
+/**
+	Helper class for creating shaders for the render pipeline RP_DS_PP.
+	It creates the vertex (VS) and fragment (FS) shader for a given sub-pass (RPtype).
+*/
+class ShaderCreator
+{
+public:
+	enum RPtype { geometry, lighting, forward, postprocessing };
+
+	ShaderCreator(RPtype rendPass, const VertexType& vertexType, const std::vector<TextureLoader*>& textures);
+
+	struct ShaderCode
+	{
+		std::vector <std::string> header;
+		std::vector <std::string> includes;
+		std::vector <std::string> flags;
+		std::vector <std::vector<std::string>> descriptors; // 0 (global), 1 (local), 2 (textures)
+		std::vector <std::string> input;
+		std::vector <std::string> output;
+		std::vector <std::string> globalVars;
+		std::vector <std::string> main_begin;
+		std::vector <std::string> main_processing;
+		std::vector <std::string> main_end;
+	};
+
+	ShaderCode vs, fs;
+
+	std::string getShader(unsigned shaderType);   //!< 0 (vertex), 1 (fragment)
+	void printShader(unsigned shaderType);
+	void printAllShaders();
+
+	ShaderCreator& replaceMainBegin(unsigned shaderType, std::string& text, const std::string& substring, const std::string& replacement);   //!< Replace an entire line in main_begin with your own if it contains certain substring.
+	ShaderCreator& replaceMainEnd(unsigned shaderType, std::string& text, const std::string& substring, const std::string& replacement);   //!< Replace an entire line in main_end with your own if it contains certain substring.
+	ShaderCreator& setVerticalNormals();   //!< (VS) Make all normals vertical (0,0,1) before MVP transformation.
+
+private:
+
+	RPtype rpType;
+
+	void setVS();
+	void setFS_forward();
+	void setFS_geometry();
+	ShaderCreator& setForward();   // Shaders for a Forward pass
+	ShaderCreator& setGeometry();   // Shaders for a Geometry pass
+
+	void setBasics();
+	void setShaders(RPtype rendPass, const VertexType& vertexType, const std::vector<TextureLoader*>& textures);
+	void setVS_general(const VertexType& vertexType);
+	void setForward(const VertexType& vertexType, const std::vector<TextureLoader*>& textures);
+	void setGeometry(const VertexType& vertexType, const std::vector<TextureLoader*>& textures);
+	void setLighting();   // Shaders for a Lighting pass
+	void setPostprocess();   // Shaders for a Postprocessing pass
+
+	unsigned firstBindingNumber(unsigned shaderType);
+	std::unordered_map<VertAttrib, unsigned> usedAttribTypes(const VertexType& vertexType);
+	std::unordered_map<TexType, unsigned> usedTextureTypes(const std::vector<TextureLoader*>& textures);
+
+	bool replaceAllIfContains(std::string& text, const std::string& substring, const std::string& replacement);
+	bool findTwoAndReplaceBetween(std::string& text, const std::string& str1, const std::string& str2, const std::string& replacement);
+	bool findStrAndErase(std::string& text, const std::string& str);
+	bool findStrAndReplace(std::string& text, const std::string& str, const std::string& replacement);
+	bool findStrAndReplaceLine(std::string& text, const std::string& str, const std::string& replacement);
+};
+
+
 // TEXTURE --------------------------------------------------------
 
 /// Container for a texture.
 class Texture : public InterfaceForPointersManagerElements<std::string, Texture>
 {
 public:
-	Texture(const std::string& id, VulkanCore& c, VkImage textureImage, VkDeviceMemory textureImageMemory, VkImageView textureImageView, VkSampler textureSampler);
+	Texture(const std::string& id, VulkanCore& c, VkImage textureImage, VkDeviceMemory textureImageMemory, VkImageView textureImageView, VkSampler textureSampler, TexType type);
 	~Texture();
 
-	//VulkanCore& c;								//!< Used in destructor.
-	const std::string id;						//!< Used for checking whether the texture to load is already loaded.
+	const std::string id;   //!< Used for checking whether the texture to load is already loaded.
+	const TexType type;   //!< Used for shader creation.
 
 	Image texture;
-
-	//VkImage				textureImage;			//!< Opaque handle to an image object.
-	//VkDeviceMemory		textureImageMemory;		//!< Opaque handle to a device memory object.
-	//VkImageView			textureImageView;		//!< Image view for the texture image (images are accessed through image views rather than directly).
-	//VkSampler				textureSampler;			//!< Opaque handle to a sampler object (it applies filtering and transformations to a texture). It is a distinct object that provides an interface to extract colors from a texture. It can be applied to any image you want (1D, 2D or 3D).
 };
 
 /// ADT for loading a texture from any source. Subclasses will define how data is taken from source (getRawData): from file, from buffer, etc.
 class TextureLoader
 {
 protected:
-	TextureLoader(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode);
+	TextureLoader(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode, TexType type);
 
 	virtual void getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) = 0;	//!< Get pixels, texWidth, texHeight, 
 
@@ -399,32 +465,34 @@ public:
 	virtual ~TextureLoader() { };
 	std::shared_ptr<Texture> loadTexture(PointersManager<std::string, Texture>& loadedTextures, Renderer& r);	//!< Get an iterator to the Texture in loadedTextures list. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
 	virtual TextureLoader* clone() = 0;
+
+	TexType type;
 };
 
 /// Pass the texture as vector of bytes (unsigned char) at construction time. Call to getRawData will pass that string.
 class TL_fromBuffer : public TextureLoader
 {
-	TL_fromBuffer(const std::string& id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat, VkSamplerAddressMode addressMode);
+	TL_fromBuffer(const std::string& id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat, VkSamplerAddressMode addressMode, TexType type);
 	void getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) override;
 
 	std::vector<unsigned char> data;
 	int32_t texWidth, texHeight;
 
 public:
-	static TL_fromBuffer* factory(const std::string id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
+	static TL_fromBuffer* factory(const std::string id, unsigned char* pixels, int texWidth, int texHeight, TexType texType = tUndef, VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
 	TextureLoader* clone() override;
 };
 
 /// Pass a texture file path at construction time. Call to getRawData gets the texture from that file.
 class TL_fromFile : public TextureLoader
 {
-	TL_fromFile(const std::string& filePath, VkFormat imageFormat, VkSamplerAddressMode addressMode);
+	TL_fromFile(const std::string& filePath, VkFormat imageFormat, VkSamplerAddressMode addressMode, TexType type);
 	void getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) override;
 
 	std::string filePath;
 
 public:
-	static TL_fromFile* factory(const std::string filePath, VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
+	static TL_fromFile* factory(const std::string filePath, TexType texType = tUndef, VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
 	TextureLoader* clone() override;
 };
 
@@ -446,6 +514,59 @@ struct ResourcesLoader
 
 
 // OTHERS --------------------------------------------------------
+
+struct BindingInfo0
+{
+	enum BindingType { bt_globalUbo, bt_localUbo, bt_sampler };
+
+	BindingInfo0(BindingType type, unsigned numDescriptors) : type(type), numDescriptors(numDescriptors) {}
+	virtual ~BindingInfo0() { }
+
+	unsigned type;
+	unsigned numDescriptors;
+};
+
+struct BI_globalUbo : public BindingInfo0
+{
+	BI_globalUbo(unsigned uboIndex)
+		: BindingInfo0(bt_globalUbo, 1), uboIndex(uboIndex) {}
+
+	unsigned uboIndex;
+};
+
+struct BI_localUbo : public BindingInfo0
+{
+	struct DescriptorAttrib
+	{
+		unsigned size;
+		std::string glslVar;
+	};
+
+	BI_localUbo(unsigned numDescriptors)
+		: BindingInfo0(bt_localUbo, numDescriptors) {}
+
+	std::vector<DescriptorAttrib> attribs;
+};
+
+struct BI_sampler : public BindingInfo0
+{
+	BI_sampler(unsigned numSamplers)
+		: BindingInfo0(bt_sampler, numSamplers) {}
+};
+
+// Bingings set (descriptor set) info for a model.
+struct BindingsSetInfo
+{
+	struct Descriptor
+	{
+
+
+		std::vector<BindingInfo0*> attributes;   //!< Size & GLSL line
+		unsigned count;   //!< Array of descriptors size
+	};
+
+	vec2<Descriptor> set;   //!< [Set][Binding][DescriptorInfo]
+};
 
 /// Precompute all optical depth values through the atmosphere. Useful for creating a lookup table for atmosphere rendering.
 class OpticalDepthTable

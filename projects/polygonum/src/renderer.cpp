@@ -569,14 +569,16 @@ void Help_RP_DS_PP::createLightingPass(Renderer& ren, unsigned numLights, std::s
 		SL_fromFile::factory(fragShaderPath, { SMod::changeHeader(fragToolsHeader) })
 	};
 
+	VertexType vertexType({ vaPos, vaUv });
+
 	std::vector<TextureLoader*> usedTextures{ };
 
 	ModelDataInfo modelInfo;
 	modelInfo.name = "lightingPass";
 	modelInfo.activeInstances = 1;
 	modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	modelInfo.vertexType = vt_32;
-	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
+	modelInfo.vertexType = vertexType;
+	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vertexType.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
 	modelInfo.texturesInfo = usedTextures;
 	modelInfo.maxNumUbos_vs = 0;
@@ -603,14 +605,16 @@ void Help_RP_DS_PP::createPostprocessingPass(Renderer& ren, std::string vertShad
 		SL_fromFile::factory(fragShaderPath)
 	};
 
+	VertexType vertexType({ vaPos, vaUv });
+
 	std::vector<TextureLoader*> usedTextures{ };
 
 	ModelDataInfo modelInfo;
 	modelInfo.name = "postprocessingPass";
 	modelInfo.activeInstances = 1;
 	modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-	modelInfo.vertexType = vt_32;
-	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vt_32.vertexSize, 4, i_quad, {});
+	modelInfo.vertexType = vertexType;
+	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vertexType.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
 	modelInfo.texturesInfo = usedTextures;
 	modelInfo.maxNumUbos_vs = 0;

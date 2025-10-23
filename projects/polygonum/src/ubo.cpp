@@ -15,21 +15,21 @@ namespace sizes {
 	//size_t lightSize;
 }
 
-UBOsArrayInfo::UBOsArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t minUboSize)
+BindingInfo::BindingInfo(size_t maxNumUbos, size_t numActiveUbos, size_t minUboSize)
 	: maxNumUbos(maxNumUbos), numActiveUbos(numActiveUbos), minUboSize(minUboSize) { }
 
-UBOsArrayInfo::UBOsArrayInfo()
+BindingInfo::BindingInfo()
 	: maxNumUbos(0), numActiveUbos(0), minUboSize(0) { }
 
-UBOsArray::UBOsArray(Renderer* renderer, UBOsArrayInfo UBOsArrayInfo) :
+UBOsArray::UBOsArray(Renderer* renderer, BindingInfo bindingInfo) :
 	c(&renderer->c),
 	swapChain(&renderer->swapChain),
-	maxNumUbos(UBOsArrayInfo.maxNumUbos),
-	uboSize(UBOsArrayInfo.minUboSize ? c->deviceData.minUniformBufferOffsetAlignment * (1 + UBOsArrayInfo.minUboSize / c->deviceData.minUniformBufferOffsetAlignment) : 0),
+	maxNumUbos(bindingInfo.maxNumUbos),
+	uboSize(bindingInfo.minUboSize ? c->deviceData.minUniformBufferOffsetAlignment * (1 + bindingInfo.minUboSize / c->deviceData.minUniformBufferOffsetAlignment) : 0),
 	totalBytes(uboSize* maxNumUbos),
 	binding(totalBytes)
 {
-	setNumActiveUbos(UBOsArrayInfo.numActiveUbos);
+	setNumActiveUbos(bindingInfo.numActiveUbos);
 }
 
 UBOsArray::UBOsArray()

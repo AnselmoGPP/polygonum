@@ -8,13 +8,6 @@
 #include "polygonum/renderer.hpp"
 
 
-const VertexType vt_3   ({ 3 * sizeof(float) }, { VK_FORMAT_R32G32B32_SFLOAT });
-const VertexType vt_32  ({ 3 * sizeof(float), 2 * sizeof(float) }, { VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32_SFLOAT });
-const VertexType vt_33  ({ 3 * sizeof(float), 3 * sizeof(float) }, { VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32_SFLOAT });
-const VertexType vt_332 ({ 3 * sizeof(float), 3 * sizeof(float), 2 * sizeof(float) }, { VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32_SFLOAT });
-const VertexType vt_333 ({ 3 * sizeof(float), 3 * sizeof(float), 3 * sizeof(float) }, { VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32_SFLOAT });
-const VertexType vt_3332({ 3 * sizeof(float), 3 * sizeof(float), 3 * sizeof(float), 2 * sizeof(float) }, { VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32_SFLOAT });
-
 std::vector<TextureLoader> noTextures;
 std::vector<uint16_t> noIndices;
 
@@ -55,6 +48,27 @@ VertexType::VertexType(std::initializer_list<uint32_t> attribsSizes, std::initia
 		vertexSize += this->attribsSizes[i];
 }
 
+VertexType::VertexType(std::initializer_list<VertAttrib> vertexAttributes)
+	: vertexSize(0)
+{
+	VkFormat format;
+	unsigned size;
+	bool posAttrib = false;
+
+	for (auto attribute : vertexAttributes)
+	{
+		format = getFormat(attribute);
+		size = getSize(format);
+		attribsTypes.push_back(attribute);
+		attribsFormats.push_back(format);
+		attribsSizes.push_back(size);
+		vertexSize += size;
+		if (attribute == vaPos) posAttrib = true;
+	}
+
+	if (!posAttrib) throw std::runtime_error("Position must be a vertex attribute.");
+}
+
 VertexType::VertexType() : vertexSize(0) { }
 
 VertexType::~VertexType()
@@ -73,6 +87,56 @@ VertexType& VertexType::operator=(const VertexType& obj)
 	vertexSize = obj.vertexSize;
 
 	return *this;
+}
+
+VkFormat VertexType::getFormat(VertAttrib attribute)
+{
+	//col, col16, col4, uv, boneWeights, boneIndices, instanceTransform
+
+	switch (attribute)
+	{
+	case vaPos:
+	case vaNorm:
+	case vaTan:
+	case vaFixes:
+		return VK_FORMAT_R32G32B32_SFLOAT;   // glm::vec3
+	case vaCol:
+	case vaBoneWeights:
+		return VK_FORMAT_R32G32B32A32_SFLOAT;   // glm::vec4
+	case vaCol4:
+		return VK_FORMAT_R8G8B8A8_UNORM;   // u8vec4
+	case vaUv:
+		return VK_FORMAT_R32G32_SFLOAT;   // glm::vec2
+	case vaBoneIndices:
+		return VK_FORMAT_R32G32B32A32_UINT;   // uvec4
+	//case instanceTransform:
+	//	return VK_FORMAT_R32G32B32A32_SFLOAT(x4);   // glm::mat4
+	default:
+		throw std::runtime_error("Attribute not mapped");
+	}
+}
+
+unsigned VertexType::getSize(VkFormat format)
+{
+	switch (format)
+	{
+	case VK_FORMAT_R32G32B32A32_UINT:
+	case VK_FORMAT_R32G32B32A32_SFLOAT:
+		return 16;
+	case VK_FORMAT_R32G32B32_SFLOAT:
+		return 12;
+	case VK_FORMAT_R32G32_SFLOAT:
+	case VK_FORMAT_R16G16B16A16_SFLOAT:
+	case VK_FORMAT_R16G16B16A16_SNORM:
+		return 8;
+	case VK_FORMAT_R32_SFLOAT:
+	case VK_FORMAT_R8G8B8A8_UNORM:
+	case VK_FORMAT_R8G8B8A8_SRGB:
+	case VK_FORMAT_R16G16_SFLOAT:
+		return 4;
+	default:
+		throw std::runtime_error("Format not mapped");
+	}
 }
 
 VkVertexInputBindingDescription VertexType::getBindingDescription() const
@@ -401,10 +465,14 @@ VertexesLoader* VL_fromFile::clone() { return new VL_fromFile(*this); }
 void VL_fromFile::getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources)
 {
 	/*
-		A Scene contains Nodes. Each Node contains Meshes and children Nodes. Meshes contain vertex data. 
-		Get Scene from the file > Process all Nodes > 
+		Data is imported as a Scene (aiScene), which contains: 
+		  - All meshes (aiMesh)
+		  - Root node of a tree (aiNode). Each node contains:
+		    - Indices to its meshes
+			- Children nodes
+		Reading: Traverse all nodes and read the vertex data they contain.
 	*/
-
+	
 	this->vertices = &destVertices;
 	this->indices = &destIndices;
 	this->resources = &destResources;
@@ -428,14 +496,14 @@ void VL_fromFile::processNode(const aiScene* scene, aiNode* node)
 {
 	// Process all node's meshes
 	std::vector<aiMesh*> meshes;
-
+	
 	for (unsigned i = 0; i < node->mNumMeshes; i++)
 	{
 		//mesh = scene->mMeshes[node->mMeshes[i]];
 		meshes.push_back(scene->mMeshes[node->mMeshes[i]]);
 		processMeshes(scene, meshes);
 	}
-
+	
 	// Repeat process in children
 	for (unsigned i = 0; i < node->mNumChildren; i++)
 		processNode(scene, node->mChildren[i]);
@@ -450,7 +518,7 @@ void VL_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*> &mesh
 	// Go through each mesh contained in this node
 	for (k = 0; k < meshes.size(); k++)
 	{
-		// Get VERTEX data (positions, normals, UVs) and store it.
+		// Get VERTEX data (positions, normals, UVs)
 		for (i = 0; i < meshes[k]->mNumVertices; i++)
 		{
 			vertex[0] = meshes[k]->mVertices[i].x;
@@ -477,7 +545,7 @@ void VL_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*> &mesh
 			vertices->push_back(vertex);	// Get VERTICES
 		}
 
-		// Get INDICES and store them.
+		// Get INDICES
 		aiFace face;
 		for (i = 0; i < meshes[k]->mNumFaces; i++)
 		{
@@ -644,7 +712,7 @@ bool SMod::applyModification(std::string& shader)
 		break;
 
 	case 8:   // - sm_verticalNormals: (VS) Make all normals (before MVP transformation) vertical (vec3(0,0,1))
-		result = findStrAndErase(shader, "outNormal = mat3(ubo.normalMatrix) * inNormal;");
+		result = findStrAndErase(shader, "outNormal = mat3(lUbo.normalMatrix) * inNormal;");
 		findStrAndErase(shader, "//verticalNormals: ");
 		break;
 
@@ -862,11 +930,623 @@ void ShaderIncluder::ReleaseInclude(shaderc_include_result* data)
 	delete data;
 }
 
+ShaderCreator::ShaderCreator(RPtype rendPass, const VertexType& vertexType, const std::vector<TextureLoader*>& textures)
+	: rpType(rendPass)
+{
+	setBasics();
+	setShaders(rendPass, vertexType, textures);
+}
+
+void ShaderCreator::setBasics()
+{
+	vs.header = {
+	"#version 450",
+	"#extension GL_ARB_separate_shader_objects : enable",
+	"#pragma shader_stage(vertex)" };
+
+	vs.includes = { "#include \"..\\..\\extern\\polygonum\\resources\\shaders\\vertexTools.vert\"" };
+
+	vs.globalVars = { "int i = gl_InstanceIndex" };
+
+	fs.header = {
+		"#version 450",
+		"#extension GL_ARB_separate_shader_objects : enable",
+		"#pragma shader_stage(fragment)" };
+
+	fs.includes = { "#include \"..\\..\\extern\\polygonum\\resources\\shaders\\fragTools.vert\"" };
+
+	fs.flags = { "layout(early_fragment_tests) in" };
+}
+
+void ShaderCreator::setShaders(RPtype rendPass, const VertexType& vertexType, const std::vector<TextureLoader*>& textures)
+{
+	switch (rendPass)
+	{
+	case forward:
+		setForward(vertexType, textures);
+		break;
+	case geometry:
+		setGeometry(vertexType, textures);
+		break;
+	case lighting:
+		setLighting();
+		break;
+	case postprocessing:
+		setPostprocess();
+		break;
+	default:
+		std::cout << "Invalid pass selected" << std::endl;
+		break;
+	}
+}
+
+ShaderCreator& ShaderCreator::setForward()
+{
+	setVS();
+	setFS_forward();
+
+	return *this;
+}
+
+ShaderCreator& ShaderCreator::setGeometry()
+{
+	setVS();
+	setFS_geometry();
+
+	return *this;
+}
+
+void ShaderCreator::setLighting()
+{
+	// Vertex shader
+	vs.includes.clear();
+	vs.input = {
+		"in vec3 inPos",   // NDC position. Since it's in NDCs, no MVP transformation is required
+		"in vec2 inUV"
+	};
+	vs.output = {
+		"out vec3 outUV"
+	};
+	vs.main_end = {
+		"gl_Position = vec4(inPos, 1.0f)",
+		"outUVs = inUVs"
+	};
+
+	// Fragment shader
+	fs.flags.clear();
+	fs.descriptors = {
+		{ },
+		{ "vec4 camPos", "Light lights[NUMLIGHTS]" },
+		{ "texture", "4" }   // pos, albedo, normal specRough (sampler2D for single-sample | sampler2DMS for multisampling)
+	};
+	fs.input = { "in vec2 inUV" };
+	fs.output = { "out vec4 outColor" };
+	fs.globalVars = {
+		"vec4 showPositions(float divider) { return vec4(texture(inputAtt[0], inUV).xyz / divider, 1.0); }",
+		"vec4 showAlbedo() { return vec4(texture(inputAtt[1], inUV).xyz, 1.0); }",
+		"vec4 showNormals() { return vec4(texture(inputAtt[2], inUV).xyz, 1.0); }",
+		"vec4 showSpecularity() { return vec4(texture(inputAtt[3], inUV).xyz, 1.0); }",
+		"vec4 showRoughness() { return vec4(vec3(texture(inputAtt[3], inUV).w), 1.0); }"
+	};
+	fs.main_begin = {
+		"vec3 fragPos = texture(inputAtt[0], inUVs).xyz",
+		"vec3 albedo = texture(inputAtt[1], inUVs).xyz",
+		"vec3 normal = texture(inputAtt[2], inUVs, 1).xyz",   //unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);	//unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);
+		"vec4 specRough = texture(inputAtt[3], inUVs)"
+	};
+	fs.main_processing = {
+		"//outColor = showPositions(5000); return",
+		"//outColor = showAlbedo(); return",
+		"//outColor = showNormals(); return",
+		"//outColor = showSpecularity(); return",
+		"//outColor = showRoughness(); return"
+	};
+	fs.main_end = {
+		"outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, ubo.lights, fragPos, ubo.camPos.xyz)"
+	};
+}
+
+void ShaderCreator::setPostprocess()
+{
+	// Vertex shader
+	vs.includes.clear();
+	vs.input = {
+		"in vec3 inPos",   // NDC position. Since it's in NDCs, no MVP transformation is required.
+		"in vec2 inUV"
+	};
+	vs.output = { "out vec2 outUV" };
+	vs.main_end = {
+		"gl_Position = vec4(inPos, 1.0f)",
+		"outUV = inUV"
+	};
+
+	// Fragment shader
+	fs.descriptors = {
+		{ },
+		{ },
+		{ },
+		{ "texture", "2" }   // Color (sampler2D for single-sample | sampler2DMS for multisampling)
+	};
+	fs.input = { "in vec2 inUV" };
+	fs.output = { "out vec4 outColor" };
+	fs.main_end = { "outColor = vec4(texture(inputAtt[0], inUV).rgb, 1.0)" };
+}
+
+void ShaderCreator::setVS()
+{
+	vs.header = {
+		"#version 450",
+		"#extension GL_ARB_separate_shader_objects : enable",
+		"#pragma shader_stage(vertex)" };
+
+	vs.includes = { "#include \"..\..\extern\polygonum\resources\shaders\vertexTools.vert\"" };
+
+	vs.flags;
+
+	vs.descriptors = {
+		{ "mat4 view", "mat4 proj", "vec4 camPos_t" },
+		{ "mat4 model", "mat4 normalMatrix" } };
+
+	vs.input = { "vec3 inPos", "vec2 inUV", "vec3 inNormal", "vec3 inTan" };
+
+	vs.output = { "vec3 outPos", "vec2 outUV", "vec3 outNormal", "TB outTB" };
+
+	vs.globalVars = { "int i = gl_InstanceIndex" };
+	
+	vs.main_begin = {
+		"vec3 worldPos = (ubo[i].model * vec4(inPos, 1.0)).xyz",
+		"vec4 clipPos = gUbo[0].proj * gUbo[0].view * vec4(worldPos, 1.0)",
+		"vec2 uv = inUV",
+		"vec3 normal = mat3(ubo[i].normalMatrix) * inNormal",
+		"TB tb = getTB(inNormal, inTan)" };
+
+	vs.main_processing;
+
+	vs.main_end = {
+		"gl_Position = clipPos",
+		"outPos = worldPos",
+		"outUV = uv",
+		"outNormal = normal",
+		"outTB = tb" };
+}
+
+void ShaderCreator::setFS_forward()
+{
+	fs.header = {
+		"#version 450",
+		"#extension GL_ARB_separate_shader_objects : enable",
+		"#pragma shader_stage(fragment)" };
+
+	fs.includes = { "#include \"..\..\extern\polygonum\resources\shaders\fragTools.vert\"" };
+
+	fs.flags = { "layout(early_fragment_tests) in" };
+
+	fs.descriptors = {
+		{ "vec4 camPos_t", "Light light[]" },
+		{ },
+		{ "sampler", "4" } };   // albedo, spec, rough, normal
+
+	fs.input = { "vec3 inPos", "vec2 inUV", "vec3 inNormal", "TB inTB" };
+
+	fs.output = { "vec4 outColor" };
+
+	fs.globalVars;
+
+	fs.main_begin = {
+		"vec3 albedo = texture(texSampler[0], inUV).xyz",
+		"vec4 specRough = texture(texSampler[1], inUV)",
+		"vec3 normal = planarNormal(texSampler[2], inNormal, inTB, inUV, 1.f)" };
+
+	fs.main_processing;
+
+	fs.main_end = {
+		"outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, gUbo[0].light, inPos, gUbo[0].camPos_t.xyz)" };
+}
+
+void ShaderCreator::setFS_geometry()
+{
+	fs.header = {
+		"#version 450",
+		"#extension GL_ARB_separate_shader_objects : enable",
+		"#pragma shader_stage(fragment)" };
+
+	fs.includes = { "#include \"..\..\extern\polygonum\resources\shaders\fragTools.vert\"" };
+
+	fs.flags = { "layout(early_fragment_tests) in" };
+
+	fs.descriptors = {
+		{ "vec4 camPos_t", "Light light[NUMLIGHTS]" },
+		{ },
+		{ "sampler", "4" } };   // albedo, spec, rough, normal
+
+	fs.input = { "vec3 inPos", "vec2 inUV", "vec3 inNormal", "TB inTB" };
+
+	fs.output = { "vec4 outPos", "vec4 outAlbedo", "vec4 outSpecRoug", "vec4 outNormal" };
+
+	fs.globalVars;
+
+	fs.main_begin = {
+		"vec4 albedo = vec4(texture(texSampler[0], inUV).xyz, 1.f)",
+		"vec4 specRough = texture(texSampler[1], inUV)",
+		"vec3 normal = planarNormal(texSampler[2], inNormal, inTB, inUV, 1.f)" };
+
+	fs.main_processing;
+
+	fs.main_end = {
+		"outPos = vec4(inPos, 1.f)",
+		"outAlbedo = albedo",
+		"outSpecRoug = vec4(specular, roughness)",
+		"outNormal = vec4(normalize(inNormal), 1.0)" };
+}
+
+void ShaderCreator::setVS_general(const VertexType& vertexType)
+{
+	for (auto attrib : vertexType.attribsTypes)
+		std::cout << attrib << ", ";
+	std::cout << std::endl;
+
+	for (auto attrib : vertexType.attribsTypes)
+		switch (attrib)
+		{
+		case vaPos:
+			vs.input.push_back("in vec3 inPos");
+			vs.output.push_back("out vec3 outPos");
+			vs.main_begin.push_back("vec3 worldPos = (lUbo[i].model * vec4(inPos, 1.0)).xyz");
+			vs.main_begin.push_back("vec4 clipPos = gUbo[0].proj * gUbo[0].view * vec4(worldPos, 1.0)");
+			vs.main_end.push_back("gl_Position = clipPos");
+			vs.main_end.push_back("outPos = worldPos");
+			fs.input.push_back("in vec3 inPos");
+			continue;
+		case vaNorm:
+			vs.input.push_back("in vec3 inNormal");
+			vs.output.push_back("out vec3 outNormal");
+			vs.main_begin.push_back("vec3 normal = mat3(lUbo[i].normalMatrix) * inNormal");
+			vs.main_end.push_back("outNormal = normal");
+			fs.input.push_back("in vec3 inNormal");
+			continue;
+		case vaTan:
+			vs.input.push_back("in vec3 inTan");
+			vs.output.push_back("out TB outTB");
+			vs.main_begin.push_back("TB tb = getTB(inNormal, inTan)");
+			vs.main_end.push_back("outTB = tb");
+			fs.input.push_back("in TB inTB");
+			continue;
+		case vaCol:
+			vs.input.push_back("in vec4 inColor");
+			vs.output.push_back("out vec4 outColor");
+			vs.main_begin.push_back("vec4 color = inColor");
+			vs.main_end.push_back("outColor = color");
+			fs.input.push_back("in vec4 inColor");
+			continue;
+		case vaCol4:
+			vs.input.push_back("in u8vec4 inColor");
+			vs.output.push_back("out u8vec4 outColor");
+			vs.main_begin.push_back("u8vec4 color = inColor");
+			vs.main_end.push_back("outColor = color");
+			fs.input.push_back("in u8vec4 inColor");
+			continue;
+		case vaUv:
+			vs.input.push_back("in vec2 inUV");
+			vs.output.push_back("out vec2 outUV");
+			vs.main_begin.push_back("vec2 uv = inUV");
+			vs.main_end.push_back("outUV = uv");
+			fs.input.push_back("in vec2 inUV");
+			continue;
+		case vaFixes:
+			vs.input.push_back("in vec3 inFixes");
+			vs.output.push_back("out vec3 outFixes");
+			continue;
+		case vaBoneWeights:
+			vs.input.push_back("in vec4 inBoneWeights");
+			vs.output.push_back("out vec4 outBoneWeights");
+			vs.main_begin.push_back("vec4 boneWeights = inBoneWeights");
+			vs.main_end.push_back("outBoneWeights = boneWeights");
+			fs.input.push_back("in vec4 inBoneWeights");
+			continue;
+		case vaBoneIndices:
+			vs.input.push_back("in uvec4 inBoneIndices");
+			vs.output.push_back("out uvec4 outBoneIndices");
+			vs.main_begin.push_back("uvec4 boneIndices = inBoneIndices");
+			vs.main_end.push_back("outBoneIndices = boneIndices");
+			fs.input.push_back("in uvec4 inBoneIndices");
+			continue;
+			//case vaInstanceTransform:
+			//	continue;
+		default:
+			throw std::runtime_error("Attribute not mapped in ShaderCreator");
+		}
+}
+
+void ShaderCreator::setForward(const VertexType& vertexType, const std::vector<TextureLoader*>& textures)
+{
+	std::unordered_map<VertAttrib, unsigned> attribs = usedAttribTypes(vertexType);
+	std::unordered_map<TexType, unsigned> tex = usedTextureTypes(textures);
+
+	setVS_general(vertexType);
+
+	fs.output.push_back("out vec4 outColor");
+
+	fs.main_begin.push_back("vec3 worldPos = inPos");
+	fs.main_begin.push_back("vec3 albedo = texture(tex[0], inUV).xyz");
+	fs.main_begin.push_back("vec4 specRough = vec4(texture(tex[1], inUV).xyz, texture(tex[2], inUV).x)");
+	fs.main_begin.push_back("vec3 normal = planarNormal(tex[3], inNormal, inTB, inUV, 1.f)");
+	
+	fs.main_end.push_back("outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, gUbo[0].light, worldPos, gUbo[0].camPos_t.xyz)");
+
+	if (attribs.find(vaTan) == attribs.end())
+		fs.main_begin[3] = "vec3 normal = inNormal";
+}
+
+void ShaderCreator::setGeometry(const VertexType& vertexType, const std::vector<TextureLoader*>& textures)
+{
+	setVS_general(vertexType);
+
+	fs.output.push_back("out vec4 outPos");
+	fs.output.push_back("out vec4 outAlbedo");
+	fs.output.push_back("out vec4 outNormal");
+	fs.output.push_back("out vec4 outSpecRoug");
+	
+	fs.main_begin.push_back("vec3 worldPos = inPos");
+	fs.main_begin.push_back("vec4 albedo = vec4(1.f, 0.1f, 0.1f, 1.f)");
+	fs.main_begin.push_back("vec3 specularity = vec3(0.f, 0.f, 0.f)");
+	fs.main_begin.push_back("float roughness = 0.f");
+	fs.main_begin.push_back("vec3 normal = inNormal;");
+
+	for (unsigned i = 0; i < textures.size(); i++)
+		switch (textures[i]->type)
+		{
+		case tAlb:
+			fs.main_begin[1] = "vec4 albedo = vec4(texture(tex[" + std::to_string(i) + "], inUV).xyz, 1.f)";
+			continue;
+		case tSpec:
+			fs.main_begin[2] = "vec3 specularity = texture(tex[" + std::to_string(i) + "], inUV).xyz";
+			continue;
+		case tRoug:
+			fs.main_begin[3] = "float roughness = texture(tex[" + std::to_string(i) + "], inUV).x";
+			continue;
+		case tSpecroug:
+			fs.main_begin[2] = "vec4 specRough = texture(tex[" + std::to_string(i) + "], inUV)\n";
+			fs.main_begin[2] += "\tvec3 specularity = specRough.xyz";
+			fs.main_begin[3] = "float roughness = specRough.w";
+			continue;
+		case tNorm:
+			fs.main_begin[4] = "vec3 normal = inNormal";
+			for (const auto& type : vertexType.attribsTypes)
+				if (type == vaTan)
+					fs.main_begin[4] = "vec3 normal = planarNormal(tex[" + std::to_string(i) + "], inNormal, inTB, inUV, 1.f)";
+			continue;
+		default:
+			continue;
+		}
+	
+	fs.main_end.push_back("outPos = vec4(worldPos, 1.f)");
+	fs.main_end.push_back("outAlbedo = albedo");
+	fs.main_end.push_back("outSpecRoug = vec4(specularity, roughness)");
+	fs.main_end.push_back("outNormal = vec4(normalize(normal), 1.0)");
+}
+
+unsigned ShaderCreator::firstBindingNumber(unsigned shaderType)
+{
+	unsigned count = 0;
+
+	if (shaderType == 1)   // fragment shader
+		for (auto& binding : vs.descriptors)
+			if (binding.size()) count++;
+
+	return count;
+}
+
+std::unordered_map<VertAttrib, unsigned> ShaderCreator::usedAttribTypes(const VertexType& vertexType)
+{
+	std::unordered_map<VertAttrib, unsigned> typesCount;
+
+	for (const auto& type : vertexType.attribsTypes)
+		typesCount[type]++;
+
+	return typesCount;
+}
+
+std::unordered_map<TexType, unsigned> ShaderCreator::usedTextureTypes(const std::vector<TextureLoader*>& textures)
+{
+	std::unordered_map<TexType, unsigned> typesCount;
+
+	for (const auto& tex : textures)
+		typesCount[tex->type]++;
+
+	return typesCount;
+}
+
+ShaderCreator& ShaderCreator::replaceMainBegin(unsigned shaderType, std::string& text, const std::string& substring, const std::string& replacement)
+{
+	ShaderCode& shader = shaderType ? fs : vs;
+
+	for(auto& line : shader.main_begin)
+	if (!replaceAllIfContains(text, substring, replacement))
+		std::cout << "Substring not found" << std::endl;
+
+	return *this;
+}
+
+ShaderCreator& ShaderCreator::replaceMainEnd(unsigned shaderType, std::string& text, const std::string& substring, const std::string& replacement)
+{
+	ShaderCode& shader = shaderType ? fs : vs;
+
+	for (auto& line : shader.main_end)
+		if (!replaceAllIfContains(text, substring, replacement))
+			std::cout << "Substring not found" << std::endl;
+
+	return *this;
+}
+
+ShaderCreator& ShaderCreator::setVerticalNormals()
+{
+	for(auto& line : vs.main_begin)
+		if(findStrAndReplace(line,
+			"\tvec3 normal = mat3(ubo[i].normalMatrix) * inNormal; \n",
+			"\tvec3 normal = mat3(ubo[i].normalMatrix) * vec3(0,0,1) \n"))
+			break;
+
+	return *this;
+}
+
+std::string ShaderCreator::getShader(unsigned shaderType)
+{
+	ShaderCode& code = (shaderType ? fs : vs);
+
+	std::string shader;
+
+	// Header
+
+	for (auto& line : code.header)
+		shader += line + "\n";
+
+	if(code.header.size()) shader += "\n";
+
+	// Includes
+
+	for (auto& line : code.includes)
+		shader += line + "\n";
+
+	if(code.includes.size()) shader += "\n";
+
+	// Flags
+
+	for (auto& line : code.flags)
+		shader += line + ";\n";
+
+	if (code.flags.size()) shader += "\n";
+
+	// Descriptors
+
+	unsigned bindingNumber = firstBindingNumber(shaderType);
+	std::vector<std::pair<std::string, std::string>> descriptorNames = { {"globalUbo", "gUbo"}, {"localUbo", "lUbo"}, {"tex", ""}, {"inputAtt", ""}};
+
+	for(unsigned i = 0; i < code.descriptors.size(); i++)   // for each binding
+	{
+		if (code.descriptors[i].empty()) continue;
+
+		if (code.descriptors[i][0] == "texture")
+		{
+			shader += "layout(set = 0, binding = " + std::to_string(bindingNumber++) + ") uniform sampler2D " + descriptorNames[2].first + "[" + code.descriptors[i][1] + "];\n\n";
+		}
+		else
+		{
+			shader += "layout(set = 0, binding = " + std::to_string(bindingNumber++) + ") uniform " + descriptorNames[i].first + " {\n";
+			for (const auto& descAttrib : code.descriptors[i])
+				shader += "\t" + descAttrib + ";\n";
+			shader += "} " + descriptorNames[i].second + "[1];\n\n";  // <<< array of descriptors?
+		}
+	}
+
+	// Input
+
+	for (unsigned i = 0; i < code.input.size(); i++)
+		shader += "layout(location = " + std::to_string(i) + ") " + code.input[i] + ";\n";
+
+	if(code.input.size()) shader += "\n";
+
+	// Output
+
+	for (unsigned i = 0; i < code.output.size(); i++)
+		shader += "layout(location = " + std::to_string(i) + ") " + code.output[i] + ";\n";
+
+	if(code.output.size()) shader += "\n";
+
+	// Global variables
+
+	for (const auto& line : code.globalVars)
+		shader += line + ";\n";
+
+	if(code.globalVars.size()) shader += "\n";
+
+	// main
+
+	shader += "void main()\n{\n";
+
+	for (const auto& line : code.main_begin)
+		shader += "\t" + line + ";\n";
+
+	if(code.main_begin.size()) shader += "\n";
+
+	for (const auto& line : code.main_processing)
+		shader += "\t" + line + ";\n";
+
+	if(code.main_processing.size()) shader += "\n";
+
+	for (const auto& line : code.main_end)
+		shader += "\t" + line + ";\n";
+
+	shader += "}\n\n";
+
+	return shader;
+}
+
+void ShaderCreator::printShader(unsigned shaderType) { std::cout << getShader(shaderType) << std::endl; }
+
+void ShaderCreator::printAllShaders()
+{
+	std::cout << "----------\n";
+	std::cout << getShader(0) << "\n";
+	std::cout << "----------\n";
+	std::cout << getShader(1) << "\n";
+}
+
+bool ShaderCreator::replaceAllIfContains(std::string& text, const std::string& substring, const std::string& replacement)
+{
+	if (text.find(substring) != std::string::npos)
+	{
+		text = replacement;
+		return true;
+	}
+	else return false;
+}
+
+bool ShaderCreator::findTwoAndReplaceBetween(std::string& text, const std::string& str1, const std::string& str2, const std::string& replacement)
+{
+	size_t pos1 = text.find(str1, 0);
+	size_t pos2 = text.find(str2, pos1);
+	if (pos1 == text.npos || pos2 == text.npos) return false;
+
+	text.replace(pos1, pos2 - pos1, (replacement));
+	return true;
+}
+
+bool ShaderCreator::findStrAndErase(std::string& text, const std::string& str)
+{
+	size_t pos = text.find(str, 0);
+	if (pos == text.npos) return false;
+
+	text.erase(pos, str.size());
+	return true;
+}
+
+bool ShaderCreator::findStrAndReplace(std::string& text, const std::string& str, const std::string& replacement)
+{
+	size_t pos = text.find(str, 0);
+	if (pos == text.npos) return false;
+
+	text.replace(text.begin() + pos, text.begin() + pos + str.size(), replacement);
+	return true;
+}
+
+bool ShaderCreator::findStrAndReplaceLine(std::string& text, const std::string& str, const std::string& replacement)
+{
+	size_t pos = text.find(str, 0);
+	if (pos == text.npos) return false;
+
+	size_t eol = text.find('\n', pos) - 1;
+	if (eol == text.npos) return false;
+	eol++;	// <<< why is this needed? Otherwise, something in the text is messed up (#line)
+
+	text.replace(text.begin() + pos, text.begin() + eol, replacement);
+	return true;
+}
+
 
 // TEXTURE --------------------------------------------------------
 
-Texture::Texture(const std::string& id, VulkanCore& c, VkImage textureImage, VkDeviceMemory textureImageMemory, VkImageView textureImageView, VkSampler textureSampler)
-	: id(id), texture(c, textureImage, textureImageMemory, textureImageView, textureSampler) { }
+Texture::Texture(const std::string& id, VulkanCore& c, VkImage textureImage, VkDeviceMemory textureImageMemory, VkImageView textureImageView, VkSampler textureSampler, TexType type)
+	: id(id), type(type), texture(c, textureImage, textureImageMemory, textureImageView, textureSampler) { }
 
 Texture::~Texture()
 {
@@ -877,8 +1557,8 @@ Texture::~Texture()
 	texture.destroy();
 }
 
-TextureLoader::TextureLoader(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode)
-	: id(id), imageFormat(imageFormat), addressMode(addressMode) { };
+TextureLoader::TextureLoader(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode, TexType type)
+	: id(id), imageFormat(imageFormat), addressMode(addressMode), type(type) { };
 
 std::shared_ptr<Texture> TextureLoader::loadTexture(PointersManager<std::string, Texture>& loadedTextures, Renderer& r)
 {
@@ -904,7 +1584,7 @@ std::shared_ptr<Texture> TextureLoader::loadTexture(PointersManager<std::string,
 	VkSampler textureSampler                 = createTextureSampler(mipLevels, r.c);
 
 	// Create and save texture object
-	return loadedTextures.emplace(id, std::ref(id), std::ref(r.c), std::get<VkImage>(image), std::get<VkDeviceMemory>(image), textureImageView, textureSampler);
+	return loadedTextures.emplace(id, std::ref(id), std::ref(r.c), std::get<VkImage>(image), std::get<VkDeviceMemory>(image), textureImageView, textureSampler, tUndef);
 }
 
 std::pair<VkImage, VkDeviceMemory> TextureLoader::createTextureImage(unsigned char* pixels, int32_t texWidth, int32_t texHeight, uint32_t& mipLevels, Renderer& r)
@@ -1037,17 +1717,17 @@ VkSampler TextureLoader::createTextureSampler(uint32_t mipLevels, VulkanCore& c)
 	*/
 }
 
-TL_fromBuffer::TL_fromBuffer(const std::string& id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat, VkSamplerAddressMode addressMode)
-	: TextureLoader(id, imageFormat, addressMode), texWidth(texWidth), texHeight(texHeight)
+TL_fromBuffer::TL_fromBuffer(const std::string& id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat, VkSamplerAddressMode addressMode, TexType type)
+	: TextureLoader(id, imageFormat, addressMode, type), texWidth(texWidth), texHeight(texHeight)
 { 
 	size_t size = sizeof(float) * texWidth * texHeight;
 	data.resize(size);
 	std::copy(pixels, pixels + size, data.data());		// memcpy(data, pixels, size);
 }
 
-TL_fromBuffer* TL_fromBuffer::factory(const std::string id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat, VkSamplerAddressMode addressMode)
+TL_fromBuffer* TL_fromBuffer::factory(const std::string id, unsigned char* pixels, int texWidth, int texHeight, TexType texType, VkFormat imageFormat, VkSamplerAddressMode addressMode)
 {
-	return new TL_fromBuffer(id, pixels, texWidth, texHeight, imageFormat, addressMode);
+	return new TL_fromBuffer(id, pixels, texWidth, texHeight, imageFormat, addressMode, texType);
 }
 
 TextureLoader* TL_fromBuffer::clone() { return new TL_fromBuffer(*this); }
@@ -1061,12 +1741,12 @@ void TL_fromBuffer::getRawData(unsigned char*& pixels, int32_t& texWidth, int32_
 	std::copy(data.data(), data.data() + data.size(), pixels);
 }
 
-TL_fromFile::TL_fromFile(const std::string& filePath, VkFormat imageFormat, VkSamplerAddressMode addressMode)
-	: TextureLoader(filePath, imageFormat, addressMode), filePath(filePath) { }
+TL_fromFile::TL_fromFile(const std::string& filePath, VkFormat imageFormat, VkSamplerAddressMode addressMode, TexType type)
+	: TextureLoader(filePath, imageFormat, addressMode, type), filePath(filePath) { }
 
-TL_fromFile* TL_fromFile::factory(const std::string filePath, VkFormat imageFormat, VkSamplerAddressMode addressMode)
+TL_fromFile* TL_fromFile::factory(const std::string filePath, TexType texType, VkFormat imageFormat, VkSamplerAddressMode addressMode)
 {
-	return new TL_fromFile(filePath, imageFormat, addressMode);
+	return new TL_fromFile(filePath, imageFormat, addressMode, texType);
 }
 
 TextureLoader* TL_fromFile::clone() { return new TL_fromFile(*this); }

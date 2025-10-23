@@ -11,8 +11,6 @@ class Renderer;
 
 // Prototypes ----------
 
-struct Sizes;
-
 struct LightSet;
 struct LightPosDir;
 struct LightProps;
@@ -121,11 +119,11 @@ struct Material
 	alignas(16) float shininess;
 };
 
-
-struct UBOsArrayInfo
+/// A Binding is an array of descriptors. There're different types of descriptors (UBO, sampler...).
+struct BindingInfo
 {
-	UBOsArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t minUboSize);
-	UBOsArrayInfo();
+	BindingInfo(size_t maxNumUbos, size_t numActiveUbos, size_t minUboSize);
+	BindingInfo();
 
 	size_t maxNumUbos;
 	size_t numActiveUbos;
@@ -140,7 +138,7 @@ private:
 	SwapChain* swapChain;
 
 public:
-	UBOsArray(Renderer* renderer, UBOsArrayInfo UBOsArrayInfo);
+	UBOsArray(Renderer* renderer, BindingInfo bindingInfo);
 	UBOsArray();
 	~UBOsArray() = default;
 	UBOsArray(UBOsArray&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
