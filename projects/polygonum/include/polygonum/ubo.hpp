@@ -122,15 +122,14 @@ struct Material
 /// A UBO array is a type of Binding. A Binding is an array of descriptors. Each descriptor has attributes. There're different types of descriptors (UBO, sampler...).
 struct UbosArrayInfo
 {
-	UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t minUboSize);
-	UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t minUboSize, const std::vector<std::string>& glslLines);
+	UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t uboSize, const std::vector<std::string>& glslLines = std::vector<std::string>());
 	UbosArrayInfo();
 
 	size_t maxNumUbos;   //!< Number of descriptors
 	size_t numActiveUbos;   //!< Descriptors used
-	size_t minUboSize;   //!< Descriptor size
+	size_t uboSize;   //!< Descriptor size
 
-	std::vector<std::string> glslLines;   //!< Used in ShaderCreator
+	std::vector<std::string> glslLines;   //!< (Optional) Used in ShaderCreator
 };
 
 /// Container for a binding of uniform buffers, which is an array of uniform buffer descriptors (UBOs). Multiple UBOs are useful for instance rendering.
@@ -156,7 +155,7 @@ public:
 	std::vector<VkBuffer>		bindingBuffers;		//!< Opaque handle to a buffer object (here, a binding). One for each swap chain image.
 	std::vector<VkDeviceMemory>	bindingMemories;	//!< Opaque handle to a device memory object (here, memory for the binding). One for each swap chain image.
 
-	std::vector<std::string> glslLines;   //!< Used in ShaderCreator
+	std::vector<std::string> glslLines;   //!< (Optional) Used in ShaderCreator
 
 	bool setNumActiveUbos(size_t count);			//!< Set the value of activeUBOs. Returns false if > maxUBOcount;
 	uint8_t* getUboPtr(size_t uboIndex);

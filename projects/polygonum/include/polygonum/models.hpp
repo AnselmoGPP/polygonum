@@ -39,6 +39,8 @@ struct ModelDataInfo
 	size_t uboSize_fs;
 	UBOsArray* globalBinding_vs;
 	UBOsArray* globalBinding_fs;
+	std::vector<UbosArrayInfo> bindings_vs;
+	std::vector<UbosArrayInfo> bindings_fs;
 	bool transparency;
 	uint32_t renderPassIndex;					//!< 0 (geometry pass), 1 (lighting pass), 2 (forward pass), 3 (postprocessing pass)
 	uint32_t subpassIndex;

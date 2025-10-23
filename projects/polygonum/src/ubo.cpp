@@ -15,20 +15,17 @@ namespace sizes {
 	//size_t lightSize;
 }
 
-UbosArrayInfo::UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t minUboSize)
-	: maxNumUbos(maxNumUbos), numActiveUbos(numActiveUbos), minUboSize(minUboSize) { }
-
-UbosArrayInfo::UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t minUboSize, const std::vector<std::string>& glslLines)
-	: maxNumUbos(maxNumUbos), numActiveUbos(numActiveUbos), minUboSize(minUboSize), glslLines(glslLines) { }
+UbosArrayInfo::UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t uboSize, const std::vector<std::string>& glslLines)
+	: maxNumUbos(maxNumUbos), numActiveUbos(numActiveUbos), uboSize(uboSize), glslLines(glslLines) { }
 
 UbosArrayInfo::UbosArrayInfo()
-	: maxNumUbos(0), numActiveUbos(0), minUboSize(0) { }
+	: maxNumUbos(0), numActiveUbos(0), uboSize(0) { }
 
 UBOsArray::UBOsArray(Renderer* renderer, const UbosArrayInfo& bindingInfo) :
 	c(&renderer->c),
 	swapChain(&renderer->swapChain),
 	maxNumUbos(bindingInfo.maxNumUbos),
-	uboSize(bindingInfo.minUboSize ? c->deviceData.minUniformBufferOffsetAlignment * (1 + bindingInfo.minUboSize / c->deviceData.minUniformBufferOffsetAlignment) : 0),
+	uboSize(bindingInfo.uboSize ? c->deviceData.minUniformBufferOffsetAlignment * (1 + bindingInfo.uboSize / c->deviceData.minUniformBufferOffsetAlignment) : 0),
 	totalBytes(uboSize* maxNumUbos),
 	binding(totalBytes),
 	glslLines(bindingInfo.glslLines)
