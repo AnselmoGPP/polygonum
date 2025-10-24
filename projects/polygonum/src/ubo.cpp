@@ -15,6 +15,8 @@ namespace sizes {
 	//size_t lightSize;
 }
 
+BindingInfo::~BindingInfo() { }
+
 UbosArrayInfo::UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t uboSize, const std::vector<std::string>& glslLines)
 	: maxNumUbos(maxNumUbos), numActiveUbos(numActiveUbos), uboSize(uboSize), glslLines(glslLines) { }
 

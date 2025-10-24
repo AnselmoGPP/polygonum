@@ -112,10 +112,11 @@ protected:
 public:
 	/// Constructor. Requires a callback for user updates (update model matrix, add models, delete models...).
 	template <typename RP = RP_DS_PP>
-	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, const std::vector<UbosArrayInfo>& globalUBOsInfo, RP* renderPipeline);
+	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, RP* renderPipeline);
 	~Renderer();
 
 	std::vector<UBOsArray> globalUBOs;
+	void addGlobalUbo(const std::shared_ptr<UbosArrayInfo>& uboInfo);
 
 	void renderLoop();	//!< Create command buffer and start render loop.
 
@@ -144,7 +145,7 @@ public:
 
 
 template <typename RP>
-Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, const std::vector<UbosArrayInfo>& globalUBOsInfo, RP* renderPipeline = nullptr) :
+Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, RP* renderPipeline = nullptr) :
 	c(width, height),
 	swapChain(c, ADDITIONAL_SWAPCHAIN_IMAGES),
 	commander(c, swapChain.images.size(), MAX_FRAMES_IN_FLIGHT),
@@ -163,13 +164,6 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, cons
 
 	//if (c.msaaSamples > 1) rw = std::make_shared<RW_MSAA_PP>(*this);
 	//else rw = std::make_shared<RW_PP>(*this);
-
-	// Create UBOs
-	for(const auto& uboInfo : globalUBOsInfo)
-		globalUBOs.push_back(UBOsArray(this, uboInfo));
-
-	for(auto& gUBO : globalUBOs)
-		if (gUBO.totalBytes) gUBO.createBinding();
 }
 
 /// Helper class for the RP_DS_PP render pipeline. Used to create and update the Lighting pass and Post-processing pass.

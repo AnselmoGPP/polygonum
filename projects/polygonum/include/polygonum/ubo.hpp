@@ -119,10 +119,27 @@ struct Material
 	alignas(16) float shininess;
 };
 
-/// A UBO array is a type of Binding. A Binding is an array of descriptors. Each descriptor has attributes. There're different types of descriptors (UBO, sampler...).
-struct UbosArrayInfo
+struct BindingInfo
 {
-	UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t uboSize, const std::vector<std::string>& glslLines = std::vector<std::string>());
+	virtual ~BindingInfo();
+
+	template<typename T, typename... Args>
+	static std::shared_ptr<T> create(Args&&... args);
+};
+
+template<typename T, typename... Args>
+std::shared_ptr<T> BindingInfo::create(Args&&... args)
+{
+	if (std::is_base_of_v<BindingInfo, T> == false)
+		throw std::runtime_error("Not valid object type.");
+
+	return std::make_shared<T>(std::forward<Args>(args)...);
+}
+
+/// A UBO array is a type of Binding. A Binding is an array of descriptors. Each descriptor has attributes. There're different types of descriptors (UBO, sampler...).
+struct UbosArrayInfo : BindingInfo
+{
+	UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t uboSize, const std::vector<std::string>& glslLines = {});
 	UbosArrayInfo();
 
 	size_t maxNumUbos;   //!< Number of descriptors

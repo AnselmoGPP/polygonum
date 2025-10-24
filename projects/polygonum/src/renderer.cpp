@@ -48,6 +48,13 @@ Renderer::~Renderer()
 #endif
 }
 
+void Renderer::addGlobalUbo(const std::shared_ptr<UbosArrayInfo>& uboInfo)
+{
+	globalUBOs.push_back(UBOsArray(this, *uboInfo));
+	if (globalUBOs[globalUBOs.size() - 1].totalBytes)
+		globalUBOs[globalUBOs.size() - 1].createBinding();
+}
+
 void Renderer::drawFrame()
 {
 	/*
