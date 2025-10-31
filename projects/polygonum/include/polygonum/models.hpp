@@ -33,20 +33,15 @@ struct ModelDataInfo
 	VertexesLoader* vertexesLoader;				//!< Info for loading vertices from any source.
 	std::vector<ShaderLoader*> shadersInfo;		//!< Shaders info
 	std::vector<TextureLoader*> texturesInfo;	//!< Textures info
-	size_t maxNumUbos_vs;				//!< Max. number of active instances
-	size_t maxNumUbos_fs;
-	size_t uboSize_vs;
-	size_t uboSize_fs;
-	UBOsArray* globalBinding_vs;
-	UBOsArray* globalBinding_fs;
-	std::vector<UbosArrayInfo> bindings_vs;
-	std::vector<UbosArrayInfo> bindings_fs;
+	std::vector<UBOsArray*> vsGlobalUbos;
+	std::vector<UBOsArray*> fsGlobalUbos;
+	std::vector<UbosArrayInfo> vsLocalUbos;
+	std::vector<UbosArrayInfo> fsLocalUbos;
 	bool transparency;
 	uint32_t renderPassIndex;					//!< 0 (geometry pass), 1 (lighting pass), 2 (forward pass), 3 (postprocessing pass)
 	uint32_t subpassIndex;
 	VkCullModeFlagBits cullMode;
 };
-
 
 /**
 	@class ModelData
@@ -61,8 +56,6 @@ class ModelData
 	VertexType vertexType;
 	bool hasTransparencies;						//!< Flags if textures contain transparencies (alpha channel)
 	VkCullModeFlagBits cullMode;				//!< VK_CULL_MODE_BACK_BIT, VK_CULL_MODE_NONE, ...
-	UBOsArray* globalUBO_vs;
-	UBOsArray* globalUBO_fs;
 	uint32_t activeInstances;		//!< Number of renderings (<= vsDynUBO.dynBlocksCount). Can be set with setRenderCount.
 
 	/// Layout for the descriptor set (descriptor: handle or pointer into a resource (buffer, sampler, texture...))
@@ -111,28 +104,27 @@ public:
 	bool setActiveInstancesCount(size_t activeInstancesCount);	//!< Set number of active instances (<= vsUBO.maxUBOcount).
 	uint32_t getActiveInstancesCount();
 
-	VkPipelineLayout			 pipelineLayout;		//!< Pipeline layout. Allows to use uniform values in shaders (globals similar to dynamic state variables that can be changed at drawing time to alter the behavior of your shaders without having to recreate them).
-	VkPipeline					 graphicsPipeline;		//!< Opaque handle to a pipeline object.
+	VkPipelineLayout				pipelineLayout;		//!< Pipeline layout. Allows to use uniform values in shaders (globals similar to dynamic state variables that can be changed at drawing time to alter the behavior of your shaders without having to recreate them).
+	VkPipeline						graphicsPipeline;	//!< Opaque handle to a pipeline object.
 
 	std::vector<std::shared_ptr<Texture>> textures;		//!< Set of textures used by this model.
 	std::vector<std::shared_ptr<Shader>>  shaders;		//!< Vertex shader (0), Fragment shader (1)
 
-	VertexData					 vert;					//!< Vertex data + Indices
+	VertexData						vert;				//!< Vertex data + Indices
 
-	UBOsArray					 vsUBOs;				//!< Stores the set of UBOs that will be passed to the vertex shader
-	UBOsArray					 fsUBOs;				//!< Stores the UBO that will be passed to the fragment shader
-	VkDescriptorSetLayout		 descriptorSetLayout;	//!< Opaque handle to a descriptor set layout object (combines all of the descriptor bindings).
-	VkDescriptorPool			 descriptorPool;		//!< Opaque handle to a descriptor pool object.
-	std::vector<VkDescriptorSet> descriptorSets;		//!< List. Opaque handle to a descriptor set object. One for each swap chain image.
+	UboSet							ubos;
+	VkDescriptorSetLayout			descriptorSetLayout;//!< Opaque handle to a descriptor set layout object (combines all of the descriptor bindings).
+	VkDescriptorPool				descriptorPool;		//!< Opaque handle to a descriptor pool object.
+	std::vector<VkDescriptorSet>	descriptorSets;		//!< List. Opaque handle to a descriptor set object. One for each swap chain image.
 
-	uint32_t					 renderPassIndex;		//!< Index of the renderPass used (0 for rendering geometry, 1 for post processing)
-	uint32_t					 subpassIndex;
-	//size_t					 layer;					//!< Layer where this model will be drawn (Painter's algorithm).
+	uint32_t						renderPassIndex;	//!< Index of the renderPass used (0 for rendering geometry, 1 for post processing)
+	uint32_t						subpassIndex;
+	//size_t						layer;				//!< Layer where this model will be drawn (Painter's algorithm).
 
-	ResourcesLoader*			 resLoader;				//!< Info used for loading resources (vertices, indices, shaders, textures). When resources are loaded, this is set to nullptr.
-	bool						 fullyConstructed;		//!< Object fully constructed (i.e. model loaded into Vulkan).
-	bool						 ready;					//!< Object ready for rendering (i.e., it's fully constructed and in Renderer::models)
-	std::string					 name;					//!< For debugging purposes.
+	ResourcesLoader*				resLoader;			//!< Info used for loading resources (vertices, indices, shaders, textures). When resources are loaded, this is set to nullptr.
+	bool							fullyConstructed;	//!< Object fully constructed (i.e. model loaded into Vulkan).
+	bool							ready;				//!< Object ready for rendering (i.e., it's fully constructed and in Renderer::models)
+	std::string						name;				//!< For debugging purposes.
 };
 
 

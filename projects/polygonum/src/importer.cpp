@@ -850,7 +850,7 @@ std::shared_ptr<Shader> ShaderLoader::loadShader(PointersManager<std::string, Sh
 	//if (optimize) options.SetOptimizationLevel(shaderc_optimization_level_performance);	// This option makes shaderc::CompileGlslToSpv fail when Assimp::Importer is present in code, even if an Importer object is not created (odd) (Importer is in DataFromFile2::loadVertex).
 	
 	shaderc::Compiler compiler;
-	
+
 	shaderc::PreprocessedSourceCompilationResult preProcessed = compiler.PreprocessGlsl(glslData.data(), glslData.size(), shaderc_glsl_infer_from_source, id.c_str(), options);
 	if (preProcessed.GetCompilationStatus() != shaderc_compilation_status_success)
 		std::cerr << "Shader module preprocessing failed - " << preProcessed.GetErrorMessage() << std::endl;

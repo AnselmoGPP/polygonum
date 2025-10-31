@@ -48,11 +48,14 @@ Renderer::~Renderer()
 #endif
 }
 
-void Renderer::addGlobalUbo(const std::shared_ptr<UbosArrayInfo>& uboInfo)
+void Renderer::addGlobalUbo(const UbosArrayInfo& uboInfo)
 {
-	globalUBOs.push_back(UBOsArray(this, *uboInfo));
-	if (globalUBOs[globalUBOs.size() - 1].totalBytes)
+	if (uboInfo.maxNumUbos && uboInfo.uboSize)
+	{
+		globalUBOs.push_back(UBOsArray(this, uboInfo));
 		globalUBOs[globalUBOs.size() - 1].createBinding();
+	}
+	else std::cout << "Cannot create binding (size 0)" << std::endl;
 }
 
 void Renderer::drawFrame()
@@ -305,9 +308,11 @@ key64 Renderer::newModel(ModelDataInfo& modelInfo)
 	
 	if (modelInfo.renderPassIndex < models.keys.size() && modelInfo.subpassIndex < models.keys[modelInfo.renderPassIndex].size())
 	{
-		std::pair<std::unordered_map<key64, ModelData>::iterator, bool> result =
-			models.data.emplace(std::make_pair(models.getNewKey(), ModelData(this, modelInfo)));   // Save model object into model list
-		
+		std::pair<std::unordered_map<key64, ModelData>::iterator, bool> result = models.data.emplace(
+			std::piecewise_construct,
+			std::forward_as_tuple(models.getNewKey()),
+			std::forward_as_tuple(this, modelInfo));   // Save model object into model list
+
 		worker.newTask(result.first->first, LoadingWorker::construct);   // Schedule task: Construct model
 
 		return result.first->first;
@@ -380,13 +385,12 @@ void Renderer::updateUBOs(uint32_t imageIndex)
 	ModelData* model;
 
 	// Global UBOs
-	for (auto& gUBO : globalUBOs)
-		if(gUBO.totalBytes)
-		{
-			vkMapMemory(c.device, gUBO.bindingMemories[imageIndex], 0, gUBO.totalBytes, 0, &data);
-			memcpy(data, gUBO.binding.data(), gUBO.totalBytes);
-			vkUnmapMemory(c.device, gUBO.bindingMemories[imageIndex]);
-		}
+	for (auto& ubo : globalUBOs)
+	{
+		vkMapMemory(c.device, ubo.bindingMemories[imageIndex], 0, ubo.totalBytes, 0, &data);
+		memcpy(data, ubo.binding.data(), ubo.totalBytes);
+		vkUnmapMemory(c.device, ubo.bindingMemories[imageIndex]);
+	}
 
 	// Local UBOs
 	const std::lock_guard<std::mutex> lock(worker.mutModels);
@@ -398,20 +402,22 @@ void Renderer::updateUBOs(uint32_t imageIndex)
 		{
 			model = &it->second;
 
-			activeBytes = model->vsUBOs.numActiveUbos * model->vsUBOs.uboSize;
-			if (activeBytes)
+			for (const auto& ubo : model->ubos.vsLocal)
 			{
-				vkMapMemory(c.device, model->vsUBOs.bindingMemories[imageIndex], 0, activeBytes, 0, &data);	// Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
-				memcpy(data, model->vsUBOs.binding.data(), activeBytes);											// Copy some data in that memory. Copies a number of bytes (sizeof(ubo)) from a source (ubo) to a destination (data).
-				vkUnmapMemory(c.device, model->vsUBOs.bindingMemories[imageIndex]);							// "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
+				if (!ubo.numActiveUbos) continue;
+				activeBytes = ubo.numActiveUbos * ubo.uboSize;
+				vkMapMemory(c.device, ubo.bindingMemories[imageIndex], 0, activeBytes, 0, &data);   // Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
+				memcpy(data, ubo.binding.data(), activeBytes);   // Copy some data in that memory. Copies a number of bytes (sizeof(ubo)) from a source (ubo) to a destination (data).
+				vkUnmapMemory(c.device, ubo.bindingMemories[imageIndex]);   // "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
 			}
 
-			activeBytes = model->fsUBOs.numActiveUbos * model->fsUBOs.uboSize;
-			if (activeBytes)
+			for (const auto& ubo : model->ubos.fsLocal)
 			{
-				vkMapMemory(c.device, model->fsUBOs.bindingMemories[imageIndex], 0, activeBytes, 0, &data);
-				memcpy(data, model->fsUBOs.binding.data(), activeBytes);
-				vkUnmapMemory(c.device, model->fsUBOs.bindingMemories[imageIndex]);
+				if (!ubo.numActiveUbos) continue;
+				activeBytes = ubo.numActiveUbos * ubo.uboSize;
+				vkMapMemory(c.device, ubo.bindingMemories[imageIndex], 0, activeBytes, 0, &data);
+				memcpy(data, ubo.binding.data(), activeBytes);
+				vkUnmapMemory(c.device, ubo.bindingMemories[imageIndex]);
 			}
 		}
 }
@@ -569,7 +575,9 @@ void Help_RP_DS_PP::createLightingPass(Renderer& ren, unsigned numLights, std::s
 		SL_fromFile::factory(vertShaderPath),
 		SL_fromFile::factory(fragShaderPath, { SMod::changeHeader(fragToolsHeader) })
 	};
-
+	
+	UbosArrayInfo uboInfo(1, 1, sizes::vec4 + numLights * sizeof(Light), { "vec4 camPos", "Light lights[NUMLIGHTS]" });
+	
 	VertexType vertexType({ vaPos, vaUv });
 
 	std::vector<TextureLoader*> usedTextures{ };
@@ -582,12 +590,10 @@ void Help_RP_DS_PP::createLightingPass(Renderer& ren, unsigned numLights, std::s
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vertexType.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
 	modelInfo.texturesInfo = usedTextures;
-	modelInfo.maxNumUbos_vs = 0;
-	modelInfo.maxNumUbos_fs = 1;
-	modelInfo.uboSize_vs = 0;
-	modelInfo.uboSize_fs = sizes::vec4 + numLights * sizeof(Light);	// camPos,  n * LightPosDir (2*vec4),  n * LightProps (6*vec4);
-	modelInfo.globalBinding_vs;
-	modelInfo.globalBinding_fs;
+	modelInfo.vsGlobalUbos;
+	modelInfo.fsGlobalUbos;
+	modelInfo.vsLocalUbos;
+	modelInfo.fsLocalUbos = { uboInfo };
 	modelInfo.transparency = false;
 	modelInfo.renderPassIndex = 1;
 	modelInfo.subpassIndex = 0;
@@ -618,12 +624,10 @@ void Help_RP_DS_PP::createPostprocessingPass(Renderer& ren, std::string vertShad
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vertexType.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
 	modelInfo.texturesInfo = usedTextures;
-	modelInfo.maxNumUbos_vs = 0;
-	modelInfo.maxNumUbos_fs = 0;
-	modelInfo.uboSize_vs = 0;
-	modelInfo.uboSize_fs = 0;
-	modelInfo.globalBinding_vs;
-	modelInfo.globalBinding_fs;
+	modelInfo.vsGlobalUbos;
+	modelInfo.fsGlobalUbos;
+	modelInfo.vsLocalUbos;
+	modelInfo.fsLocalUbos;
 	modelInfo.transparency = false;
 	modelInfo.renderPassIndex = 3;
 	modelInfo.subpassIndex = 0;
@@ -644,10 +648,10 @@ void Help_RP_DS_PP::updateLightingPass(Renderer& ren, glm::vec3& camPos, Light* 
 	//	dest = model->vsUBOs.getUboPtr(i);
 	//	//...
 	//}
-
-	for (uint32_t i = 0; i < model->fsUBOs.numActiveUbos; i++)
+	
+	for (uint32_t i = 0; i < model->ubos.fsLocal[0].numActiveUbos; i++)
 	{
-		dest = model->fsUBOs.getUboPtr(i);
+		dest = model->ubos.fsLocal[0].getUboPtr(i);
 		memcpy(dest, &camPos, sizes::vec4);
 		dest += sizes::vec4;
 		memcpy(dest, lights, numLights * sizeof(Light));

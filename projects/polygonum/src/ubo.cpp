@@ -15,6 +15,32 @@ namespace sizes {
 	//size_t lightSize;
 }
 
+void UboSet::createBindings()
+{
+	for (UBOsArray& ubo : vsLocal)
+		ubo.createBinding();
+
+	for (UBOsArray& ubo : fsLocal)
+		ubo.createBinding();
+}
+
+void UboSet::destroyBindings()
+{
+	for (UBOsArray& ubo : vsLocal)
+		ubo.destroyBinding();
+
+	for (UBOsArray& ubo : fsLocal)
+		ubo.destroyBinding();
+}
+
+void UboSet::clear()
+{
+	vsGlobal.clear();
+	fsGlobal.clear();
+	vsLocal.clear();
+	fsLocal.clear();
+}
+
 BindingInfo::~BindingInfo() { }
 
 UbosArrayInfo::UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t uboSize, const std::vector<std::string>& glslLines)

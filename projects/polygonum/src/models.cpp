@@ -12,12 +12,6 @@ ModelDataInfo::ModelDataInfo()
 	vertexesLoader(nullptr),
 	shadersInfo(std::vector<ShaderLoader*>()),
 	texturesInfo(std::vector<TextureLoader*>()),
-	maxNumUbos_vs(0),
-	maxNumUbos_fs(0),
-	uboSize_vs(0),
-	uboSize_fs(0),
-	globalBinding_vs(nullptr),
-	globalBinding_fs(nullptr),
 	transparency(false),
 	renderPassIndex(0),
 	subpassIndex(0),
@@ -32,10 +26,6 @@ ModelData::ModelData(Renderer* renderer, ModelDataInfo& modelInfo)
 	vertexType(modelInfo.vertexType),
 	hasTransparencies(modelInfo.transparency),
 	cullMode(modelInfo.cullMode),
-	globalUBO_vs(modelInfo.globalBinding_vs),
-	globalUBO_fs(modelInfo.globalBinding_fs),
-	vsUBOs(renderer, UbosArrayInfo(modelInfo.maxNumUbos_vs, modelInfo.activeInstances, modelInfo.uboSize_vs)),
-	fsUBOs(renderer, UbosArrayInfo(modelInfo.maxNumUbos_fs, modelInfo.maxNumUbos_fs, modelInfo.uboSize_fs)),
 	renderPassIndex(modelInfo.renderPassIndex),
 	subpassIndex(modelInfo.subpassIndex),
 	activeInstances(modelInfo.activeInstances),
@@ -45,6 +35,20 @@ ModelData::ModelData(Renderer* renderer, ModelDataInfo& modelInfo)
 	#ifdef DEBUG_MODELS
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
 	#endif
+
+	ubos.vsGlobal = modelInfo.vsGlobalUbos;
+	ubos.fsGlobal = modelInfo.fsGlobalUbos;
+
+	for (const UbosArrayInfo& uboInfo : modelInfo.vsLocalUbos)
+		if (uboInfo.maxNumUbos && uboInfo.uboSize)
+			ubos.vsLocal.push_back(UBOsArray(renderer, uboInfo));
+		else std::cout << "Cannot create binding (size 0)" << std::endl;
+
+
+	for (const UbosArrayInfo& uboInfo : modelInfo.fsLocalUbos)
+		if (uboInfo.maxNumUbos && uboInfo.uboSize)
+			ubos.fsLocal.push_back(UBOsArray(renderer, uboInfo));
+		else std::cout << "Cannot create binding (size 0)" << std::endl;
 
 	resLoader = new ResourcesLoader(modelInfo.vertexesLoader, modelInfo.shadersInfo, modelInfo.texturesInfo);
 }
@@ -76,99 +80,87 @@ ModelData::~ModelData()
 }
 
 ModelData::ModelData(ModelData&& other) noexcept
-	: r(other.r),
-	primitiveTopology(other.primitiveTopology),
-	hasTransparencies(other.hasTransparencies),
-	cullMode(other.cullMode),
-	globalUBO_vs(other.globalUBO_vs),
-	globalUBO_fs(other.globalUBO_fs),
-	pipelineLayout(other.pipelineLayout),
-	graphicsPipeline(other.graphicsPipeline),
-	descriptorSetLayout(other.descriptorSetLayout),
-	descriptorPool(other.descriptorPool),
-	renderPassIndex(other.renderPassIndex),
-	subpassIndex(other.subpassIndex),
-	activeInstances(other.activeInstances),
-	resLoader(other.resLoader),
-	fullyConstructed(other.fullyConstructed),
-	ready(other.ready),
-	name(other.name)
+	: r(std::move(other.r)),
+	primitiveTopology(std::move(other.primitiveTopology)),
+	vertexType(std::move(other.vertexType)),
+	hasTransparencies(std::move(other.hasTransparencies)),
+	cullMode(std::move(other.cullMode)),
+	activeInstances(std::move(other.activeInstances)),
+	pipelineLayout(std::move(other.pipelineLayout)),
+	graphicsPipeline(std::move(other.graphicsPipeline)),
+	textures(std::move(other.textures)),
+	shaders(std::move(other.shaders)),
+	vert(std::move(other.vert)),
+	ubos(std::move(other.ubos)),
+	descriptorSetLayout(std::move(other.descriptorSetLayout)),
+	descriptorPool(std::move(other.descriptorPool)),
+	descriptorSets(std::move(other.descriptorSets)),
+	renderPassIndex(std::move(other.renderPassIndex)),
+	subpassIndex(std::move(other.subpassIndex)),
+	resLoader(std::move(other.resLoader)),
+	fullyConstructed(std::move(other.fullyConstructed)),
+	ready(std::move(other.ready)),
+	name(std::move(other.name))
 {
-	vertexType = std::move(other.vertexType);
-	shaders = std::move(other.shaders);
-	textures = std::move(other.textures);
-	vert = std::move(other.vert);
-	vsUBOs = std::move(other.vsUBOs);
-	fsUBOs = std::move(other.fsUBOs);
-	descriptorSets = std::move(other.descriptorSets);
-
 	other.r = nullptr;
-	other.globalUBO_vs = nullptr;
-	other.globalUBO_fs = nullptr;
 	other.resLoader = nullptr;
 }
 
 ModelData& ModelData::operator=(ModelData&& other) noexcept
 {
-	if (this != &other)
-	{
-		// Free existing resources
-		deleteLoader();
+	if (this == &other) return *this;
+	
+	// Free existing resources
+	deleteLoader();
 
-		// Transfer resources ownership
-		r = other.r;
-		primitiveTopology = other.primitiveTopology;
-		hasTransparencies = other.hasTransparencies;
-		cullMode = other.cullMode;
-		globalUBO_vs = other.globalUBO_vs;
-		globalUBO_fs = other.globalUBO_fs;
-		pipelineLayout = other.pipelineLayout;
-		graphicsPipeline = other.graphicsPipeline;
-		descriptorSetLayout = other.descriptorSetLayout;
-		descriptorPool = other.descriptorPool;
-		renderPassIndex = other.renderPassIndex;
-		subpassIndex = other.subpassIndex;
-		activeInstances = other.activeInstances;
-		resLoader = other.resLoader;
-		fullyConstructed = other.fullyConstructed;
-		ready = other.ready;
+	// Transfer resources ownership
+	r = other.r;
+	primitiveTopology = other.primitiveTopology;
+	hasTransparencies = other.hasTransparencies;
+	cullMode = other.cullMode;
+	pipelineLayout = other.pipelineLayout;
+	graphicsPipeline = other.graphicsPipeline;
+	descriptorSetLayout = other.descriptorSetLayout;
+	descriptorPool = other.descriptorPool;
+	renderPassIndex = other.renderPassIndex;
+	subpassIndex = other.subpassIndex;
+	activeInstances = other.activeInstances;
+	resLoader = other.resLoader;
+	fullyConstructed = other.fullyConstructed;
+	ready = other.ready;
 
-		vertexType = std::move(other.vertexType);
-		shaders = std::move(other.shaders);
-		textures = std::move(other.textures);
-		vert = std::move(other.vert);
-		vsUBOs = std::move(other.vsUBOs);
-		fsUBOs = std::move(other.fsUBOs);
-		descriptorSets = std::move(other.descriptorSets);
-		name = std::move(other.name);
+	vertexType = std::move(other.vertexType);
+	shaders = std::move(other.shaders);
+	textures = std::move(other.textures);
+	vert = std::move(other.vert);
+	ubos = std::move(other.ubos);
+	descriptorSets = std::move(other.descriptorSets);
+	name = std::move(other.name);
 
-		// Leave other in valid state
-		other.r = nullptr;
-		other.primitiveTopology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
-		other.hasTransparencies = false;
-		other.cullMode = VK_CULL_MODE_FLAG_BITS_MAX_ENUM;
-		other.globalUBO_vs = nullptr;
-		other.globalUBO_fs = nullptr;
-		other.pipelineLayout = other.pipelineLayout;
-		other.graphicsPipeline = other.graphicsPipeline;
-		other.descriptorSetLayout = other.descriptorSetLayout;
-		other.descriptorPool = other.descriptorPool;
-		other.renderPassIndex = 0;
-		other.subpassIndex = 0;
-		other.activeInstances = 0;
-		other.resLoader = nullptr;
-		other.fullyConstructed = false;
-		other.ready = false;
-		other.name = "";
-		
-		other.vertexType = VertexType();
-		other.shaders.clear();
-		other.textures.clear();
-		other.vert = VertexData();
-		other.vsUBOs = UBOsArray();
-		other.fsUBOs = UBOsArray();
-		other.descriptorSets.clear();
-	}
+	// Leave other in valid state
+	other.r = nullptr;
+	other.primitiveTopology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+	other.hasTransparencies = false;
+	other.cullMode = VK_CULL_MODE_FLAG_BITS_MAX_ENUM;
+	other.ubos.clear();
+	other.pipelineLayout = other.pipelineLayout;
+	other.graphicsPipeline = other.graphicsPipeline;
+	other.descriptorSetLayout = other.descriptorSetLayout;
+	other.descriptorPool = other.descriptorPool;
+	other.renderPassIndex = 0;
+	other.subpassIndex = 0;
+	other.activeInstances = 0;
+	other.resLoader = nullptr;
+	other.fullyConstructed = false;
+	other.ready = false;
+	other.name = "";
+	
+	other.vertexType = VertexType();
+	other.shaders.clear();
+	other.textures.clear();
+	other.vert = VertexData();
+	other.descriptorSets.clear();
+	
 	return *this;
 }
 
@@ -186,8 +178,7 @@ ModelData& ModelData::fullConstruction(Renderer& ren)
 	createDescriptorSetLayout();
 	createGraphicsPipeline();
 	
-	vsUBOs.createBinding();
-	fsUBOs.createBinding();
+	ubos.createBindings();
 	createDescriptorPool();
 	createDescriptorSets();
 	
@@ -206,12 +197,12 @@ void ModelData::createDescriptorSetLayout()
 	uint32_t bindNumber = 0;
 
 	// 0) Global UBO (vertex shader)
-	if (globalUBO_vs && globalUBO_vs->uboSize)
+	for(const auto& ubo : ubos.vsGlobal)
 	{
 		VkDescriptorSetLayoutBinding vsGlobalUboLayoutBinding{};
 		vsGlobalUboLayoutBinding.binding = bindNumber++;
 		vsGlobalUboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		vsGlobalUboLayoutBinding.descriptorCount = globalUBO_vs->maxNumUbos;
+		vsGlobalUboLayoutBinding.descriptorCount = ubo->maxNumUbos;
 		vsGlobalUboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 		vsGlobalUboLayoutBinding.pImmutableSamplers = nullptr;
 		
@@ -219,12 +210,12 @@ void ModelData::createDescriptorSetLayout()
 	}
 
 	//	1) Uniform buffer descriptor (vertex shader)
-	if (vsUBOs.uboSize)
+	for (const auto& ubo : ubos.vsLocal)
 	{
 		VkDescriptorSetLayoutBinding vsUboLayoutBinding{};
 		vsUboLayoutBinding.binding = bindNumber++;
 		vsUboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;			// VK_DESCRIPTOR_TYPE_ ... UNIFORM_BUFFER, UNIFORM_BUFFER_DYNAMIC
-		vsUboLayoutBinding.descriptorCount = vsUBOs.maxNumUbos;						// In case you want to specify an array of UBOs <<< (example: for specifying a transformation for each bone in a skeleton for skeletal animation).
+		vsUboLayoutBinding.descriptorCount = ubo.maxNumUbos;						// In case you want to specify an array of UBOs <<< (example: for specifying a transformation for each bone in a skeleton for skeletal animation).
 		vsUboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;						// Tell in which shader stages the descriptor will be referenced. This field can be a combination of VkShaderStageFlagBits values or the value VK_SHADER_STAGE_ALL_GRAPHICS.
 		vsUboLayoutBinding.pImmutableSamplers = nullptr;								// [Optional] Only relevant for image sampling related descriptors.
 		
@@ -232,12 +223,12 @@ void ModelData::createDescriptorSetLayout()
 	}
 
 	// 2) Global UBO (fragment shader)
-	if (globalUBO_fs && globalUBO_fs->uboSize)
+	for (const auto& ubo : ubos.fsGlobal)
 	{
 		VkDescriptorSetLayoutBinding fsGlobalUboLayoutBinding{};
 		fsGlobalUboLayoutBinding.binding = bindNumber++;
 		fsGlobalUboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		fsGlobalUboLayoutBinding.descriptorCount = globalUBO_fs->maxNumUbos;
+		fsGlobalUboLayoutBinding.descriptorCount = ubo->maxNumUbos;
 		fsGlobalUboLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 		fsGlobalUboLayoutBinding.pImmutableSamplers = nullptr;
 		
@@ -245,12 +236,12 @@ void ModelData::createDescriptorSetLayout()
 	}
 
 	// 3) Uniform buffer descriptor (fragment shader)
-	if (fsUBOs.uboSize)
+	for (const auto& ubo : ubos.fsLocal)
 	{
 		VkDescriptorSetLayoutBinding fsUboLayoutBinding{};
 		fsUboLayoutBinding.binding = bindNumber++;
 		fsUboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		fsUboLayoutBinding.descriptorCount = fsUBOs.maxNumUbos;
+		fsUboLayoutBinding.descriptorCount = ubo.maxNumUbos;
 		fsUboLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 		fsUboLayoutBinding.pImmutableSamplers = nullptr;
 		
@@ -506,28 +497,28 @@ void ModelData::createDescriptorPool()
 	std::vector<VkDescriptorPoolSize> poolSizes;
 	VkDescriptorPoolSize pool;
 
-	if (globalUBO_vs && globalUBO_vs->uboSize)
+	for (const auto& ubo : ubos.vsGlobal)
 	{
 		pool.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
 		poolSizes.push_back(pool);
 	}
 
-	if (vsUBOs.maxNumUbos && vsUBOs.uboSize)
+	for (const auto& ubo : ubos.vsLocal)
 	{
 		pool.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;								// VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER or VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
 		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());	// Number of descriptors of this type to allocate
 		poolSizes.push_back(pool);
 	}
 
-	if (globalUBO_fs && globalUBO_fs->uboSize)
+	for (const auto& ubo : ubos.fsGlobal)
 	{
 		pool.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
 		poolSizes.push_back(pool);
 	}
 
-	if (fsUBOs.maxNumUbos && fsUBOs.uboSize)
+	for (const auto& ubo : ubos.fsLocal)
 	{
 		pool.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
@@ -589,45 +580,47 @@ void ModelData::createDescriptorSets()
 
 		// Global UBO vertex shader
 		std::vector< VkDescriptorBufferInfo> globalBufferInfo_vs;	// Info about each descriptor
-		if(globalUBO_vs && globalUBO_vs->uboSize)
-			for (unsigned j = 0; j < globalUBO_vs->maxNumUbos; j++)
+		for(const auto& ubo : ubos.vsGlobal)
+			for (unsigned j = 0; j < ubo->maxNumUbos; j++)
 			{
-				if (globalUBO_vs->uboSize) descriptorInfo.buffer = globalUBO_vs->bindingBuffers[i];
-				descriptorInfo.range = globalUBO_vs->uboSize;
-				descriptorInfo.offset = j * globalUBO_vs->uboSize;
+				descriptorInfo.buffer = ubo->bindingBuffers[i];
+				descriptorInfo.range = ubo->uboSize;
+				descriptorInfo.offset = j * ubo->uboSize;
 				globalBufferInfo_vs.push_back(descriptorInfo);
 			}
 
 		// UBO vertex shader
 		std::vector< VkDescriptorBufferInfo> bufferInfo_vs;
-		for (unsigned j = 0; j < vsUBOs.maxNumUbos; j++)
-		{
-			if (vsUBOs.uboSize) descriptorInfo.buffer = vsUBOs.bindingBuffers[i];
-			descriptorInfo.range  = vsUBOs.uboSize;
-			descriptorInfo.offset = j * vsUBOs.uboSize;
-			bufferInfo_vs.push_back(descriptorInfo);
-		}
+		for (const auto& ubo : ubos.vsLocal)
+			for (unsigned j = 0; j < ubo.maxNumUbos; j++)
+			{
+				descriptorInfo.buffer = ubo.bindingBuffers[i];
+				descriptorInfo.range  = ubo.uboSize;
+				descriptorInfo.offset = j * ubo.uboSize;
+				bufferInfo_vs.push_back(descriptorInfo);
+			}
 
 		// Global UBO fragment shader
 		std::vector< VkDescriptorBufferInfo> globalBufferInfo_fs;	// Info about each descriptor
-		if (globalUBO_fs && globalUBO_fs->uboSize)
-			for (unsigned j = 0; j < globalUBO_fs->maxNumUbos; j++)
+		for (const auto& ubo : ubos.fsGlobal)
+			for (unsigned j = 0; j < ubo->maxNumUbos; j++)
 			{
-				if (globalUBO_fs->uboSize) descriptorInfo.buffer = globalUBO_fs->bindingBuffers[i];
-				descriptorInfo.range = globalUBO_fs->uboSize;
-				descriptorInfo.offset = j * globalUBO_fs->uboSize;
+				descriptorInfo.buffer = ubo->bindingBuffers[i];
+				descriptorInfo.range = ubo->uboSize;
+				descriptorInfo.offset = j * ubo->uboSize;
 				globalBufferInfo_fs.push_back(descriptorInfo);
 			}
 
 		// UBO fragment shader
 		std::vector< VkDescriptorBufferInfo> bufferInfo_fs;
-		for (unsigned j = 0; j < fsUBOs.maxNumUbos; j++)
-		{
-			if (fsUBOs.uboSize) descriptorInfo.buffer = fsUBOs.bindingBuffers[i];
-			descriptorInfo.range  = fsUBOs.uboSize;
-			descriptorInfo.offset = j * fsUBOs.uboSize;
-			bufferInfo_fs.push_back(descriptorInfo);
-		}
+		for (const auto& ubo : ubos.fsLocal)
+			for (unsigned j = 0; j < ubo.maxNumUbos; j++)
+			{
+				descriptorInfo.buffer = ubo.bindingBuffers[i];
+				descriptorInfo.range  = ubo.uboSize;
+				descriptorInfo.offset = j * ubo.uboSize;
+				bufferInfo_fs.push_back(descriptorInfo);
+			}
 
 		// Textures
 		std::vector<VkDescriptorImageInfo> imageInfo(textures.size());
@@ -650,14 +643,14 @@ void ModelData::createDescriptorSets()
 		VkWriteDescriptorSet descriptor;
 		uint32_t binding = 0;
 		
-		if (globalUBO_vs && globalUBO_vs->uboSize)
+		for(const auto& ubo : ubos.vsGlobal)
 		{
 			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			descriptor.dstSet = descriptorSets[i];
 			descriptor.dstBinding = binding++;
 			descriptor.dstArrayElement = 0;
 			descriptor.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			descriptor.descriptorCount = globalUBO_vs->maxNumUbos;
+			descriptor.descriptorCount = ubo->maxNumUbos;
 			descriptor.pBufferInfo = globalBufferInfo_vs.data();
 			descriptor.pImageInfo = nullptr;
 			descriptor.pTexelBufferView = nullptr;
@@ -666,14 +659,14 @@ void ModelData::createDescriptorSets()
 			descriptorWrites.push_back(descriptor);
 		}
 
-		if (vsUBOs.uboSize)
+		for (const auto& ubo : ubos.vsLocal)
 		{
 			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			descriptor.dstSet = descriptorSets[i];
 			descriptor.dstBinding = binding++;
 			descriptor.dstArrayElement = 0;
 			descriptor.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			descriptor.descriptorCount = vsUBOs.maxNumUbos;
+			descriptor.descriptorCount = ubo.maxNumUbos;
 			descriptor.pBufferInfo = bufferInfo_vs.data();
 			descriptor.pImageInfo = nullptr;
 			descriptor.pTexelBufferView = nullptr;
@@ -682,14 +675,14 @@ void ModelData::createDescriptorSets()
 			descriptorWrites.push_back(descriptor);
 		}
 
-		if (globalUBO_fs && globalUBO_fs->uboSize)
+		for (const auto& ubo : ubos.fsGlobal)
 		{
 			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			descriptor.dstSet = descriptorSets[i];
 			descriptor.dstBinding = binding++;
 			descriptor.dstArrayElement = 0;
 			descriptor.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			descriptor.descriptorCount = globalUBO_fs->maxNumUbos;
+			descriptor.descriptorCount = ubo->maxNumUbos;
 			descriptor.pBufferInfo = globalBufferInfo_fs.data();
 			descriptor.pImageInfo = nullptr;
 			descriptor.pTexelBufferView = nullptr;
@@ -698,14 +691,14 @@ void ModelData::createDescriptorSets()
 			descriptorWrites.push_back(descriptor);
 		}
 
-		if (fsUBOs.uboSize)
+		for (const auto& ubo : ubos.fsLocal)
 		{
 			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 			descriptor.dstSet = descriptorSets[i];
 			descriptor.dstBinding = binding++;
 			descriptor.dstArrayElement = 0;
 			descriptor.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			descriptor.descriptorCount = fsUBOs.maxNumUbos;
+			descriptor.descriptorCount = ubo.maxNumUbos;
 			descriptor.pBufferInfo = bufferInfo_fs.data();
 			descriptor.pImageInfo = nullptr;
 			descriptor.pTexelBufferView = nullptr;
@@ -756,12 +749,11 @@ void ModelData::recreate_pipeline_and_descriptors()
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
 	#endif
 
-	createGraphicsPipeline();			// Recreate graphics pipeline because viewport and scissor rectangle size is specified during graphics pipeline creation (this can be avoided by using dynamic state for the viewport and scissor rectangles).
+	createGraphicsPipeline();   // Recreate graphics pipeline because viewport and scissor rectangle size is specified during graphics pipeline creation (this can be avoided by using dynamic state for the viewport and scissor rectangles).
 
-	vsUBOs.createBinding();					// Uniform buffers depend on the number of swap chain images.
-	fsUBOs.createBinding();
-	createDescriptorPool();				// Descriptor pool depends on the swap chain images.
-	createDescriptorSets();				// Descriptor sets
+	ubos.createBindings();   // Uniform buffers depend on the number of swap chain images.
+	createDescriptorPool();   // Descriptor pool depends on the swap chain images.
+	createDescriptorSets();   // Descriptor sets
 }
 
 void ModelData::cleanup_pipeline_and_descriptors()
@@ -775,8 +767,7 @@ void ModelData::cleanup_pipeline_and_descriptors()
 	vkDestroyPipelineLayout(r->c.device, pipelineLayout, nullptr);
 
 	// Uniform buffers & memory
-	vsUBOs.destroyBinding();
-	fsUBOs.destroyBinding();
+	ubos.destroyBindings();
 
 	// Descriptor pool & Descriptor set (When a descriptor pool is destroyed, all descriptor-sets allocated from the pool are implicitly/automatically freed and become invalid)
 	vkDestroyDescriptorPool(r->c.device, descriptorPool, nullptr);
@@ -801,10 +792,10 @@ bool ModelData::setActiveInstancesCount(size_t activeInstancesCount)
 	
 	if (activeInstancesCount == activeInstances) return false;
 
-	if (vsUBOs.setNumActiveUbos(activeInstancesCount) == false)
-		std::cerr << "The number of rendered instances (" << name << ") cannot be higher than " << vsUBOs.maxNumUbos << std::endl;
+	if (ubos.vsLocal[0].setNumActiveUbos(activeInstancesCount) == false)
+		std::cerr << "The number of rendered instances (" << name << ") cannot be higher than " << ubos.vsLocal[0].maxNumUbos << std::endl;
 
-	this->activeInstances = vsUBOs.numActiveUbos;
+	this->activeInstances = ubos.vsLocal[0].numActiveUbos;
 	return true;
 	{
 		//vsUBO.resizeUBO(activeInstancesCount);

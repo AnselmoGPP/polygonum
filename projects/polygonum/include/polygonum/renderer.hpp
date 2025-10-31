@@ -116,7 +116,7 @@ public:
 	~Renderer();
 
 	std::vector<UBOsArray> globalUBOs;
-	void addGlobalUbo(const std::shared_ptr<UbosArrayInfo>& uboInfo);
+	void addGlobalUbo(const UbosArrayInfo& uboInfo);
 
 	void renderLoop();	//!< Create command buffer and start render loop.
 

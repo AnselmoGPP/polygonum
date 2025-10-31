@@ -124,7 +124,7 @@ struct BindingInfo
 	virtual ~BindingInfo();
 
 	template<typename T, typename... Args>
-	static std::shared_ptr<T> create(Args&&... args);
+	static std::shared_ptr<T> create(Args&&... args);   // Factory method (not used)
 };
 
 template<typename T, typename... Args>
@@ -137,7 +137,7 @@ std::shared_ptr<T> BindingInfo::create(Args&&... args)
 }
 
 /// A UBO array is a type of Binding. A Binding is an array of descriptors. Each descriptor has attributes. There're different types of descriptors (UBO, sampler...).
-struct UbosArrayInfo : BindingInfo
+struct UbosArrayInfo
 {
 	UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t uboSize, const std::vector<std::string>& glslLines = {});
 	UbosArrayInfo();
@@ -178,6 +178,18 @@ public:
 	uint8_t* getUboPtr(size_t uboIndex);
 	void createBinding();								//!< Create uniform buffers (type of descriptors that can be bound) (VkBuffer & VkDeviceMemory), one for each swap chain image. At least one is created (if count == 0, a buffer of size "range" is created).
 	void destroyBinding();				//!< Destroy the uniform buffers (VkBuffer) and their memories (VkDeviceMemory).
+};
+
+struct UboSet
+{
+	std::vector<UBOsArray*> vsGlobal;
+	std::vector<UBOsArray*> fsGlobal;
+	std::vector<UBOsArray> vsLocal;   //!< Stores the set of UBOs that will be passed to the vertex shader.
+	std::vector<UBOsArray> fsLocal;   //!< Stores the UBO that will be passed to the fragment shader.
+
+	void createBindings();
+	void destroyBindings();
+	void clear();
 };
 
 /// Model-View-Projection matrix as a UBO (Uniform buffer object) (https://www.opengl-tutorial.org/beginners-tutorials/tutorial-3-matrices/)
