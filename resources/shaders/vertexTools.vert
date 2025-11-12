@@ -64,6 +64,13 @@ struct TB3
 	vec3 bTanZ;
 };
 
+// Instance data.
+struct InstanceData
+{
+	mat4 model;
+	mat4 normalMat;
+};
+
 
 // Graphic functions ------------------------------------------------------------------------
 

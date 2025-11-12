@@ -133,7 +133,8 @@ struct DeviceData
 	VkPhysicalDeviceType deviceType;
 	std::string deviceName;
 
-	uint32_t maxUniformBufferRange;						//!< Max. uniform buffer object size (https://community.khronos.org/t/uniform-buffer-not-big-enough-how-to-handle/103981)
+	uint32_t maxUniformBufferRange;						//!< Max. UBO size (https://community.khronos.org/t/uniform-buffer-not-big-enough-how-to-handle/103981)
+	uint32_t maxStorageBufferRange;						//!< Max. SSBO size
 	uint32_t maxPerStageDescriptorUniformBuffers;
 	uint32_t maxDescriptorSetUniformBuffers;
 	uint32_t maxImageDimension2D;						//!< Useful for selecting a physical device
@@ -141,6 +142,7 @@ struct DeviceData
 	VkSampleCountFlags framebufferColorSampleCounts;	//!< Useful for getting max. number of MSAA
 	VkSampleCountFlags framebufferDepthSampleCounts;	//!< Useful for getting max. number of MSAA
 	VkDeviceSize minUniformBufferOffsetAlignment;		//!< Useful for aligning dynamic descriptor sets (usually == 32 or 256)
+	VkDeviceSize minStorageBufferOffsetAlignment;
 
 	// Features (redundant)
 	VkBool32 samplerAnisotropy;							//!< Does physical device supports Anisotropic Filtering (AF)?

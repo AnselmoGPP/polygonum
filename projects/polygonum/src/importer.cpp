@@ -678,22 +678,22 @@ bool SMod::applyModification(std::string& shader)
 	{
 	case 1:   // - sm_albedo: (FS) Sampler used
 		result = findTwoAndReplaceBetween(shader, "vec4 albedo", ";",
-			"vec4 albedo = texture(texSampler[" + params[0] + "], inUVs)");
+			"vec4 albedo = texture(tex[" + params[0] + "], inUVs)");
 		break;
 
 	case 2:   // sm_specular: (FS) Sampler used
 		result = findTwoAndReplaceBetween(shader, "vec3 specular", ";",
-			"vec3 specular = texture(texSampler[" + params[0] + "], inUVs).xyz");
+			"vec3 specular = texture(tex[" + params[0] + "], inUVs).xyz");
 		break;
 
 	case 3:   // sm_roughness: (FS) Sampler used
 		result = findTwoAndReplaceBetween(shader, "float roughness", ";",
-			"float roughness = texture(texSampler[" + params[0] + "], inUVs).x");
+			"float roughness = texture(tex[" + params[0] + "], inUVs).x");
 		break;
 
 	case 4:   // sm_normal: (VS, FS) Sampler used   <<< doesn't work yet
 		result = findTwoAndReplaceBetween(shader, "vec3 normal", ";",
-			"vec3 normal = planarNormal(texSampler[" + params[0] + "], inUVs, inTB, inNormal, 1)");
+			"vec3 normal = planarNormal(tex[" + params[0] + "], inUVs, inTB, inNormal, 1)");
 		for (int i = 0; i < 3; i++)
 			if (!findStrAndErase(shader, "//normal: ")) break;
 		findStrAndReplace(shader, "layout(location = 4) flat", "layout(location = 5) flat");
@@ -712,7 +712,7 @@ bool SMod::applyModification(std::string& shader)
 		break;
 
 	case 8:   // - sm_verticalNormals: (VS) Make all normals (before MVP transformation) vertical (vec3(0,0,1))
-		result = findStrAndErase(shader, "outNormal = mat3(lUbo.normalMatrix) * inNormal;");
+		result = findStrAndErase(shader, "outNormal = mat3(lUbo.ins[i].normalMat) * inNormal;");
 		findStrAndErase(shader, "//verticalNormals: ");
 		break;
 
@@ -930,36 +930,12 @@ void ShaderIncluder::ReleaseInclude(shaderc_include_result* data)
 	delete data;
 }
 
-ShaderCreator::ShaderCreator(RPtype rendPass, const VertexType& vertexType, const std::vector<TextureLoader*>& textures)
+ShaderCreator::ShaderCreator(RPtype rendPass, const VertexType& vertexType, const UboSetInfo& ubos, const std::vector<TextureLoader*>& textures)
 	: rpType(rendPass)
 {
 	setBasics();
-	setShaders(rendPass, vertexType, textures);
-}
-
-void ShaderCreator::setBasics()
-{
-	vs.header = {
-	"#version 450",
-	"#extension GL_ARB_separate_shader_objects : enable",
-	"#pragma shader_stage(vertex)" };
-
-	vs.includes = { "#include \"..\\..\\extern\\polygonum\\resources\\shaders\\vertexTools.vert\"" };
-
-	vs.globalVars = { "int i = gl_InstanceIndex" };
-
-	fs.header = {
-		"#version 450",
-		"#extension GL_ARB_separate_shader_objects : enable",
-		"#pragma shader_stage(fragment)" };
-
-	fs.includes = { "#include \"..\\..\\extern\\polygonum\\resources\\shaders\\fragTools.vert\"" };
-
-	fs.flags = { "layout(early_fragment_tests) in" };
-}
-
-void ShaderCreator::setShaders(RPtype rendPass, const VertexType& vertexType, const std::vector<TextureLoader*>& textures)
-{
+	setBindings(ubos, textures);
+	
 	switch (rendPass)
 	{
 	case forward:
@@ -975,9 +951,56 @@ void ShaderCreator::setShaders(RPtype rendPass, const VertexType& vertexType, co
 		setPostprocess();
 		break;
 	default:
-		std::cout << "Invalid pass selected" << std::endl;
+		std::cout << "ShaderCreator: Invalid pass selected" << std::endl;
 		break;
 	}
+}
+
+void ShaderCreator::setBasics()
+{
+	vs.header = {
+	"#version 450",
+	"#extension GL_ARB_separate_shader_objects : enable",
+	"#pragma shader_stage(vertex)" };
+
+	vs.includes = { "#include \"..\\..\\extern\\polygonum\\resources\\shaders\\vertexTools.vert\"" };
+
+	vs.globals = { "int i = gl_InstanceIndex" };
+
+	fs.header = {
+		"#version 450",
+		"#extension GL_ARB_separate_shader_objects : enable",
+		"#pragma shader_stage(fragment)" };
+
+	fs.includes = { "#include \"..\\..\\extern\\polygonum\\resources\\shaders\\fragTools.vert\"" };
+
+	fs.flags = { "layout(early_fragment_tests) in" };
+}
+
+void ShaderCreator::setBindings(const UboSetInfo& ubos, const std::vector<TextureLoader*>& textures)
+{
+	BindingBuffer* buf;
+
+	for (unsigned i = 0; i < ubos.vsGlobal.size(); i++)
+	{
+		buf = ubos.vsGlobal[i];
+		vs.bind_globalBuffers.push_back(BindingBufferInfo(getDescType(buf), buf->numDescriptors, buf->numSubDescriptors, buf->descriptorSize, buf->glslLines));
+	}
+
+	for (unsigned i = 0; i < ubos.fsGlobal.size(); i++)
+	{
+		buf = ubos.fsGlobal[i];
+		fs.bind_globalBuffers.push_back(BindingBufferInfo(getDescType(buf), buf->numDescriptors, buf->numSubDescriptors, buf->descriptorSize, buf->glslLines));
+	}
+
+	vs.bind_localBuffers = ubos.vsLocal;
+	fs.bind_localBuffers = ubos.fsLocal;
+
+	//for (unsigned i = 0; i < textures.size(); i++)
+	//	vs.bind_textures.push_back(textures.size());
+	
+	for (unsigned i = 0; i < textures.size(); i++)
+		fs.bind_textures.push_back(textures.size());
 }
 
 ShaderCreator& ShaderCreator::setForward()
@@ -1014,14 +1037,11 @@ void ShaderCreator::setLighting()
 
 	// Fragment shader
 	fs.flags.clear();
-	fs.descriptors = {
-		{ },
-		{ "vec4 camPos", "Light lights[NUMLIGHTS]" },
-		{ "texture", "4" }   // pos, albedo, normal specRough (sampler2D for single-sample | sampler2DMS for multisampling)
-	};
+	fs.bind_globalBuffers = { BindingBufferInfo(ubo, 1, 1, 0, {"vec4 camPos_t", "Light lights[NUMLIGHTS]"}) };
+	fs.bind_textures = { 4 };   // pos, albedo, normal specRough (sampler2D for single-sample | sampler2DMS for multisampling)
 	fs.input = { "in vec2 inUV" };
 	fs.output = { "out vec4 outColor" };
-	fs.globalVars = {
+	fs.globals = {
 		"vec4 showPositions(float divider) { return vec4(texture(inputAtt[0], inUV).xyz / divider, 1.0); }",
 		"vec4 showAlbedo() { return vec4(texture(inputAtt[1], inUV).xyz, 1.0); }",
 		"vec4 showNormals() { return vec4(texture(inputAtt[2], inUV).xyz, 1.0); }",
@@ -1061,12 +1081,7 @@ void ShaderCreator::setPostprocess()
 	};
 
 	// Fragment shader
-	fs.descriptors = {
-		{ },
-		{ },
-		{ },
-		{ "texture", "2" }   // Color (sampler2D for single-sample | sampler2DMS for multisampling)
-	};
+	fs.bind_textures = { 2 };   // Color (sampler2D for single-sample | sampler2DMS for multisampling)
 	fs.input = { "in vec2 inUV" };
 	fs.output = { "out vec4 outColor" };
 	fs.main_end = { "outColor = vec4(texture(inputAtt[0], inUV).rgb, 1.0)" };
@@ -1083,21 +1098,20 @@ void ShaderCreator::setVS()
 
 	vs.flags;
 
-	vs.descriptors = {
-		{ "mat4 view", "mat4 proj", "vec4 camPos_t" },
-		{ "mat4 model", "mat4 normalMatrix" } };
+	vs.bind_globalBuffers = { BindingBufferInfo(ubo, 1, 1, 0, { "mat4 view", "mat4 proj", "vec4 camPos_t" }) };
+	vs.bind_localBuffers = { BindingBufferInfo(ubo, 1, 1, 0, {"mat4 model", "mat4 normalMat" }) };
 
 	vs.input = { "vec3 inPos", "vec2 inUV", "vec3 inNormal", "vec3 inTan" };
 
 	vs.output = { "vec3 outPos", "vec2 outUV", "vec3 outNormal", "TB outTB" };
 
-	vs.globalVars = { "int i = gl_InstanceIndex" };
+	vs.globals = { "int i = gl_InstanceIndex" };
 	
 	vs.main_begin = {
-		"vec3 worldPos = (ubo[i].model * vec4(inPos, 1.0)).xyz",
-		"vec4 clipPos = gUbo[0].proj * gUbo[0].view * vec4(worldPos, 1.0)",
+		"vec3 worldPos = (lBuf.ins[i].model * vec4(inPos, 1.0)).xyz",
+		"vec4 clipPos = gBuf.proj * gBuf.view * vec4(worldPos, 1.0)",
 		"vec2 uv = inUV",
-		"vec3 normal = mat3(ubo[i].normalMatrix) * inNormal",
+		"vec3 normal = mat3(lBuf.ins[i].normalMat) * inNormal",
 		"TB tb = getTB(inNormal, inTan)" };
 
 	vs.main_processing;
@@ -1121,16 +1135,14 @@ void ShaderCreator::setFS_forward()
 
 	fs.flags = { "layout(early_fragment_tests) in" };
 
-	fs.descriptors = {
-		{ "vec4 camPos_t", "Light light[]" },
-		{ },
-		{ "sampler", "4" } };   // albedo, spec, rough, normal
+	fs.bind_globalBuffers = { BindingBufferInfo(ubo, 1, 1, 0, { "vec4 camPos_t", "Light light[]" }) };
+	fs.bind_textures = { 4 };   // albedo, spec, rough, normal
 
 	fs.input = { "vec3 inPos", "vec2 inUV", "vec3 inNormal", "TB inTB" };
 
 	fs.output = { "vec4 outColor" };
 
-	fs.globalVars;
+	fs.globals;
 
 	fs.main_begin = {
 		"vec3 albedo = texture(texSampler[0], inUV).xyz",
@@ -1140,7 +1152,7 @@ void ShaderCreator::setFS_forward()
 	fs.main_processing;
 
 	fs.main_end = {
-		"outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, gUbo[0].light, inPos, gUbo[0].camPos_t.xyz)" };
+		"outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, gBuf.light, inPos, gBuf.camPos_t.xyz)" };
 }
 
 void ShaderCreator::setFS_geometry()
@@ -1154,16 +1166,14 @@ void ShaderCreator::setFS_geometry()
 
 	fs.flags = { "layout(early_fragment_tests) in" };
 
-	fs.descriptors = {
-		{ "vec4 camPos_t", "Light light[NUMLIGHTS]" },
-		{ },
-		{ "sampler", "4" } };   // albedo, spec, rough, normal
+	fs.bind_globalBuffers = { BindingBufferInfo(ubo, 1, 1, 0, { "vec4 camPos_t", "Light light[NUMLIGHTS]" }) };
+	fs.bind_textures = { 4 };   // albedo, spec, rough, normal
 
 	fs.input = { "vec3 inPos", "vec2 inUV", "vec3 inNormal", "TB inTB" };
 
 	fs.output = { "vec4 outPos", "vec4 outAlbedo", "vec4 outSpecRoug", "vec4 outNormal" };
 
-	fs.globalVars;
+	fs.globals;
 
 	fs.main_begin = {
 		"vec4 albedo = vec4(texture(texSampler[0], inUV).xyz, 1.f)",
@@ -1191,8 +1201,8 @@ void ShaderCreator::setVS_general(const VertexType& vertexType)
 		case vaPos:
 			vs.input.push_back("in vec3 inPos");
 			vs.output.push_back("out vec3 outPos");
-			vs.main_begin.push_back("vec3 worldPos = (lUbo[i].model * vec4(inPos, 1.0)).xyz");
-			vs.main_begin.push_back("vec4 clipPos = gUbo[0].proj * gUbo[0].view * vec4(worldPos, 1.0)");
+			vs.main_begin.push_back("vec3 worldPos = (lBuf.ins[i].model * vec4(inPos, 1.0)).xyz");
+			vs.main_begin.push_back("vec4 clipPos = gBuf.proj * gBuf.view * vec4(worldPos, 1.0)");
 			vs.main_end.push_back("gl_Position = clipPos");
 			vs.main_end.push_back("outPos = worldPos");
 			fs.input.push_back("in vec3 inPos");
@@ -1200,7 +1210,7 @@ void ShaderCreator::setVS_general(const VertexType& vertexType)
 		case vaNorm:
 			vs.input.push_back("in vec3 inNormal");
 			vs.output.push_back("out vec3 outNormal");
-			vs.main_begin.push_back("vec3 normal = mat3(lUbo[i].normalMatrix) * inNormal");
+			vs.main_begin.push_back("vec3 normal = mat3(lBuf.ins[i].normalMat) * inNormal");
 			vs.main_end.push_back("outNormal = normal");
 			fs.input.push_back("in vec3 inNormal");
 			continue;
@@ -1271,7 +1281,7 @@ void ShaderCreator::setForward(const VertexType& vertexType, const std::vector<T
 	fs.main_begin.push_back("vec4 specRough = vec4(texture(tex[1], inUV).xyz, texture(tex[2], inUV).x)");
 	fs.main_begin.push_back("vec3 normal = planarNormal(tex[3], inNormal, inTB, inUV, 1.f)");
 	
-	fs.main_end.push_back("outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, gUbo[0].light, worldPos, gUbo[0].camPos_t.xyz)");
+	fs.main_end.push_back("outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, gBuf[0].light, worldPos, gBuf[0].camPos_t.xyz)");
 
 	if (attribs.find(vaTan) == attribs.end())
 		fs.main_begin[3] = "vec3 normal = inNormal";
@@ -1327,13 +1337,43 @@ void ShaderCreator::setGeometry(const VertexType& vertexType, const std::vector<
 
 unsigned ShaderCreator::firstBindingNumber(unsigned shaderType)
 {
-	unsigned count = 0;
+	if (shaderType == 1)   // if in fragment shader
+		return vs.bind_globalBuffers.size() + vs.bind_localBuffers.size() + vs.bind_textures.size();
 
-	if (shaderType == 1)   // fragment shader
-		for (auto& binding : vs.descriptors)
-			if (binding.size()) count++;
+	return 0;
+}
 
-	return count;
+BindingBufferType ShaderCreator::getDescType(const BindingBuffer* bindBuffer)
+{
+	switch (bindBuffer->type)
+	{
+	case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+		return ubo;
+	case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+		return ssbo;
+	default:
+		return undef;
+	}
+}
+
+std::string ShaderCreator::getBuffer(const BindingBufferInfo& buffer, unsigned bindingNumber, unsigned nameNumber, bool isGlobal)
+{
+	std::string str;
+	std::string bufferType = buffer.descriptorType == ubo ? "uniform" : (buffer.descriptorType == ssbo ? "buffer" : "XXX");
+	std::string structName = isGlobal ? "GlobalBuffer" : "LocalBuffer";
+	std::string objName = isGlobal ? "gBuf" : "lBuf";
+	if (nameNumber)	{
+		structName += std::to_string(nameNumber);
+		objName += std::to_string(nameNumber);
+	}
+	if (buffer.numDescriptors > 1) objName += "[" + std::to_string(buffer.numDescriptors) + "]";
+
+	str += "layout(set = 0, binding = " + std::to_string(bindingNumber) + ") " + bufferType + " " + structName + " {\n";
+	for (const auto& descAttrib : buffer.glslLines)
+		str += "\t" + descAttrib + ";\n";
+	str += "} " + objName + ";\n\n";
+
+	return str;
 }
 
 std::unordered_map<VertAttrib, unsigned> ShaderCreator::usedAttribTypes(const VertexType& vertexType)
@@ -1382,8 +1422,8 @@ ShaderCreator& ShaderCreator::setVerticalNormals()
 {
 	for(auto& line : vs.main_begin)
 		if(findStrAndReplace(line,
-			"\tvec3 normal = mat3(ubo[i].normalMatrix) * inNormal; \n",
-			"\tvec3 normal = mat3(ubo[i].normalMatrix) * vec3(0,0,1) \n"))
+			"\tvec3 normal = mat3(ubo[i].normalMat) * inNormal; \n",
+			"\tvec3 normal = mat3(ubo[i].normalMat) * vec3(0,0,1) \n"))
 			break;
 
 	return *this;
@@ -1416,26 +1456,34 @@ std::string ShaderCreator::getShader(unsigned shaderType)
 
 	if (code.flags.size()) shader += "\n";
 
-	// Descriptors
+	// Structs
+
+	for (auto& line : code.structs)
+		shader += line + ";\n";
+
+	if (code.structs.size()) shader += "\n";
+
+	// Bindings
 
 	unsigned bindingNumber = firstBindingNumber(shaderType);
-	std::vector<std::pair<std::string, std::string>> descriptorNames = { {"globalUbo", "gUbo"}, {"localUbo", "lUbo"}, {"tex", ""}, {"inputAtt", ""}};
 
-	for(unsigned i = 0; i < code.descriptors.size(); i++)   // for each binding
+	//   - Global buffers
+	
+	for (unsigned i = 0; i < code.bind_globalBuffers.size(); i++)
+		shader += getBuffer(code.bind_globalBuffers[i], bindingNumber++, i, true);
+
+	//   - Local buffers
+
+	for (unsigned i = 0; i < code.bind_localBuffers.size(); i++)
+		shader += getBuffer(code.bind_localBuffers[i], bindingNumber++, i, false);
+
+	//   - Textures
+
+	for (unsigned i = 0; i < code.bind_textures.size(); i++)
 	{
-		if (code.descriptors[i].empty()) continue;
-
-		if (code.descriptors[i][0] == "texture")
-		{
-			shader += "layout(set = 0, binding = " + std::to_string(bindingNumber++) + ") uniform sampler2D " + descriptorNames[2].first + "[" + code.descriptors[i][1] + "];\n\n";
-		}
-		else
-		{
-			shader += "layout(set = 0, binding = " + std::to_string(bindingNumber++) + ") uniform " + descriptorNames[i].first + " {\n";
-			for (const auto& descAttrib : code.descriptors[i])
-				shader += "\t" + descAttrib + ";\n";
-			shader += "} " + descriptorNames[i].second + "[1];\n\n";  // <<< array of descriptors?
-		}
+		shader += "layout(set = 0, binding = " + std::to_string(bindingNumber++) + ") uniform sampler2D tex";
+		if (i) shader += std::to_string(i);
+		shader += "[" + std::to_string(code.bind_textures[i]) + "];\n\n";
 	}
 
 	// Input
@@ -1452,12 +1500,12 @@ std::string ShaderCreator::getShader(unsigned shaderType)
 
 	if(code.output.size()) shader += "\n";
 
-	// Global variables
+	// Globals
 
-	for (const auto& line : code.globalVars)
+	for (const auto& line : code.globals)
 		shader += line + ";\n";
 
-	if(code.globalVars.size()) shader += "\n";
+	if(code.globals.size()) shader += "\n";
 
 	// main
 
@@ -1477,6 +1525,11 @@ std::string ShaderCreator::getShader(unsigned shaderType)
 		shader += "\t" + line + ";\n";
 
 	shader += "}\n\n";
+
+	// Others
+
+	for (const auto& line : code.others)
+		shader += line + "\n\n";
 
 	return shader;
 }

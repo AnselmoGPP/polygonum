@@ -27,16 +27,14 @@ struct ModelDataInfo
 	ModelDataInfo();
 
 	const char* name;
-	uint32_t activeInstances;						//!< <= maxDescriptorsCount_vs
+	uint32_t numInstances;
+	uint32_t maxNumInstances;
 	VkPrimitiveTopology topology;				//!< Primitive topology (VK_PRIMITIVE_TOPOLOGY_ ... POINT_LIST, LINE_LIST, LINE_STRIP, TRIANGLE_LIST, TRIANGLE_STRIP). Used when creating the graphics pipeline.
 	VertexType vertexType;						//!< VertexType defines the characteristics of a vertex (size and type of the vertex' attributes: Position, Color, Texture coordinates, Normals...).
 	VertexesLoader* vertexesLoader;				//!< Info for loading vertices from any source.
 	std::vector<ShaderLoader*> shadersInfo;		//!< Shaders info
 	std::vector<TextureLoader*> texturesInfo;	//!< Textures info
-	std::vector<UBOsArray*> vsGlobalUbos;
-	std::vector<UBOsArray*> fsGlobalUbos;
-	std::vector<UbosArrayInfo> vsLocalUbos;
-	std::vector<UbosArrayInfo> fsLocalUbos;
+	UboSetInfo ubos;
 	bool transparency;
 	uint32_t renderPassIndex;					//!< 0 (geometry pass), 1 (lighting pass), 2 (forward pass), 3 (postprocessing pass)
 	uint32_t subpassIndex;
@@ -56,7 +54,9 @@ class ModelData
 	VertexType vertexType;
 	bool hasTransparencies;						//!< Flags if textures contain transparencies (alpha channel)
 	VkCullModeFlagBits cullMode;				//!< VK_CULL_MODE_BACK_BIT, VK_CULL_MODE_NONE, ...
-	uint32_t activeInstances;		//!< Number of renderings (<= vsDynUBO.dynBlocksCount). Can be set with setRenderCount.
+
+	uint32_t numInstances;
+	uint32_t maxNumInstances;
 
 	/// Layout for the descriptor set (descriptor: handle or pointer into a resource (buffer, sampler, texture...))
 	void createDescriptorSetLayout();
@@ -101,8 +101,8 @@ public:
 	void cleanup_pipeline_and_descriptors();   //!< Destroys graphic pipeline and descriptor sets. Called by destructor, and for window resizing (by Renderer::recreateSwapChain()::cleanupSwapChain()).
 	void recreate_pipeline_and_descriptors();   //!< Creates graphic pipeline and descriptor sets. Called for window resizing (by Renderer::recreateSwapChain()).
 
-	bool setActiveInstancesCount(size_t activeInstancesCount);	//!< Set number of active instances (<= vsUBO.maxUBOcount).
-	uint32_t getActiveInstancesCount();
+	bool setNumInstances(uint32_t count);	//!< Set number of instances to render.
+	inline uint32_t getNumInstances() const;
 
 	VkPipelineLayout				pipelineLayout;		//!< Pipeline layout. Allows to use uniform values in shaders (globals similar to dynamic state variables that can be changed at drawing time to alter the behavior of your shaders without having to recreate them).
 	VkPipeline						graphicsPipeline;	//!< Opaque handle to a pipeline object.

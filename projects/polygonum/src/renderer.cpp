@@ -48,12 +48,12 @@ Renderer::~Renderer()
 #endif
 }
 
-void Renderer::addGlobalUbo(const UbosArrayInfo& uboInfo)
+void Renderer::addGlobalUbo(const BindingBufferInfo& uboInfo)
 {
-	if (uboInfo.maxNumUbos && uboInfo.uboSize)
+	if (uboInfo.numDescriptors && uboInfo.descriptorSize)
 	{
-		globalUBOs.push_back(UBOsArray(this, uboInfo));
-		globalUBOs[globalUBOs.size() - 1].createBinding();
+		globalBuffers.push_back(BindingBuffer(this, uboInfo));
+		globalBuffers[globalBuffers.size() - 1].createBinding();
 	}
 	else std::cout << "Cannot create binding (size 0)" << std::endl;
 }
@@ -282,8 +282,8 @@ void Renderer::cleanup()
 
 	models.data.clear();   // lock_guard (worker.mutModels) not necessary before this because worker stopped the loading thread.
 
-	for(auto& gUbo : globalUBOs)
-		if (gUbo.totalBytes) gUbo.destroyBinding();
+	for(auto& gUbo : globalBuffers)
+		if (gUbo.getCapacity()) gUbo.destroyBinding();
 
 	commander.freeCommandBuffers();
 	commander.destroySynchronizers();
@@ -348,7 +348,7 @@ void Renderer::setInstances(key64 key, size_t numberOfRenders)
 	const std::lock_guard<std::mutex> lock(worker.mutModels);
 
 	if (models.data.find(key) != models.data.end())
-		if (models.data[key].setActiveInstancesCount(numberOfRenders))
+		if (models.data[key].setNumInstances(numberOfRenders))
 			commander.updateCommandBuffer = true;		// We flag commandBuffer for update assuming that our model is in list "model"
 }
 
@@ -362,7 +362,7 @@ void Renderer::setInstances(std::vector<key64>& keys, size_t numberOfRenders)
 
 	for (key64 key : keys)
 		if (models.data.find(key) != models.data.end())
-			if (models.data[key].setActiveInstancesCount(numberOfRenders))
+			if (models.data[key].setNumInstances(numberOfRenders))
 				commander.updateCommandBuffer = true;		// We flag commandBuffer for update assuming that our model is in list "model"
 }
 
@@ -376,23 +376,25 @@ void Renderer::setMaxFPS(int maxFPS)
 
 void Renderer::updateUBOs(uint32_t imageIndex)
 {
-#ifdef DEBUG_RENDERLOOP
-	std::cout << "Copy UBOs" << std::endl;
-#endif
+	#ifdef DEBUG_RENDERLOOP
+		std::cout << "Copy UBOs" << std::endl;
+	#endif
 
 	void* data;
-	size_t activeBytes;
+	uint32_t bytes;
 	ModelData* model;
 
-	// Global UBOs
-	for (auto& ubo : globalUBOs)
+	// Global buffers
+	for (auto& buffer : globalBuffers)
 	{
-		vkMapMemory(c.device, ubo.bindingMemories[imageIndex], 0, ubo.totalBytes, 0, &data);
-		memcpy(data, ubo.binding.data(), ubo.totalBytes);
-		vkUnmapMemory(c.device, ubo.bindingMemories[imageIndex]);
+		bytes = buffer.getSize();
+		if (!bytes) continue;
+		vkMapMemory(c.device, buffer.bindingMemories[imageIndex], 0, bytes, 0, &data);
+		memcpy(data, buffer.binding.data(), bytes);
+		vkUnmapMemory(c.device, buffer.bindingMemories[imageIndex]);
 	}
 
-	// Local UBOs
+	// Local buffers
 	const std::lock_guard<std::mutex> lock(worker.mutModels);
 
 	models.distributeKeys();
@@ -402,22 +404,22 @@ void Renderer::updateUBOs(uint32_t imageIndex)
 		{
 			model = &it->second;
 
-			for (const auto& ubo : model->ubos.vsLocal)
+			for (const auto& buffer : model->ubos.vsLocal)
 			{
-				if (!ubo.numActiveUbos) continue;
-				activeBytes = ubo.numActiveUbos * ubo.uboSize;
-				vkMapMemory(c.device, ubo.bindingMemories[imageIndex], 0, activeBytes, 0, &data);   // Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
-				memcpy(data, ubo.binding.data(), activeBytes);   // Copy some data in that memory. Copies a number of bytes (sizeof(ubo)) from a source (ubo) to a destination (data).
-				vkUnmapMemory(c.device, ubo.bindingMemories[imageIndex]);   // "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
+				bytes = buffer.getSize();
+				if (!bytes) continue;
+				vkMapMemory(c.device, buffer.bindingMemories[imageIndex], 0, bytes, 0, &data);   // Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
+				memcpy(data, buffer.binding.data(), bytes);   // Copy some data in that memory. Copies a number of bytes (sizeof(ubo)) from a source (ubo) to a destination (data).
+				vkUnmapMemory(c.device, buffer.bindingMemories[imageIndex]);   // "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
 			}
 
-			for (const auto& ubo : model->ubos.fsLocal)
+			for (const auto& buffer : model->ubos.fsLocal)
 			{
-				if (!ubo.numActiveUbos) continue;
-				activeBytes = ubo.numActiveUbos * ubo.uboSize;
-				vkMapMemory(c.device, ubo.bindingMemories[imageIndex], 0, activeBytes, 0, &data);
-				memcpy(data, ubo.binding.data(), activeBytes);
-				vkUnmapMemory(c.device, ubo.bindingMemories[imageIndex]);
+				bytes = buffer.getSize();
+				if (!bytes) continue;
+				vkMapMemory(c.device, buffer.bindingMemories[imageIndex], 0, bytes, 0, &data);
+				memcpy(data, buffer.binding.data(), bytes);
+				vkUnmapMemory(c.device, buffer.bindingMemories[imageIndex]);
 			}
 		}
 }
@@ -576,7 +578,7 @@ void Help_RP_DS_PP::createLightingPass(Renderer& ren, unsigned numLights, std::s
 		SL_fromFile::factory(fragShaderPath, { SMod::changeHeader(fragToolsHeader) })
 	};
 	
-	UbosArrayInfo uboInfo(1, 1, sizes::vec4 + numLights * sizeof(Light), { "vec4 camPos", "Light lights[NUMLIGHTS]" });
+	BindingBufferInfo uboInfo(ubo, 1, 1, sizes::vec4 + numLights * sizeof(Light), { "vec4 camPos", "Light lights[NUMLIGHTS]" });
 	
 	VertexType vertexType({ vaPos, vaUv });
 
@@ -584,16 +586,14 @@ void Help_RP_DS_PP::createLightingPass(Renderer& ren, unsigned numLights, std::s
 
 	ModelDataInfo modelInfo;
 	modelInfo.name = "lightingPass";
-	modelInfo.activeInstances = 1;
+	modelInfo.maxNumInstances = 1;
+	modelInfo.numInstances = 1;
 	modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	modelInfo.vertexType = vertexType;
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vertexType.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
 	modelInfo.texturesInfo = usedTextures;
-	modelInfo.vsGlobalUbos;
-	modelInfo.fsGlobalUbos;
-	modelInfo.vsLocalUbos;
-	modelInfo.fsLocalUbos = { uboInfo };
+	modelInfo.ubos.fsLocal = { uboInfo };
 	modelInfo.transparency = false;
 	modelInfo.renderPassIndex = 1;
 	modelInfo.subpassIndex = 0;
@@ -618,16 +618,14 @@ void Help_RP_DS_PP::createPostprocessingPass(Renderer& ren, std::string vertShad
 
 	ModelDataInfo modelInfo;
 	modelInfo.name = "postprocessingPass";
-	modelInfo.activeInstances = 1;
+	modelInfo.maxNumInstances = 1;
+	modelInfo.numInstances = 1;
 	modelInfo.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 	modelInfo.vertexType = vertexType;
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vertexType.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
 	modelInfo.texturesInfo = usedTextures;
-	modelInfo.vsGlobalUbos;
-	modelInfo.fsGlobalUbos;
-	modelInfo.vsLocalUbos;
-	modelInfo.fsLocalUbos;
+	modelInfo.ubos;
 	modelInfo.transparency = false;
 	modelInfo.renderPassIndex = 3;
 	modelInfo.subpassIndex = 0;
@@ -649,13 +647,10 @@ void Help_RP_DS_PP::updateLightingPass(Renderer& ren, glm::vec3& camPos, Light* 
 	//	//...
 	//}
 	
-	for (uint32_t i = 0; i < model->ubos.fsLocal[0].numActiveUbos; i++)
-	{
-		dest = model->ubos.fsLocal[0].getUboPtr(i);
-		memcpy(dest, &camPos, sizes::vec4);
-		dest += sizes::vec4;
-		memcpy(dest, lights, numLights * sizeof(Light));
-	}
+	dest = model->ubos.fsLocal[0].getDescriptor();
+	memcpy(dest, &camPos, sizes::vec4);
+	dest += sizes::vec4;
+	memcpy(dest, lights, numLights * sizeof(Light));
 }
 
 void Help_RP_DS_PP::updatePostprocessingPass(Renderer& ren)

@@ -147,6 +147,7 @@ void DeviceData::fillWithDeviceData(VkPhysicalDevice physicalDevice)
 	deviceName = std::string(deviceProperties.deviceName);
 
 	maxUniformBufferRange = deviceProperties.limits.maxUniformBufferRange;
+	maxStorageBufferRange = deviceProperties.limits.maxStorageBufferRange;
 	maxPerStageDescriptorUniformBuffers = deviceProperties.limits.maxPerStageDescriptorUniformBuffers;
 	maxDescriptorSetUniformBuffers = deviceProperties.limits.maxDescriptorSetUniformBuffers;
 	maxImageDimension2D = deviceProperties.limits.maxImageDimension2D;
@@ -154,6 +155,7 @@ void DeviceData::fillWithDeviceData(VkPhysicalDevice physicalDevice)
 	framebufferColorSampleCounts = deviceProperties.limits.framebufferColorSampleCounts;
 	framebufferDepthSampleCounts = deviceProperties.limits.framebufferDepthSampleCounts;
 	minUniformBufferOffsetAlignment = deviceProperties.limits.minUniformBufferOffsetAlignment;
+	minStorageBufferOffsetAlignment = deviceProperties.limits.minStorageBufferOffsetAlignment;
 
 	samplerAnisotropy = deviceFeatures.samplerAnisotropy;
 	largePoints = deviceFeatures.largePoints;
@@ -303,7 +305,7 @@ void Commander::updateCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 #endif
 
 					model = &models.data[key];
-					if (model->getActiveInstancesCount() == 0) continue;
+					if (model->getNumInstances() == 0) continue;
 
 					vkCmdBindPipeline(CBs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->graphicsPipeline);	// Second parameter: Specifies if the pipeline object is a graphics or compute pipeline.
 					vkCmdBindVertexBuffers(CBs[i], 0, 1, &model->vert.vertexBuffer, offsets);
@@ -311,13 +313,13 @@ void Commander::updateCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 					if (model->vert.indexCount)		// has indices (it doesn't if data represents points)
 						vkCmdBindIndexBuffer(CBs[i], model->vert.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
-					if (model->descriptorSets.size())	// has descriptor set (UBOs, textures, input attachments)
+					if (model->descriptorSets.size())	// has descriptor set (UBOs, SSBOs, textures, input attachments)
 						vkCmdBindDescriptorSets(CBs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->pipelineLayout, 0, 1, &model->descriptorSets[i], 0, 0);
 
 					if (model->vert.indexCount)		// has indices
-						vkCmdDrawIndexed(CBs[i], static_cast<uint32_t>(model->vert.indexCount), model->getActiveInstancesCount(), 0, 0, 0);
+						vkCmdDrawIndexed(CBs[i], static_cast<uint32_t>(model->vert.indexCount), model->getNumInstances(), 0, 0, 0);
 					else
-						vkCmdDraw(CBs[i], model->vert.vertexCount, model->getActiveInstancesCount(), 0, 0);
+						vkCmdDraw(CBs[i], model->vert.vertexCount, model->getNumInstances(), 0, 0);
 
 					commandsCount++;
 				}

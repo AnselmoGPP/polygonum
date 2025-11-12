@@ -17,19 +17,19 @@ namespace sizes {
 
 void UboSet::createBindings()
 {
-	for (UBOsArray& ubo : vsLocal)
+	for (BindingBuffer& ubo : vsLocal)
 		ubo.createBinding();
 
-	for (UBOsArray& ubo : fsLocal)
+	for (BindingBuffer& ubo : fsLocal)
 		ubo.createBinding();
 }
 
 void UboSet::destroyBindings()
 {
-	for (UBOsArray& ubo : vsLocal)
+	for (BindingBuffer& ubo : vsLocal)
 		ubo.destroyBinding();
 
-	for (UBOsArray& ubo : fsLocal)
+	for (BindingBuffer& ubo : fsLocal)
 		ubo.destroyBinding();
 }
 
@@ -43,62 +43,102 @@ void UboSet::clear()
 
 BindingInfo::~BindingInfo() { }
 
-UbosArrayInfo::UbosArrayInfo(size_t maxNumUbos, size_t numActiveUbos, size_t uboSize, const std::vector<std::string>& glslLines)
-	: maxNumUbos(maxNumUbos), numActiveUbos(numActiveUbos), uboSize(uboSize), glslLines(glslLines) { }
+BindingBufferInfo::BindingBufferInfo(BindingBufferType descriptorType, size_t numDescriptors, size_t numSubDescriptors, size_t descriptorSize, const std::vector<std::string>& glslLines)
+	: descriptorType(descriptorType), numDescriptors(numDescriptors), numSubDescriptors(numSubDescriptors), descriptorSize(descriptorSize), glslLines(glslLines) { }
 
-UbosArrayInfo::UbosArrayInfo()
-	: maxNumUbos(0), numActiveUbos(0), uboSize(0) { }
-
-UBOsArray::UBOsArray(Renderer* renderer, const UbosArrayInfo& bindingInfo) :
+BindingBuffer::BindingBuffer(Renderer* renderer, const BindingBufferInfo& bindingInfo) :
 	c(&renderer->c),
 	swapChain(&renderer->swapChain),
-	maxNumUbos(bindingInfo.maxNumUbos),
-	uboSize(bindingInfo.uboSize ? c->deviceData.minUniformBufferOffsetAlignment * (1 + bindingInfo.uboSize / c->deviceData.minUniformBufferOffsetAlignment) : 0),
-	totalBytes(uboSize* maxNumUbos),
-	binding(totalBytes),
+	numDescriptors(bindingInfo.numDescriptors),
+	numSubDescriptors(bindingInfo.numSubDescriptors),
+	descriptorSize(alignedDescriptorSize(bindingInfo.numDescriptors, bindingInfo.descriptorType, bindingInfo.descriptorSize)),
 	glslLines(bindingInfo.glslLines)
 {
-	setNumActiveUbos(bindingInfo.numActiveUbos);
+	binding.resize(numDescriptors * descriptorSize);
+	size = binding.size();
+
+	switch (bindingInfo.descriptorType)
+	{
+	case ubo:
+		type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+		break;
+	case ssbo:
+		type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+		break;
+	default:
+		type = VK_DESCRIPTOR_TYPE_MAX_ENUM;
+		usage = VK_BUFFER_USAGE_FLAG_BITS_MAX_ENUM;
+		throw std::runtime_error("Not valid descriptor type");
+	}
 }
 
-UBOsArray::UBOsArray()
-	: c(nullptr), swapChain(nullptr), maxNumUbos(0), numActiveUbos(0), uboSize(0), totalBytes(0), binding(0), bindingBuffers(0), bindingMemories(0)
-{ };
+//BindingBuffer::BindingBuffer()
+//	: c(nullptr), swapChain(nullptr), numDescriptors(0), descriptorSize(0), totalBytes(0), binding(0), bindingBuffers(0), bindingMemories(0)
+//{ };
 
-UBOsArray::UBOsArray(UBOsArray&& other) noexcept
-	: c(other.c),
-	swapChain(other.swapChain),
-	maxNumUbos(other.maxNumUbos),
-	numActiveUbos(other.numActiveUbos),
-	uboSize(other.uboSize),
-	totalBytes(other.totalBytes)
+BindingBuffer::BindingBuffer(BindingBuffer&& other) noexcept
+	: c(std::move(other.c)),
+	swapChain(std::move(other.swapChain)),
+	size(std::move(other.size)),
+	type(std::move(other.type)),
+	usage(std::move(other.usage)),
+	numDescriptors(other.numDescriptors),   // Cannot use std::move on const variables.
+	descriptorSize(other.descriptorSize),
+	numSubDescriptors(std::move(other.numSubDescriptors)),
+	binding(std::move(other.binding)),
+	bindingBuffers(std::move(other.bindingBuffers)),
+	bindingMemories(std::move(other.bindingMemories)),
+	glslLines(std::move(other.glslLines))
+{ }
+
+uint32_t BindingBuffer::alignedDescriptorSize(size_t numDescriptors, BindingBufferType descriptorType, size_t originalDescriptorSize)
 {
-	binding = std::move(other.binding);
-	bindingBuffers = std::move(other.bindingBuffers);
-	bindingMemories = std::move(other.bindingMemories);
+	if (numDescriptors == 1) return originalDescriptorSize;   // No need to align if the binding has only one descriptor.
+	if (numDescriptors == 0) return 0;
+
+	VkDeviceSize alignment;
+
+	switch (descriptorType)
+	{
+	case ubo:
+		alignment = c->deviceData.minUniformBufferOffsetAlignment;
+		break;
+	case ssbo:
+		alignment = c->deviceData.minStorageBufferOffsetAlignment;
+		break;
+	default:
+		throw std::runtime_error("Not valid descriptor type");
+	}
+
+	//return (originalDescriptorSize + alignment - 1) & ~(alignment - 1);
+	return alignment * ((originalDescriptorSize + alignment - 1) / alignment);
+
 }
 
-UBOsArray& UBOsArray::operator=(UBOsArray&& other) noexcept
+/*
+BindingBuffer& BindingBuffer::operator=(BindingBuffer&& other) noexcept
 {
 	if (this != &other)
 	{
 		// Transfer resources ownership
 		c = other.c;
-		swapChain = other.swapChain,
-		maxNumUbos = other.maxNumUbos;
-		numActiveUbos = other.numActiveUbos;
-		uboSize = other.uboSize;
-		totalBytes = other.totalBytes;
+		swapChain = other.swapChain;
+		numDescriptors = other.numDescriptors;
+		descriptorSize = other.descriptorSize;
+		capacity = other.capacity;
+		size = other.size;
 
 		binding = std::move(other.binding);
 		bindingBuffers = std::move(other.bindingBuffers);
 		bindingMemories = std::move(other.bindingMemories);
 
 		// Leave other in valid state
-		other.maxNumUbos = 0;
-		other.numActiveUbos = 0;
-		other.uboSize = 0;
-		other.totalBytes = 0;
+		other.numDescriptors = 0;
+		other.descriptorSize = 0;
+		other.capacity = 0;
+		other.size = 0;
 
 		other.binding.clear();
 		other.bindingBuffers.clear();
@@ -106,46 +146,58 @@ UBOsArray& UBOsArray::operator=(UBOsArray&& other) noexcept
 	}
 	return *this;
 }
-
-uint8_t* UBOsArray::getUboPtr(size_t uboIndex) { return binding.data() + uboIndex * uboSize; }
-
-bool UBOsArray::setNumActiveUbos(size_t count)
+*/
+uint8_t* BindingBuffer::getDescriptor(size_t index)
 {
-	if (count > maxNumUbos)
-	{
-		numActiveUbos = maxNumUbos;
-		return false;
-	}
-
-	numActiveUbos = count;
-	return true;
+	uint8_t* ptr = binding.data() + index * descriptorSize;
+	return ptr;
 }
 
 // (21)
-void UBOsArray::createBinding()
+void BindingBuffer::createBinding()
 {
-	if (!maxNumUbos) return;
+	if (!numDescriptors) return;
 
 	bindingBuffers.resize(swapChain->images.size());
 	bindingMemories.resize(swapChain->images.size());
 	
 	//destroyUniformBuffers();		// Not required since Renderer calls this first
 
-	if (uboSize)
+	if (descriptorSize)
 		for (size_t i = 0; i < swapChain->images.size(); i++)
 			c->createBuffer(
-				maxNumUbos == 0 ? uboSize : totalBytes,
-				VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
+				getCapacity(),
+				usage,
 				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
 				bindingBuffers[i],
 				bindingMemories[i]);
 }
 
-void UBOsArray::destroyBinding()
+void BindingBuffer::destroyBinding()
 {
-	if (uboSize)
+	if (descriptorSize)
 		for (size_t i = 0; i < swapChain->images.size(); i++)
 			c->destroyBuffer(c->device, bindingBuffers[i], bindingMemories[i]);
+}
+
+uint32_t BindingBuffer::getSize() const { return size; }
+
+uint32_t BindingBuffer::getCapacity() const  { return binding.size(); }
+
+void BindingBuffer::setSize(uint32_t newSize)
+{
+	if (newSize > getCapacity())
+		size = getCapacity();
+	else
+		size = newSize;
+}
+
+void BindingBuffer::setSize_subs(uint32_t numActiveSubDescriptors)
+{
+	if (numActiveSubDescriptors > numSubDescriptors)
+		size = getCapacity();
+	else
+		size = (getCapacity() / numSubDescriptors) * numActiveSubDescriptors;
 }
 
 Material::Material(glm::vec3& diffuse, glm::vec3& specular, float shininess)

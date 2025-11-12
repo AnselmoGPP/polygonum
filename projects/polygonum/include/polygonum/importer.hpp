@@ -2,6 +2,7 @@
 #define TEXTURE_HPP
 
 #include "polygonum/environment.hpp"
+#include "polygonum/ubo.hpp"
 
 #include <unordered_map>
 
@@ -68,6 +69,7 @@ extern std::vector<uint16_t   > noIndices;			//!< Vector with 0 indices
 
 enum VertAttrib { vaPos, vaNorm, vaTan, vaCol, vaCol4, vaUv, vaFixes, vaBoneWeights, vaBoneIndices, vaInstanceTransform, vaMax };
 enum TexType { tAlb, tSpec, tRoug, tSpecroug, tNorm, tUndef, texMax };
+enum RPtype { geometry, lighting, forward, postprocessing };
 
 // Definitions ----------
 
@@ -372,22 +374,24 @@ public:
 class ShaderCreator
 {
 public:
-	enum RPtype { geometry, lighting, forward, postprocessing };
-
-	ShaderCreator(RPtype rendPass, const VertexType& vertexType, const std::vector<TextureLoader*>& textures);
+	ShaderCreator(RPtype rendPass, const VertexType& vertexType, const UboSetInfo& ubos, const std::vector<TextureLoader*>& textures);
 
 	struct ShaderCode
 	{
 		std::vector <std::string> header;
 		std::vector <std::string> includes;
 		std::vector <std::string> flags;
-		std::vector <std::vector<std::string>> descriptors; // 0 (global), 1 (local), 2 (textures)
+		std::vector <std::string> structs;
+		std::vector <BindingBufferInfo> bind_globalBuffers;
+		std::vector <BindingBufferInfo> bind_localBuffers;
+		std::vector <unsigned> bind_textures;
 		std::vector <std::string> input;
 		std::vector <std::string> output;
-		std::vector <std::string> globalVars;
+		std::vector <std::string> globals;
 		std::vector <std::string> main_begin;
 		std::vector <std::string> main_processing;
 		std::vector <std::string> main_end;
+		std::vector <std::string> others;
 	};
 
 	ShaderCode vs, fs;
@@ -411,7 +415,7 @@ private:
 	ShaderCreator& setGeometry();   // Shaders for a Geometry pass
 
 	void setBasics();
-	void setShaders(RPtype rendPass, const VertexType& vertexType, const std::vector<TextureLoader*>& textures);
+	void setBindings(const UboSetInfo& ubos, const std::vector<TextureLoader*>& textures);
 	void setVS_general(const VertexType& vertexType);
 	void setForward(const VertexType& vertexType, const std::vector<TextureLoader*>& textures);
 	void setGeometry(const VertexType& vertexType, const std::vector<TextureLoader*>& textures);
@@ -419,6 +423,8 @@ private:
 	void setPostprocess();   // Shaders for a Postprocessing pass
 
 	unsigned firstBindingNumber(unsigned shaderType);
+	BindingBufferType getDescType(const BindingBuffer* bindBuffer);
+	std::string getBuffer(const BindingBufferInfo& buffer, unsigned bindingName, unsigned nameName, bool isGlobal);
 	std::unordered_map<VertAttrib, unsigned> usedAttribTypes(const VertexType& vertexType);
 	std::unordered_map<TexType, unsigned> usedTextureTypes(const std::vector<TextureLoader*>& textures);
 

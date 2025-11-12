@@ -92,19 +92,19 @@ void printS(const T& vec) { std::cout << T << std::endl; }
 // MVP Matrix -----------------------------------------------------------------
 
 /// Get a basic Model Matrix
-glm::mat4 getModelMatrix();
+glm::mat4 getModelMat();
 
 /// Get a user-defined Model Matrix
-glm::mat4 getModelMatrix(const glm::vec3& scale, const glm::vec4& rotQuat, const glm::vec3& translation);
+glm::mat4 getModelMat(const glm::vec3& scale, const glm::vec4& rotQuat, const glm::vec3& translation);
 
 /// Model matrix for Normals (it's really a mat3, but a mat4 is returned because it is easier to pass to shader since mat4 is aligned with 16 bytes). Normals are passed to fragment shader in world coordinates, so they have to be multiplied by the model matrix (MM) first (this MM should not include the translation part, so we just take the upper-left 3x3 part). However, non-uniform scaling can distort normals, so we have to create a specific MM especially tailored for normal vectors: mat3(transpose(inverse(model))) * vec3(normal).
-glm::mat4 getModelMatrixForNormals(const glm::mat4& modelMatrix);
+glm::mat4 getNormalMat(const glm::mat4& modelMatrix);
 
 // View matrix
-glm::mat4 getViewMatrix(glm::vec3& camPos, glm::vec3& front, glm::vec3& camUp);
+glm::mat4 getViewMat(glm::vec3& camPos, glm::vec3& front, glm::vec3& camUp);
 
 // Projection matrix
-glm::mat4 getProjMatrix(float fovy, float aspectRatio, float nearViewPlane, float farViewPlane);
+glm::mat4 getProjMat(float fovy, float aspectRatio, float nearViewPlane, float farViewPlane);
 
 
 // Bounding ops -----------------------------------------------------------------

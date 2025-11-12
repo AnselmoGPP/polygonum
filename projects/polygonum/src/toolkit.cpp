@@ -75,9 +75,9 @@ uint64_t appendInt(uint64_t first, uint64_t second)
 
 float getSphereArea(float radius) { return 4 * 3.141592653589793238462 * radius * radius; }
 
-glm::mat4 getModelMatrix() { return glm::mat4(1.0f); }
+glm::mat4 getModelMat() { return glm::mat4(1.0f); }
 
-glm::mat4 getModelMatrix(const glm::vec3& scale, const glm::vec4& rotQuat, const glm::vec3& translation)
+glm::mat4 getModelMat(const glm::vec3& scale, const glm::vec4& rotQuat, const glm::vec3& translation)
 {
 	glm::mat4 mm(1.0f);
 
@@ -89,18 +89,18 @@ glm::mat4 getModelMatrix(const glm::vec3& scale, const glm::vec4& rotQuat, const
 	return mm;
 }
 
-glm::mat4 getModelMatrixForNormals(const glm::mat4& modelMatrix)
+glm::mat4 getNormalMat(const glm::mat4& modelMatrix)
 {
 	//return glm::mat3(glm::transpose(glm::inverse(modelMatrix)));
 	return glm::transpose(glm::inverse(modelMatrix));
 }
 
-glm::mat4 getViewMatrix(glm::vec3& camPos, glm::vec3& front, glm::vec3& camUp)
+glm::mat4 getViewMat(glm::vec3& camPos, glm::vec3& front, glm::vec3& camUp)
 {
 	return glm::lookAt(camPos, camPos + front, camUp);
 }
 
-glm::mat4 getProjMatrix(float fovy, float aspectRatio, float nearViewPlane, float farViewPlane)
+glm::mat4 getProjMat(float fovy, float aspectRatio, float nearViewPlane, float farViewPlane)
 {
 	glm::mat4 proj = glm::perspective(fovy, aspectRatio, nearViewPlane, farViewPlane);
 	proj[1][1] *= -1;       // GLM returns the Y clip coordinate inverted.
