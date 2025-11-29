@@ -15,49 +15,21 @@ namespace sizes {
 	//size_t lightSize;
 }
 
-void UboSet::createBindings()
+//BindingInfo::~BindingInfo() { }
+
+BindingBuffer::BindingBuffer(BindingBufferType descType, uint32_t numDescs, uint32_t numSubDescs, VkDeviceSize descSize, const std::vector<std::string>& glslLines)
+	: c(nullptr), swapChain(nullptr),
+	numDescriptors(numDescs),
+	numSubDescriptors(numSubDescs),
+	descriptorSize(alignedDescriptorSize(numDescs, descType, descSize)),
+	glslLines(glslLines)
 {
-	for (BindingBuffer& ubo : vsLocal)
-		ubo.createBinding();
+	if (!numDescriptors || !descriptorSize) throw std::runtime_error("Buffer cannot have size 0");
 
-	for (BindingBuffer& ubo : fsLocal)
-		ubo.createBinding();
-}
-
-void UboSet::destroyBindings()
-{
-	for (BindingBuffer& ubo : vsLocal)
-		ubo.destroyBinding();
-
-	for (BindingBuffer& ubo : fsLocal)
-		ubo.destroyBinding();
-}
-
-void UboSet::clear()
-{
-	vsGlobal.clear();
-	fsGlobal.clear();
-	vsLocal.clear();
-	fsLocal.clear();
-}
-
-BindingInfo::~BindingInfo() { }
-
-BindingBufferInfo::BindingBufferInfo(BindingBufferType descriptorType, size_t numDescriptors, size_t numSubDescriptors, size_t descriptorSize, const std::vector<std::string>& glslLines)
-	: descriptorType(descriptorType), numDescriptors(numDescriptors), numSubDescriptors(numSubDescriptors), descriptorSize(descriptorSize), glslLines(glslLines) { }
-
-BindingBuffer::BindingBuffer(Renderer* renderer, const BindingBufferInfo& bindingInfo) :
-	c(&renderer->c),
-	swapChain(&renderer->swapChain),
-	numDescriptors(bindingInfo.numDescriptors),
-	numSubDescriptors(bindingInfo.numSubDescriptors),
-	descriptorSize(alignedDescriptorSize(bindingInfo.numDescriptors, bindingInfo.descriptorType, bindingInfo.descriptorSize)),
-	glslLines(bindingInfo.glslLines)
-{
 	binding.resize(numDescriptors * descriptorSize);
 	size = binding.size();
 
-	switch (bindingInfo.descriptorType)
+	switch (descType)
 	{
 	case ubo:
 		type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -74,9 +46,13 @@ BindingBuffer::BindingBuffer(Renderer* renderer, const BindingBufferInfo& bindin
 	}
 }
 
-//BindingBuffer::BindingBuffer()
-//	: c(nullptr), swapChain(nullptr), numDescriptors(0), descriptorSize(0), totalBytes(0), binding(0), bindingBuffers(0), bindingMemories(0)
-//{ };
+BindingBuffer::BindingBuffer(const BindingBuffer& obj)
+	: c(obj.c), swapChain(obj.swapChain), size(obj.size), type(obj.type), usage(obj.usage), numDescriptors(obj.numDescriptors), descriptorSize(obj.descriptorSize), numSubDescriptors(obj.numSubDescriptors), binding(obj.binding), glslLines(obj.glslLines)
+{
+	// Members "bindingBuffers" and "bindingMemories" are not copied because they're destroyed by the destructor.
+}
+
+BindingBuffer::~BindingBuffer() { destroyBuffer(); }
 
 BindingBuffer::BindingBuffer(BindingBuffer&& other) noexcept
 	: c(std::move(other.c)),
@@ -92,6 +68,25 @@ BindingBuffer::BindingBuffer(BindingBuffer&& other) noexcept
 	bindingMemories(std::move(other.bindingMemories)),
 	glslLines(std::move(other.glslLines))
 { }
+
+BindingBuffer& BindingBuffer::operator=(const BindingBuffer& obj)
+{
+	if (&obj == this) return *this;
+
+	c = obj.c;
+	swapChain = obj.swapChain;
+	size = obj.size;
+
+	type = obj.type;
+	usage = obj.usage;
+	numDescriptors = obj.numDescriptors;
+	descriptorSize = obj.descriptorSize;
+	numSubDescriptors = obj.numSubDescriptors;
+	binding = obj.binding;
+	glslLines = obj.glslLines;
+
+	return *this;
+}
 
 uint32_t BindingBuffer::alignedDescriptorSize(size_t numDescriptors, BindingBufferType descriptorType, size_t originalDescriptorSize)
 {
@@ -154,31 +149,41 @@ uint8_t* BindingBuffer::getDescriptor(size_t index)
 }
 
 // (21)
-void BindingBuffer::createBinding()
+void BindingBuffer::createBuffer(Renderer* rend)
 {
-	if (!numDescriptors) return;
+	if (!numDescriptors || !descriptorSize)
+	{
+		std::cerr << "Cannot create buffer of size 0." << std::endl;
+		return;
+	}
+	if (binding.empty()) return;   // if buffer was created
+	if (!rend) return;
+
+	c = &rend->c;
+	swapChain = &rend->swapChain;
 
 	bindingBuffers.resize(swapChain->images.size());
 	bindingMemories.resize(swapChain->images.size());
 	
 	//destroyUniformBuffers();		// Not required since Renderer calls this first
 
-	if (descriptorSize)
-		for (size_t i = 0; i < swapChain->images.size(); i++)
-			c->createBuffer(
-				getCapacity(),
-				usage,
-				VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-				bindingBuffers[i],
-				bindingMemories[i]);
+	for (size_t i = 0; i < swapChain->images.size(); i++)
+		c->createBuffer(
+			getCapacity(),
+			usage,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+			bindingBuffers[i],
+			bindingMemories[i]);
 }
 
-void BindingBuffer::destroyBinding()
+void BindingBuffer::destroyBuffer()
 {
-	if (descriptorSize)
+	if (isFullyConstructed())
 		for (size_t i = 0; i < swapChain->images.size(); i++)
 			c->destroyBuffer(c->device, bindingBuffers[i], bindingMemories[i]);
 }
+
+bool BindingBuffer::isFullyConstructed() { return bindingBuffers.size(); }
 
 uint32_t BindingBuffer::getSize() const { return size; }
 

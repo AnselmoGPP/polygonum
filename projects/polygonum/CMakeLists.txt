@@ -36,11 +36,13 @@ ADD_LIBRARY(${PROJECT_NAME} STATIC
 	src/importer.cpp
 	src/ubo.cpp
 	src/input.cpp
-	src/timer.cpp
+	src/bindings.cpp
 	src/toolkit.cpp
 	src/physics.cpp
 	src/commons.cpp
 	src/ecs.cpp
+	src/shader.cpp
+	src/texture.cpp
 
 	include/polygonum/environment.hpp
 	include/polygonum/renderer.hpp
@@ -49,11 +51,13 @@ ADD_LIBRARY(${PROJECT_NAME} STATIC
 	include/polygonum/importer.hpp
 	include/polygonum/ubo.hpp
 	include/polygonum/input.hpp
-	include/polygonum/timer.hpp
+	include/polygonum/bindings.hpp
 	include/polygonum/toolkit.hpp
 	include/polygonum/physics.hpp
 	include/polygonum/commons.hpp
 	include/polygonum/ecs.hpp
+	include/polygonum/shader.hpp
+	include/polygonum/texture.hpp
 )
 
 TARGET_INCLUDE_DIRECTORIES( ${PROJECT_NAME} PUBLIC

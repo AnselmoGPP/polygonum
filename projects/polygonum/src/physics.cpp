@@ -169,3 +169,152 @@ void PlanetParticle::updateState(float deltaTime)
 	gVec = gDir * g;
 }
 
+// OpticalDepthTable ----------------------------------------------------------
+
+/*
+	getOpticalDepthTable
+		operator ()
+			raySphere()
+			opticalDepth()
+				densityAtPoint()
+*/
+
+OpticalDepthTable::OpticalDepthTable(unsigned numOptDepthPoints, unsigned planetRadius, unsigned atmosphereRadius, float heightStep, float angleStep, float densityFallOff)
+	: planetCenter(0, 0, 0), planetRadius(planetRadius), atmosphereRadius(atmosphereRadius), numOptDepthPoints(numOptDepthPoints), heightStep(heightStep), angleStep(angleStep), densityFallOff(densityFallOff)
+{
+	// Compute useful variables	
+	heightSteps = std::ceil(1 + (atmosphereRadius - planetRadius) / heightStep);	// <<<
+	angleSteps = std::ceil(1 + 3.141592653589793238462 / angleStep);
+	bytes = 4 * heightSteps * angleSteps;	// sizeof(float) = 4
+
+	// Get table
+	table.resize(bytes);
+
+	float rayLength, angle;
+	glm::vec3 point, rayDir;
+	float* optDepth = (float*)table.data();
+
+	for (size_t i = 0; i < heightSteps; i++)
+	{
+		point = { 0, planetRadius + i * heightStep, 0 };	// rayOrigin
+
+		for (size_t j = 0; j < angleSteps; j++)
+		{
+			angle = j * angleStep;
+			rayDir = glm::vec3(sin(angle), cos(angle), 0);
+			rayLength = raySphere(point, rayDir).y;
+
+			optDepth[i * angleSteps + j] = opticalDepth(point, rayDir, rayLength);
+
+			//if (point.y > 2399 && point.y < 2401 && angle > 1.84 && angle < 1.86)
+			//	std::cout << "(" << i << ", " << j << ") / " << point.y << " / " << optDepth[i * angleSteps + j] << " / " << rayLength << " / " << angle << " / (" << rayDir.x << ", " << rayDir.y << ", " << rayDir.z << ")" << std::endl;
+		}
+	}
+
+	// Compute
+	float angleRange = 3.141592653589793238462;
+	point = glm::vec3(2400, 0, 0);
+	angle = angleRange / 1.7;
+	rayDir = glm::vec3(cos(angle), 0, sin(angle));
+	rayLength = raySphere(point, rayDir).y;
+
+	// Look up
+	float heightRatio = (2400.f - planetRadius) / (atmosphereRadius - planetRadius);
+	float angleRatio = angle / angleRange;
+	unsigned i = (heightSteps - 1) * heightRatio;
+	unsigned j = (angleSteps - 1) * angleRatio;
+}
+
+float OpticalDepthTable::opticalDepth(glm::vec3 rayOrigin, glm::vec3 rayDir, float rayLength) const
+{
+	glm::vec3 point = rayOrigin;
+	float stepSize = rayLength / (numOptDepthPoints - 1);
+	float opticalDepth = 0;
+
+	for (unsigned i = 0; i < numOptDepthPoints; i++)
+	{
+		opticalDepth += densityAtPoint(point) * stepSize;
+		point += rayDir * stepSize;
+	}
+
+	return opticalDepth;
+}
+
+float OpticalDepthTable::densityAtPoint(glm::vec3 point) const
+{
+	float heightAboveSurface = glm::length(point - planetCenter) - planetRadius;
+	float height01 = heightAboveSurface / (atmosphereRadius - planetRadius);
+
+	//return exp(-height01 * densityFallOff);					// There is always some density
+	return exp(-height01 * densityFallOff) * (1 - height01);	// Density ends at some distance
+}
+
+// Returns distance to sphere surface. If it's not, return maximum floating point.
+// Returns vector(distToSphere, distThroughSphere). 
+//		If rayOrigin is inside sphere, distToSphere = 0. 
+//		If ray misses sphere, distToSphere = maxValue; distThroughSphere = 0.
+glm::vec2 OpticalDepthTable::raySphere(glm::vec3 rayOrigin, glm::vec3 rayDir) const
+{
+	// Number of intersections
+	glm::vec3 offset = rayOrigin - planetCenter;
+	float a = 1;						// Set to dot(rayDir, rayDir) if rayDir might not be normalized
+	float b = 2 * dot(offset, rayDir);
+	float c = glm::dot(offset, offset) - atmosphereRadius * atmosphereRadius;
+	float d = b * b - 4 * a * c;		// Discriminant of quadratic formula (sqrt has 2 solutions/intersections when positive)
+
+	// Two intersections (d > 0)
+	if (d > 0)
+	{
+		float s = sqrt(d);
+		float distToSphereNear = std::max(0.f, (-b - s) / (2 * a));
+		float distToSphereFar = (-b + s) / (2 * a);
+
+		if (distToSphereFar >= 0)		// Ignore intersections that occur behind the ray
+			return glm::vec2(distToSphereNear, distToSphereFar - distToSphereNear);
+	}
+
+	// No intersection (d < 0) or one (d = 0)
+	return glm::vec2(FLT_MAX, 0);			// https://stackoverflow.com/questions/16069959/glsl-how-to-ensure-largest-possible-float-value-without-overflow
+
+	/*
+		/ Line:     y = mx + b
+		\ Circle:   r^2 = x^2 + y^2;	y = sqrt(r^2 - x^2)
+					r^2 = (x - h)^2 + (y - k)^2;	r^2 = X^2 + x^2 + 2Xx + Y^2 + y^2 + 2Yy
+
+		mx + b = sqrt(r^2 - x^2)
+		mmx^2 + b^2 + 2mbx = r^2 - x^2
+		mmx^2 + b^2 + 2mbx - r^2 + x^2  = 0
+		(mm + 1)x^2 + 2mbx + (b^2 - r^2) = 0
+	*/
+
+	//float m = rayDir.y / rayDir.x;	// line's slope
+	//float B = rayOrigin.y;			// line's Y-intercept 
+	//float a = m * m + 1;
+	//float b = 2 * m * B;
+	//float c = B * B - atmosphereRadius * atmosphereRadius;
+	//float d = b * b - 4 * a * c;
+}
+
+DensityVector::DensityVector(float planetRadius, float atmosphereRadius, float stepSize, float densityFallOff)
+{
+	heightSteps = std::ceil((atmosphereRadius - planetRadius) / stepSize);
+	bytes = 4 * heightSteps;
+	table.resize(bytes);
+
+	glm::vec2 point = { 0.f, planetRadius };
+	glm::vec2 planetCenter = { 0.f, 0.f };
+	float heightAboveSurface;
+	float height01;
+	float* density = (float*)table.data();
+
+	for (size_t i = 0; i < heightSteps; i++)
+	{
+		heightAboveSurface = glm::length(point - planetCenter) - planetRadius;
+		height01 = heightAboveSurface / (atmosphereRadius - planetRadius);
+
+		//density[i] = std::exp(-height01 * densityFallOff);					// There is always some density
+		density[i] = std::exp(-height01 * densityFallOff) * (1 - height01);	// Density ends at some distance
+
+		point.y += stepSize;
+	}
+}

@@ -14,23 +14,23 @@ bool QueueFamilyIndices::isComplete()
 	return	graphicsFamily.has_value() && presentFamily.has_value();
 }
 
-Image::Image(VulkanCore& core, VkImage image, VkDeviceMemory memory, VkImageView view, VkSampler sampler) :
+Image::Image(VulkanCore* core, VkImage image, VkDeviceMemory memory, VkImageView view, VkSampler sampler) :
 	c(core), image(image), memory(memory), view(view), sampler(sampler) { }
 
 void Image::createFullImage(uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties, VkImageAspectFlags aspectFlags)
 {
-	c.createImage(image, memory, width, height, mipLevels, numSamples, format, tiling, usage, properties);
-	c.createImageView(view, image, format, aspectFlags, mipLevels);
+	c->createImage(image, memory, width, height, mipLevels, numSamples, format, tiling, usage, properties);
+	c->createImageView(view, image, format, aspectFlags, mipLevels);
 }
 
 void Image::createSampler(VkSamplerCreateInfo& samplerInfo)
 {
-	c.createSampler(sampler, samplerInfo);
+	c->createSampler(sampler, samplerInfo);
 }
 
 void Image::destroy()
 {
-	c.destroyImage(this);
+	c->destroyImage(this);
 }
 
 void VulkanCore::createImage(VkImage& destImage, VkDeviceMemory& destMemory, uint32_t width, uint32_t height, uint32_t mipLevels, VkSampleCountFlagBits numSamples, VkFormat format, VkImageTiling tiling, VkImageUsageFlags usage, VkMemoryPropertyFlags properties)
@@ -1620,6 +1620,8 @@ void RenderPipeline::destroyRenderPipeline()
 		renderPass.destroy(c);
 }
 
+RenderPass::RenderPass(std::vector<Subpass> subpasses) : subpasses(subpasses) {}
+
 void RenderPass::createRenderPass(VkDevice& device, std::vector<VkAttachmentDescription>& allAttachments, std::vector<VkAttachmentReference>& inputAttachments, std::vector<VkAttachmentReference>& colorAttachments, VkAttachmentReference* depthAttachment)
 {
 	VkSubpassDescription subpassDescription{};
@@ -1711,7 +1713,7 @@ void RenderPass::destroy(VulkanCore& c)
 }
 
 RP_DS::RP_DS(VulkanCore& core, SwapChain& swapChain, Commander& commander) 
-	: RenderPipeline(core, swapChain, commander), position(c), albedo(c), normal(c), specRoug(c), depth(c)
+	: RenderPipeline(core, swapChain, commander), position(&c), albedo(&c), normal(&c), specRoug(&c), depth(&c)
 {
 	// Render passes -------------------------
 
@@ -2114,7 +2116,7 @@ void RP_DS::destroyAttachments()
 }
 
 RP_DS_PP::RP_DS_PP(VulkanCore& core, SwapChain& swapChain, Commander& commander)
-	: RenderPipeline(core, swapChain, commander), position(c), albedo(c), normal(c), specRoug(c), depth(c), color(c)
+	: RenderPipeline(core, swapChain, commander), position(&c), albedo(&c), normal(&c), specRoug(&c), depth(&c), color(&c)
 {
 	renderPasses = {
 		RenderPass({ Subpass({ }, 4) }),

@@ -48,14 +48,10 @@ Renderer::~Renderer()
 #endif
 }
 
-void Renderer::addGlobalUbo(const BindingBufferInfo& uboInfo)
+void Renderer::addGlobalUbo(const BindingBuffer& bindBuffer)
 {
-	if (uboInfo.numDescriptors && uboInfo.descriptorSize)
-	{
-		globalBuffers.push_back(BindingBuffer(this, uboInfo));
-		globalBuffers[globalBuffers.size() - 1].createBinding();
-	}
-	else std::cout << "Cannot create binding (size 0)" << std::endl;
+	globalBuffers.push_back(bindBuffer);
+	globalBuffers[globalBuffers.size() - 1].createBuffer(this);
 }
 
 void Renderer::drawFrame()
@@ -233,9 +229,9 @@ void Renderer::drawFrame()
 
 void Renderer::renderLoop()
 {
-#ifdef DEBUG_RENDERER
-	std::cout << typeid(*this).name() << "::" << __func__ << " begin" << std::endl;
-#endif
+	#ifdef DEBUG_RENDERER
+		std::cout << typeid(*this).name() << "::" << __func__ << " begin" << std::endl;
+	#endif
 
 	commander.updateCommandBuffers(models, rp, swapChain.numImages(), commander.getNextFrame());
 	worker.start();
@@ -245,9 +241,9 @@ void Renderer::renderLoop()
 
 	while (!c.io.getWindowShouldClose())
 	{
-#ifdef DEBUG_RENDERLOOP
-		std::cout << "Render loop 1/2 ----------" << std::endl;
-#endif
+		#ifdef DEBUG_RENDERLOOP
+				std::cout << "Render loop 1/2 ----------" << std::endl;
+		#endif
 
 		c.io.pollEvents();	// Check for events (processes only those events that have already been received and then returns immediately)
 		drawFrame();
@@ -255,9 +251,9 @@ void Renderer::renderLoop()
 		if (c.io.isKeyPressed(GLFW_KEY_ESCAPE))
 			c.io.setWindowShouldClose(true);
 
-#ifdef DEBUG_RENDERLOOP
-		std::cout << "Render loop 2/2 ----------" << std::endl;
-#endif
+		#ifdef DEBUG_RENDERLOOP
+				std::cout << "Render loop 2/2 ----------" << std::endl;
+		#endif
 	}
 
 	worker.stop();
@@ -266,9 +262,9 @@ void Renderer::renderLoop()
 
 	cleanup();
 
-#ifdef DEBUG_RENDERER
-	std::cout << typeid(*this).name() << "::" << __func__ << " end" << std::endl;
-#endif
+	#ifdef DEBUG_RENDERER
+		std::cout << typeid(*this).name() << "::" << __func__ << " end" << std::endl;
+	#endif
 }
 
 
@@ -282,8 +278,9 @@ void Renderer::cleanup()
 
 	models.data.clear();   // lock_guard (worker.mutModels) not necessary before this because worker stopped the loading thread.
 
-	for(auto& gUbo : globalBuffers)
-		if (gUbo.getCapacity()) gUbo.destroyBinding();
+	//for(auto& gUbo : globalBuffers)
+	//	if (gUbo.getCapacity()) gUbo.destroyBuffer();
+	globalBuffers.clear();
 
 	commander.freeCommandBuffers();
 	commander.destroySynchronizers();
@@ -404,7 +401,7 @@ void Renderer::updateUBOs(uint32_t imageIndex)
 		{
 			model = &it->second;
 
-			for (const auto& buffer : model->ubos.vsLocal)
+			for (const auto& buffer : model->binds.vsLocal)
 			{
 				bytes = buffer.getSize();
 				if (!bytes) continue;
@@ -413,7 +410,7 @@ void Renderer::updateUBOs(uint32_t imageIndex)
 				vkUnmapMemory(c.device, buffer.bindingMemories[imageIndex]);   // "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
 			}
 
-			for (const auto& buffer : model->ubos.fsLocal)
+			for (const auto& buffer : model->binds.fsLocal)
 			{
 				bytes = buffer.getSize();
 				if (!bytes) continue;
@@ -578,11 +575,9 @@ void Help_RP_DS_PP::createLightingPass(Renderer& ren, unsigned numLights, std::s
 		SL_fromFile::factory(fragShaderPath, { SMod::changeHeader(fragToolsHeader) })
 	};
 	
-	BindingBufferInfo uboInfo(ubo, 1, 1, sizes::vec4 + numLights * sizeof(Light), { "vec4 camPos", "Light lights[NUMLIGHTS]" });
+	BindingBuffer uboInfo(ubo, 1, 1, sizes::vec4 + numLights * sizeof(Light), { "vec4 camPos", "Light lights[NUMLIGHTS]" });
 	
 	VertexType vertexType({ vaPos, vaUv });
-
-	std::vector<TextureLoader*> usedTextures{ };
 
 	ModelDataInfo modelInfo;
 	modelInfo.name = "lightingPass";
@@ -592,8 +587,7 @@ void Help_RP_DS_PP::createLightingPass(Renderer& ren, unsigned numLights, std::s
 	modelInfo.vertexType = vertexType;
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vertexType.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
-	modelInfo.texturesInfo = usedTextures;
-	modelInfo.ubos.fsLocal = { uboInfo };
+	modelInfo.bindings.fsLocal = { uboInfo };
 	modelInfo.transparency = false;
 	modelInfo.renderPassIndex = 1;
 	modelInfo.subpassIndex = 0;
@@ -614,8 +608,6 @@ void Help_RP_DS_PP::createPostprocessingPass(Renderer& ren, std::string vertShad
 
 	VertexType vertexType({ vaPos, vaUv });
 
-	std::vector<TextureLoader*> usedTextures{ };
-
 	ModelDataInfo modelInfo;
 	modelInfo.name = "postprocessingPass";
 	modelInfo.maxNumInstances = 1;
@@ -624,8 +616,7 @@ void Help_RP_DS_PP::createPostprocessingPass(Renderer& ren, std::string vertShad
 	modelInfo.vertexType = vertexType;
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vertexType.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
-	modelInfo.texturesInfo = usedTextures;
-	modelInfo.ubos;
+	modelInfo.bindings;
 	modelInfo.transparency = false;
 	modelInfo.renderPassIndex = 3;
 	modelInfo.subpassIndex = 0;
@@ -647,7 +638,7 @@ void Help_RP_DS_PP::updateLightingPass(Renderer& ren, glm::vec3& camPos, Light* 
 	//	//...
 	//}
 	
-	dest = model->ubos.fsLocal[0].getDescriptor();
+	dest = model->binds.fsLocal[0].getDescriptor();
 	memcpy(dest, &camPos, sizes::vec4);
 	dest += sizes::vec4;
 	memcpy(dest, lights, numLights * sizeof(Light));

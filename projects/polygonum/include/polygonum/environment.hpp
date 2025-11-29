@@ -18,7 +18,6 @@
 
 class ModelsManager;
 
-
 // Macros & names ----------
 
 #define VAL_LAYERS					// Enable Validation layers
@@ -72,7 +71,7 @@ struct SwapChainSupportDetails
 class Image
 {
 public:
-	Image(VulkanCore& core, VkImage image = nullptr, VkDeviceMemory memory = nullptr, VkImageView view = nullptr, VkSampler sampler = nullptr);
+	Image(VulkanCore* core = nullptr, VkImage image = nullptr, VkDeviceMemory memory = nullptr, VkImageView view = nullptr, VkSampler sampler = nullptr);
 
 	void destroy();
 
@@ -85,7 +84,7 @@ public:
 	VkSampler		sampler;	//!< Sampler object (it applies filtering and transformations to an image). It is a distinct object that provides an interface to extract colors from an image. It can be applied to any image you want(1D, 2D or 3D).
 
 private:
-	VulkanCore& c;
+	VulkanCore* c;
 };
 
 /// Creates swap-chain and its images.
@@ -253,7 +252,7 @@ public:
 class RenderPass
 {
 public:
-	RenderPass(std::vector<Subpass> subpasses) : subpasses(subpasses) { }
+	RenderPass(std::vector<Subpass> subpasses);
 
 	void createRenderPass(VkDevice& device, std::vector<VkAttachmentDescription>& allAttachments, std::vector<VkAttachmentReference>& inputAttachments, std::vector<VkAttachmentReference>& colorAttachments, VkAttachmentReference* depthAttachment);
 	void createFramebuffers(VulkanCore& c, SwapChain& swapChain);   //!< Define the swap chain framebuffers and their attachments. Framebuffers directly depend on the swap chain images.

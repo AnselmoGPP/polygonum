@@ -35,8 +35,8 @@ private:
 	std::queue<std::pair<key64, LoadingWorker::Task>> tasks;   //!< FIFO queue
 	std::unordered_map<key64, ModelData> modelTP;   //!< Model To Process: A model is moved here temporarily for processing. After processing, it's tranferred to its final destination.
 
-	bool		stopThread;				//!< Signals whether the secondary thread (loadingThread) should be running.
-	std::thread	thread_loadModels;		//!< Thread for loading new models. Initiated in the constructor. Finished if glfwWindowShouldClose
+	bool stopThread;   //!< Signals whether the secondary thread (loadingThread) should be running.
+	std::thread	thread_loadModels;   //!< Thread for loading new models. Initiated in the constructor. Finished if glfwWindowShouldClose
 
 	/**
 		@brief Load and delete models (including their shaders and textures)
@@ -50,7 +50,6 @@ private:
 	void thread_loadData(Renderer& renderer, ModelsManager& models, Commander& commander);
 	void extractModel(ModelsManager& models, key64 key);   //!< Extract model from "models" to "modelTP"
 	void returnModel(ModelsManager& models, key64 key);   //!< Extract model from "modelTP" to "models"
-
 };
 
 // LOOK Restart the Renderer object after finishing the render loop
@@ -70,7 +69,7 @@ protected:
 	friend ModelData;
 	friend BindingBuffer;
 	friend VertexesLoader;
-	friend TextureLoader;
+	friend Texture;
 
 	VulkanCore c;
 	SwapChain swapChain;					// Final color. Swapchain elements.
@@ -78,8 +77,8 @@ protected:
 	std::shared_ptr<RenderPipeline> rp;		//!< Render pipeline
 	Timer timer, profiler;
 	ModelsManager models;
-	PointersManager<std::string, Texture> textures;			//!< Set of textures
-	PointersManager<std::string, Shader> shaders;			//!< Set of shaders
+	PointersManager<std::string, Texture> textures;
+	PointersManager<std::string, Shader> shaders;
 	LoadingWorker worker;
 
 	size_t renderedFramesCount; //!< Number of frames rendered
@@ -117,7 +116,7 @@ public:
 
 	std::vector<BindingBuffer> globalBuffers;   //!< Shared between models.
 	//std::vector<BindingBuffer> localBuffers;    //!< Particular to each model. Deleted when model is destroyed.
-	void addGlobalUbo(const BindingBufferInfo& uboInfo);
+	void addGlobalUbo(const BindingBuffer& bindbuffer);
 
 	void renderLoop();	//!< Create command buffer and start render loop.
 

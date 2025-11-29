@@ -1,10 +1,13 @@
-#ifndef TEXTURE_HPP
-#define TEXTURE_HPP
+#ifndef IMPORTER_HPP
+#define IMPORTER_HPP
 
-#include "polygonum/environment.hpp"
-#include "polygonum/ubo.hpp"
+//#include "polygonum/environment.hpp"
+//#include "polygonum/ubo.hpp"
+//#include "polygonum/renderer.hpp"
+#include "polygonum/vertex.hpp"
+#include "polygonum/shader.hpp"
 
-#include <unordered_map>
+//#include <unordered_map>
 
 /*
 	1. A VertexesLoader, ShaderLoader and TextureLoader objects are passed to our ModelData.
@@ -30,477 +33,43 @@ class ModelData;
 
 // Declarations ----------
 
-class VertexType;
-class VertexSet;
-struct VertexData;
-class VertexesLoader;
-	class VL_fromFile;
-	class VL_fromBuffer;
+//class VertexType;
+//class VertexSet;
+//struct VertexData;
+//class VertexesLoader;
+//	class VL_fromFile;
+//	class VL_fromBuffer;
 
-class Shader;
-class SMod;
-class ShaderLoader;
-class SLModule;
-	class SLM_fromFile;
-	class SLM_fromBuffer;
-class ShaderIncluder;
-class ShaderCreator;
+//class Shader;
+//class SMod;
+//class ShaderLoader;
+//	class SL_fromFile;
+//	class SL_fromBuffer;
+//class ShaderIncluder;
+//class ShaderCreator;
 
-class Texture;
-class TextureLoader;
-class TLModule;
-	class TLM_fromFile;
-	class TLM_fromBuffer;
+//class Texture;
+//class TextureLoader;// <<< quit
+//	class Tex_fromFile;
+//	class Tex_fromBuffer;
 
-struct ResourcesLoader;
-
-class OpticalDepthTable;
-class DensityVector;
+//struct ResourcesLoader;
+//
+//class OpticalDepthTable;
+//class DensityVector;
 
 // Objects ----------
 
-typedef std::list<Shader >::iterator shaderIter;
-typedef std::list<Texture>::iterator texIter;
+//typedef std::list<Shader >::iterator shaderIter;
+//typedef std::list<Texture>::iterator texIter;
 
-extern std::vector<TextureLoader> noTextures;		//!< Vector with 0 TextureLoader objects
-extern std::vector<uint16_t   > noIndices;			//!< Vector with 0 indices
+//extern std::vector<TextureLoader> noTextures;		//!< Vector with 0 TextureLoader objects
+//extern std::vector<uint16_t   > noIndices;			//!< Vector with 0 indices
 
 // Enums ----------
 
-enum VertAttrib { vaPos, vaNorm, vaTan, vaCol, vaCol4, vaUv, vaFixes, vaBoneWeights, vaBoneIndices, vaInstanceTransform, vaMax };
-enum TexType { tAlb, tSpec, tRoug, tSpecroug, tNorm, tUndef, texMax };
-enum RPtype { geometry, lighting, forward, postprocessing };
 
-// Definitions ----------
-
-// VERTICES --------------------------------------------------------
-
-/// VertexType defines the characteristics of a vertex: size and type of attributes the vertex is made of (Position, Color, Texture coordinates, Normals...).
-class VertexType
-{
-	VertexType(std::initializer_list<uint32_t> attribsSizes, std::initializer_list<VkFormat> attribsFormats);	//!< Not used. Set the size (bytes) and type of each vertex attribute (Position, Color, Texture coords, Normal, other...).
-
-	VkFormat getFormat(VertAttrib attribute);   //!< Maps VertAttrib to VkFormat.
-	unsigned getSize(VkFormat format);   //!< Maps VkFormat to size (bytes).
-
-public:
-	VertexType(std::initializer_list<VertAttrib> vertexAttributes);
-	VertexType();
-	~VertexType();
-	VertexType& operator=(const VertexType& obj);				//!< Copy assignment operator overloading. Required for copying a VertexSet object.
-
-	VkVertexInputBindingDescription getBindingDescription() const;						//!< Used for passing the binding number and the vertex stride (usually, vertexSize) to the graphics pipeline.
-	std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions() const;	//!< Used for passing the format, location and offset of each vertex attribute to the graphics pipeline.
-
-	std::vector<VkFormat> attribsFormats;			//!< Format (VkFormat) of each vertex attribute. E.g.: VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32_SFLOAT...
-	std::vector<uint32_t> attribsSizes;				//!< Size of each attribute type. E.g.: 3 * sizeof(float)...
-	uint32_t vertexSize;							//!< Size (bytes) of a vertex object
-	std::vector<VertAttrib> attribsTypes; // <<< set to map?
-};
-
-/// Container for any object type, similarly to a std::vector, but storing such objects directly in bytes (char array). This allows ModelData objects store different Vertex types in a clean way (otherwise, templates and inheritance would be required, but code would be less clean).
-class VertexSet
-{
-public:
-	VertexSet();
-	VertexSet(size_t vertexSize);
-	~VertexSet();
-	VertexSet& operator=(const VertexSet& obj);	// Not used
-	VertexSet(const VertexSet& obj);			//!< Copy constructor
-
-	size_t vertexSize;
-
-	size_t totalBytes() const;
-	size_t size() const;
-	char* data() const;
-	void push_back(const void* element);
-	void reserve(unsigned size);
-	void reset(uint32_t vertexSize, uint32_t numOfVertex, const void* buffer);	//!< Similar to a copy constructor, but just using its parameters instead of an already existing object.
-	void reset(uint32_t vertexSize);
-
-	// Debugging purposes
-	void* getElement(size_t i) const;		//!< Get pointer to element
-	void printElement(size_t i) const;		//!< Print vertex floats
-	void printAllElements() const;	//!< Print vertex floats of all elements
-	uint32_t getNumVertex() const;
-
-private:
-	char* buffer;			// Set of vertex objects stored directly in bytes
-	unsigned int capacity;	// (resizable) Maximum number of vertex objects that fit in buffer
-	uint32_t numVertex;		// Number of vertex objects stored in buffer
-};
-
-/// Container for buffers for Vertexes (position, color, texture coordinates...) and Indices.
-struct VertexData
-{
-	// Vertices
-	uint32_t					 vertexCount;
-	VkBuffer					 vertexBuffer;			//!< Opaque handle to a buffer object (here, vertex buffer).
-	VkDeviceMemory				 vertexBufferMemory;	//!< Opaque handle to a device memory object (here, memory for the vertex buffer).
-
-	// Indices
-	uint32_t					 indexCount;			// <<< BUG WITH POINTS (= 7340144)
-	VkBuffer					 indexBuffer;			//!< Opaque handle to a buffer object (here, index buffer).
-	VkDeviceMemory				 indexBufferMemory;		//!< Opaque handle to a device memory object (here, memory for the index buffer).
-};
-
-/// Apply modifications to vertices right after loading them. Assumes vertexes start with position and then normals.
-class VerticesModifier
-{
-protected:
-	glm::vec4 params;   // Used for scaling, rotating, or translating
-
-public:
-	VerticesModifier(glm::vec4 params);
-	virtual ~VerticesModifier();
-
-	virtual void modify(VertexSet& rawVertices) = 0;
-};
-
-class VerticesModifier_Scale : public VerticesModifier
-{
-public:
-	VerticesModifier_Scale(glm::vec3 scale);
-
-	void modify(VertexSet& rawVertices) override;
-	static VerticesModifier_Scale* factory(glm::vec3 scale);
-};
-
-class VerticesModifier_Rotation : public VerticesModifier
-{
-public:
-	VerticesModifier_Rotation(glm::vec4 rotationQuaternion);
-
-	void modify(VertexSet& rawVertices) override;
-	static VerticesModifier_Rotation* factory(glm::vec4 rotation);
-};
-
-class VerticesModifier_Translation : public VerticesModifier
-{
-public:
-	VerticesModifier_Translation(glm::vec3 position);
-
-	void modify(VertexSet& rawVertices) override;
-	static VerticesModifier_Translation* factory(glm::vec3 position);
-};
-
-/// ADT for loading vertices from any source. Subclasses will define how data is taken from source (getRawData): from file, from buffer, etc.
-class VertexesLoader
-{
-protected:
-	VertexesLoader(size_t vertexSize, std::initializer_list<VerticesModifier*> modifiers);
-
-	const uint32_t vertexSize;	//!< Size (bytes) of a vertex object
-	std::vector<VerticesModifier*> modifiers;
-	
-	virtual void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources) = 0;   //!< Get vertexes and indices from source. Subclasses define this.
-	void createBuffers(VertexData& result, const VertexSet& rawVertices, const std::vector<uint16_t>& rawIndices, Renderer& r);	//!< Upload raw vertex data to Vulkan (i.e., create Vulkan buffers)
-	void applyModifiers(VertexSet& vertexes);
-
-	void createVertexBuffer(const VertexSet& rawVertices, VertexData& result, Renderer& r);									//!< Vertex buffer creation.
-	void createIndexBuffer(const std::vector<uint16_t>& rawIndices, VertexData& result, Renderer& r);							//!< Index buffer creation
-
-	glm::vec3 getVertexTangent(const glm::vec3& v1, const glm::vec3& v2, const glm::vec3& v3, const glm::vec2 uv1, const glm::vec2 uv2, const glm::vec2 uv3);
-
-public:
-	virtual ~VertexesLoader();
-	virtual VertexesLoader* clone() = 0;		//!< Create a new object of children type and return its pointer.
-
-	void loadVertexes(VertexData& result, ResourcesLoader* resources, Renderer& r);   //!< Get vertexes from source and store them in "result" ("resources" is used to store additional resources, if they exist).
-};
-
-/// Pass all the vertices at construction time. Call to getRawData will pass these vertices.
-class VL_fromBuffer : public VertexesLoader
-{
-	VL_fromBuffer(const void* verticesData, uint32_t vertexSize, uint32_t vertexCount, const std::vector<uint16_t>& indices, std::initializer_list<VerticesModifier*> modifiers);
-
-	VertexSet rawVertices;
-	std::vector<uint16_t> rawIndices;
-
-	void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources) override;
-
-public:
-	static VL_fromBuffer* factory(const void* verticesData, size_t vertexSize, size_t vertexCount, const std::vector<uint16_t>& indices, std::initializer_list<VerticesModifier*> modifiers = {});
-	VertexesLoader* clone() override;
-};
-
-/// Call to getRawData process a graphics file (OBJ, ...) and gets the meshes. Assumes vertexes are: position, normal, texture coordinates. <<< Problem: This takes all the meshes in each node and stores them together. However, meshes from different nodes have their own indices, all of them in the range [0, number of vertices in the mesh). Since each mesh is an independent object, they cannot be put together without messing up with the indices (they should be stored as different models). 
-class VL_fromFile : public VertexesLoader
-{
-	VL_fromFile(std::string filePath, std::initializer_list<VerticesModifier*> modifiers);	//!< vertexSize == (3+3+2) * sizeof(float)
-
-	std::string path;
-
-	VertexSet* vertices;
-	std::vector<uint16_t>* indices;
-	ResourcesLoader* resources;   //!< Stores textures in case they're included by the file
-
-	void processNode(const aiScene* scene, aiNode* node);					//!< Recursive function. It goes through each node getting all the meshes in each one.
-	void processMeshes(const aiScene* scene, std::vector<aiMesh*>& meshes);	//!< Get Vertex data, Indices, and Resources (textures).
-
-	void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ResourcesLoader& destResources) override;
-
-public:
-	static VL_fromFile* factory(std::string filePath, std::initializer_list<VerticesModifier*> modifiers = {});	//!< From file (vertexSize == (3+3+2) * sizeof(float))
-	VertexesLoader* clone() override;
-};
-
-
-// SHADER --------------------------------------------------------
-
-// Container for a shader.
-class Shader : public InterfaceForPointersManagerElements<std::string, Shader>
-{
-public:
-	Shader(VulkanCore& c, const std::string id, VkShaderModule shaderModule);
-	~Shader();
-
-	VulkanCore& c;   //!< Used in destructor.
-	const std::string id;   //!< Used for checking whether a shader to load is already loaded.
-	const VkShaderModule shaderModule;
-};
-
-/// Shader modification. Change that can be applied to a shader (via applyModification()) before compilation (preprocessing operations). Constructible through a factory method. 
-class SMod
-{
-public:
-	bool applyModification(std::string& shader);
-	unsigned getModType();
-	std::vector<std::string> getParams();
-
-	// Factory methods
-	static SMod none();   // nothing changes
-	static SMod albedo(std::string index);   // get albedo map from texture sampler
-	static SMod specular(std::string index);   // get specular map from texture sampler
-	static SMod roughness(std::string index);   // get roughness map from texture sampler
-	static SMod normal();   // get normal map from texture sampler
-	static SMod discardAlpha();   // discard fragments with less than X alpha value
-	static SMod backfaceNormals();   // 
-	static SMod sunfaceNormals();   // 
-	static SMod verticalNormals();   // 
-	static SMod wave(std::string speed, std::string amplitude, std::string minHeight);   // make mesh wave (sine wave)
-	static SMod distDithering(std::string near, std::string far);   // apply dithering to distant objects
-	static SMod earlyDepthTest();   // 
-	static SMod dryColor(std::string color, std::string minHeight, std::string maxHeight);   // 
-	static SMod changeHeader(std::string path);   // 
-
-private:
-	SMod(unsigned modificationType, std::initializer_list<std::string> params = { });
-
-	bool findStrAndErase(std::string& text, const std::string& str);										//!< Find string and erase it.
-	bool findStrAndReplace(std::string& text, const std::string& str, const std::string& replacement);		//!< Find string and replace it with another.
-	bool findStrAndReplaceLine(std::string& text, const std::string& str, const std::string& replacement);	//!< Find string and replace from beginning of string to end-of-line.
-	bool findTwoAndReplaceBetween(std::string& text, const std::string& str1, const std::string& str2, const std::string& replacement);	//!< Find two sub-strings and replace what is in between the beginning of string 1 and end of string 2.
-
-	unsigned modificationType;
-	std::vector<std::string> params;
-};
-
-/// ADT for loading a shader from any source. Subclasses will define how data is taken from source (getRawData): from file, from buffer, etc.
-class ShaderLoader
-{
-	std::vector<SMod> mods;				//!< Modifications to the shader.
-	void applyModifications(std::string& shader);	//!< Applies modifications defined by "mods".
-
-protected:
-	ShaderLoader(const std::string& id, const std::initializer_list<SMod>& modifications);
-	virtual void getRawData(std::string& glslData) = 0;
-
-	std::string id;
-
-public:
-	virtual ~ShaderLoader() { };
-
-	std::shared_ptr<Shader> loadShader(PointersManager<std::string, Shader>& loadedShaders, VulkanCore& c);	//!< Get an iterator to the shader in loadedShaders. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
-	virtual ShaderLoader* clone() = 0;
-};
-
-/// Pass the shader as a string at construction time. Call to getRawData will pass that string.
-class SL_fromBuffer : public ShaderLoader
-{
-	SL_fromBuffer(const std::string& id, const std::string& glslText, const std::initializer_list<SMod>& modifications);
-	void getRawData(std::string& glslData) override;
-
-	std::string data;
-
-public:
-	static SL_fromBuffer* factory(std::string id, const std::string& glslText, std::initializer_list<SMod> modifications = {});
-	ShaderLoader* clone() override;
-};
-
-/// Pass a text file path at construction time. Call to getRawData gets the shader from that file.
-class SL_fromFile : public ShaderLoader
-{
-	SL_fromFile(const std::string& filePath, std::initializer_list<SMod>& modifications);
-	void getRawData(std::string& glslData) override;
-
-	std::string filePath;
-
-public:
-	static SL_fromFile* factory(std::string filePath, std::initializer_list<SMod> modifications = {});
-	ShaderLoader* clone() override;
-};
-
-
-/**
-	Includer interface for being able to "#include" headers data on shaders
-	Renderer::newShader():
-		- readFile(shader)
-		- shaderc::CompileOptions < ShaderIncluder
-		- shaderc::Compiler::PreprocessGlsl()
-			- Preprocessor directive exists?
-				- ShaderIncluder::GetInclude()
-				- ShaderIncluder::ReleaseInclude()
-				- ShaderIncluder::~ShaderIncluder()
-		- shaderc::Compiler::CompileGlslToSpv
-*/
-class ShaderIncluder : public shaderc::CompileOptions::IncluderInterface
-{
-public:
-	~ShaderIncluder() { };
-
-	// Handles shaderc_include_resolver_fn callbacks.
-	shaderc_include_result* GetInclude(const char* sourceName, shaderc_include_type type, const char* destName, size_t includeDepth) override;
-
-	// Handles shaderc_include_result_release_fn callbacks.
-	void ReleaseInclude(shaderc_include_result* data) override;
-};
-
-
-/**
-	Helper class for creating shaders for the render pipeline RP_DS_PP.
-	It creates the vertex (VS) and fragment (FS) shader for a given sub-pass (RPtype).
-*/
-class ShaderCreator
-{
-public:
-	ShaderCreator(RPtype rendPass, const VertexType& vertexType, const UboSetInfo& ubos, const std::vector<TextureLoader*>& textures);
-
-	struct ShaderCode
-	{
-		std::vector <std::string> header;
-		std::vector <std::string> includes;
-		std::vector <std::string> flags;
-		std::vector <std::string> structs;
-		std::vector <BindingBufferInfo> bind_globalBuffers;
-		std::vector <BindingBufferInfo> bind_localBuffers;
-		std::vector <unsigned> bind_textures;
-		std::vector <std::string> input;
-		std::vector <std::string> output;
-		std::vector <std::string> globals;
-		std::vector <std::string> main_begin;
-		std::vector <std::string> main_processing;
-		std::vector <std::string> main_end;
-		std::vector <std::string> others;
-	};
-
-	ShaderCode vs, fs;
-
-	std::string getShader(unsigned shaderType);   //!< 0 (vertex), 1 (fragment)
-	void printShader(unsigned shaderType);
-	void printAllShaders();
-
-	ShaderCreator& replaceMainBegin(unsigned shaderType, std::string& text, const std::string& substring, const std::string& replacement);   //!< Replace an entire line in main_begin with your own if it contains certain substring.
-	ShaderCreator& replaceMainEnd(unsigned shaderType, std::string& text, const std::string& substring, const std::string& replacement);   //!< Replace an entire line in main_end with your own if it contains certain substring.
-	ShaderCreator& setVerticalNormals();   //!< (VS) Make all normals vertical (0,0,1) before MVP transformation.
-
-private:
-
-	RPtype rpType;
-
-	void setVS();
-	void setFS_forward();
-	void setFS_geometry();
-	ShaderCreator& setForward();   // Shaders for a Forward pass
-	ShaderCreator& setGeometry();   // Shaders for a Geometry pass
-
-	void setBasics();
-	void setBindings(const UboSetInfo& ubos, const std::vector<TextureLoader*>& textures);
-	void setVS_general(const VertexType& vertexType);
-	void setForward(const VertexType& vertexType, const std::vector<TextureLoader*>& textures);
-	void setGeometry(const VertexType& vertexType, const std::vector<TextureLoader*>& textures);
-	void setLighting();   // Shaders for a Lighting pass
-	void setPostprocess();   // Shaders for a Postprocessing pass
-
-	unsigned firstBindingNumber(unsigned shaderType);
-	BindingBufferType getDescType(const BindingBuffer* bindBuffer);
-	std::string getBuffer(const BindingBufferInfo& buffer, unsigned bindingName, unsigned nameName, bool isGlobal);
-	std::unordered_map<VertAttrib, unsigned> usedAttribTypes(const VertexType& vertexType);
-	std::unordered_map<TexType, unsigned> usedTextureTypes(const std::vector<TextureLoader*>& textures);
-
-	bool replaceAllIfContains(std::string& text, const std::string& substring, const std::string& replacement);
-	bool findTwoAndReplaceBetween(std::string& text, const std::string& str1, const std::string& str2, const std::string& replacement);
-	bool findStrAndErase(std::string& text, const std::string& str);
-	bool findStrAndReplace(std::string& text, const std::string& str, const std::string& replacement);
-	bool findStrAndReplaceLine(std::string& text, const std::string& str, const std::string& replacement);
-};
-
-
-// TEXTURE --------------------------------------------------------
-
-/// Container for a texture.
-class Texture : public InterfaceForPointersManagerElements<std::string, Texture>
-{
-public:
-	Texture(const std::string& id, VulkanCore& c, VkImage textureImage, VkDeviceMemory textureImageMemory, VkImageView textureImageView, VkSampler textureSampler, TexType type);
-	~Texture();
-
-	const std::string id;   //!< Used for checking whether the texture to load is already loaded.
-	const TexType type;   //!< Used for shader creation.
-
-	Image texture;
-};
-
-/// ADT for loading a texture from any source. Subclasses will define how data is taken from source (getRawData): from file, from buffer, etc.
-class TextureLoader
-{
-protected:
-	TextureLoader(const std::string& id, VkFormat imageFormat, VkSamplerAddressMode addressMode, TexType type);
-
-	virtual void getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) = 0;	//!< Get pixels, texWidth, texHeight, 
-
-	std::pair<VkImage, VkDeviceMemory> createTextureImage(unsigned char* pixels, int32_t texWidth, int32_t texHeight, uint32_t& mipLevels, Renderer& r);
-	VkImageView                        createTextureImageView(VkImage textureImage, uint32_t mipLevels, VulkanCore& c);
-	VkSampler                          createTextureSampler(uint32_t mipLevels, VulkanCore& c);
-
-	std::string id;
-	VkFormat imageFormat;
-	VkSamplerAddressMode addressMode;
-
-public:
-	virtual ~TextureLoader() { };
-	std::shared_ptr<Texture> loadTexture(PointersManager<std::string, Texture>& loadedTextures, Renderer& r);	//!< Get an iterator to the Texture in loadedTextures list. If it's not in that list, it loads it, saves it in the list, and gets the iterator. 
-	virtual TextureLoader* clone() = 0;
-
-	TexType type;
-};
-
-/// Pass the texture as vector of bytes (unsigned char) at construction time. Call to getRawData will pass that string.
-class TL_fromBuffer : public TextureLoader
-{
-	TL_fromBuffer(const std::string& id, unsigned char* pixels, int texWidth, int texHeight, VkFormat imageFormat, VkSamplerAddressMode addressMode, TexType type);
-	void getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) override;
-
-	std::vector<unsigned char> data;
-	int32_t texWidth, texHeight;
-
-public:
-	static TL_fromBuffer* factory(const std::string id, unsigned char* pixels, int texWidth, int texHeight, TexType texType = tUndef, VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
-	TextureLoader* clone() override;
-};
-
-/// Pass a texture file path at construction time. Call to getRawData gets the texture from that file.
-class TL_fromFile : public TextureLoader
-{
-	TL_fromFile(const std::string& filePath, VkFormat imageFormat, VkSamplerAddressMode addressMode, TexType type);
-	void getRawData(unsigned char*& pixels, int32_t& texWidth, int32_t& texHeight) override;
-
-	std::string filePath;
-
-public:
-	static TL_fromFile* factory(const std::string filePath, TexType texType = tUndef, VkFormat imageFormat = VK_FORMAT_R8G8B8A8_SRGB, VkSamplerAddressMode addressMode = VK_SAMPLER_ADDRESS_MODE_REPEAT);
-	TextureLoader* clone() override;
-};
+enum ShaderType { vertexS, fragS };
 
 
 // RESOURCES --------------------------------------------------------
@@ -508,53 +77,14 @@ public:
 /// Encapsulates data required for loading resources (vertices, indices, shaders, textures) and loading methods.
 struct ResourcesLoader
 {
-	ResourcesLoader(VertexesLoader* VertexesLoader, std::vector<ShaderLoader*>& shadersInfo, std::vector<TextureLoader*>& texturesInfo);
+	ResourcesLoader(VertexesLoader* vertexesLoader, std::vector<ShaderLoader*>& shadersInfo);
 
 	std::shared_ptr<VertexesLoader> vertices;
 	std::vector<ShaderLoader*> shaders;
-	std::vector<TextureLoader*> textures;
+	//std::vector<TextureLoader*> textures;
 
 	/// Get resources (vertices + indices, shaders, textures) from any source (file, buffer...) and upload them to Vulkan. If a shader or texture exists in Renderer, it just takes the iterator. As a result, `ModelData` can get the Vulkan buffers (`VertexData`, `shaderIter`s, `textureIter`s).
 	void loadResources(ModelData& model, Renderer& rend);
 };
-
-
-// OTHERS --------------------------------------------------------
-
-/// Precompute all optical depth values through the atmosphere. Useful for creating a lookup table for atmosphere rendering.
-class OpticalDepthTable
-{
-	glm::vec3 planetCenter{ 0.f, 0.f, 0.f };
-	unsigned planetRadius;
-	unsigned atmosphereRadius;
-	unsigned numOptDepthPoints;
-	float heightStep;
-	float angleStep;
-	float densityFallOff;
-
-	float opticalDepth(glm::vec3 rayOrigin, glm::vec3 rayDir, float rayLength) const;
-	float densityAtPoint(glm::vec3 point) const;
-	glm::vec2 raySphere(glm::vec3 rayOrigin, glm::vec3 rayDir) const;
-
-public:
-	OpticalDepthTable(unsigned numOptDepthPoints, unsigned planetRadius, unsigned atmosphereRadius, float heightStep, float angleStep, float densityFallOff);
-
-	std::vector<unsigned char> table;
-	size_t heightSteps;
-	size_t angleSteps;
-	size_t bytes;
-};
-
-/// Precompute all density values through the atmosphere. Useful for creating a lookup table for atmosphere rendering.
-class DensityVector
-{
-public:
-	DensityVector(float planetRadius, float atmosphereRadius, float stepSize, float densityFallOff);
-
-	std::vector<unsigned char> table;
-	size_t heightSteps;
-	size_t bytes;
-};
-
 
 #endif

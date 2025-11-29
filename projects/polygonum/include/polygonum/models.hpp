@@ -1,16 +1,18 @@
 #ifndef MODELS_HPP
 #define MODELS_HPP
 
-//#include <functional>						// std::function (function wrapper that stores a callable object)
+//#include <functional>   // std::function (function wrapper that stores a callable object)
 #include <mutex>
 
-#include "polygonum/ubo.hpp"
-#include "polygonum/importer.hpp"
+#include "polygonum/bindings.hpp"   // buffers & textures
+#include "polygonum/vertex.hpp"
+#include "polygonum/shader.hpp"
 
 // Forward declarations ----------
 
 class Renderer;
 class RenderPipeline;
+class ResourcesLoader;
 
 // Declarations ----------
 
@@ -33,8 +35,7 @@ struct ModelDataInfo
 	VertexType vertexType;						//!< VertexType defines the characteristics of a vertex (size and type of the vertex' attributes: Position, Color, Texture coordinates, Normals...).
 	VertexesLoader* vertexesLoader;				//!< Info for loading vertices from any source.
 	std::vector<ShaderLoader*> shadersInfo;		//!< Shaders info
-	std::vector<TextureLoader*> texturesInfo;	//!< Textures info
-	UboSetInfo ubos;
+	BindingSet bindings;
 	bool transparency;
 	uint32_t renderPassIndex;					//!< 0 (geometry pass), 1 (lighting pass), 2 (forward pass), 3 (postprocessing pass)
 	uint32_t subpassIndex;
@@ -92,9 +93,9 @@ class ModelData
 
 public:
 	ModelData(Renderer* renderer = nullptr, ModelDataInfo& modelInfo = ModelDataInfo());   //!< Construct an object for rendering
-	virtual ~ModelData();
 	ModelData(ModelData&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
-	ModelData& ModelData::operator=(ModelData&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
+	virtual ~ModelData();
+	ModelData& operator=(ModelData&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
 
 	ModelData& fullConstruction(Renderer &ren);   //!< Creates graphic pipeline and descriptor sets, and loads data for creating buffers (vertex, indices, textures). Useful in a second thread
 
@@ -107,12 +108,10 @@ public:
 	VkPipelineLayout				pipelineLayout;		//!< Pipeline layout. Allows to use uniform values in shaders (globals similar to dynamic state variables that can be changed at drawing time to alter the behavior of your shaders without having to recreate them).
 	VkPipeline						graphicsPipeline;	//!< Opaque handle to a pipeline object.
 
-	std::vector<std::shared_ptr<Texture>> textures;		//!< Set of textures used by this model.
 	std::vector<std::shared_ptr<Shader>>  shaders;		//!< Vertex shader (0), Fragment shader (1)
 
 	VertexData						vert;				//!< Vertex data + Indices
-
-	UboSet							ubos;
+	BindingSet						binds;				//!< All bindings (buffers and textures).
 	VkDescriptorSetLayout			descriptorSetLayout;//!< Opaque handle to a descriptor set layout object (combines all of the descriptor bindings).
 	VkDescriptorPool				descriptorPool;		//!< Opaque handle to a descriptor pool object.
 	std::vector<VkDescriptorSet>	descriptorSets;		//!< List. Opaque handle to a descriptor set object. One for each swap chain image.

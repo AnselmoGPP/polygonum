@@ -16,8 +16,6 @@ struct LightPosDir;
 struct LightProps;
 
 struct Material;
-struct UBO;
-
 
 // Definitions ----------
 
@@ -47,6 +45,68 @@ namespace sizes {
 };
 
 enum BindingBufferType { ubo, ssbo, undef };
+
+/*
+struct BindingInfo
+{
+	virtual ~BindingInfo();
+
+	template<typename T, typename... Args>
+	static std::shared_ptr<T> create(Args&&... args);   // Factory method (not used)
+};
+
+template<typename T, typename... Args>
+std::shared_ptr<T> BindingInfo::create(Args&&... args)
+{
+	if (std::is_base_of_v<BindingInfo, T> == false)
+		throw std::runtime_error("Not valid object type.");
+
+	return std::make_shared<T>(std::forward<Args>(args)...);
+}
+*/
+
+/// Container for a binding of uniform buffers, which is an array of uniform buffer descriptors (UBOs). Multiple UBOs are useful for instance rendering.
+/// A UBO array is a type of Binding. A Binding is an array of descriptors. Each descriptor has attributes. There're different types of descriptors (UBO, sampler...).
+struct BindingBuffer
+{
+private:
+	VulkanCore* c;
+	SwapChain* swapChain;
+
+	uint32_t size;   //!< Bytes we want to update.
+
+	uint32_t alignedDescriptorSize(size_t numDescriptors, BindingBufferType descriptorType, size_t originalDescriptorSize);
+
+public:
+	BindingBuffer(BindingBufferType type, uint32_t numDescriptors, uint32_t numSubDescriptors, VkDeviceSize descriptorSize, const std::vector<std::string>& glslLines = { });
+	BindingBuffer(const BindingBuffer& obj);
+	BindingBuffer(BindingBuffer&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
+	BindingBuffer& operator=(const BindingBuffer& obj);
+	~BindingBuffer();
+	//BindingBuffer& operator=(BindingBuffer&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
+
+	VkDescriptorType			type;				//!< Descriptor type.
+	VkBufferUsageFlagBits		usage;
+	uint32_t					numDescriptors;		//!< Max. possible number of descriptors. This is fixed because it's fixed in the shader.
+	VkDeviceSize				descriptorSize;		//!< Size (bytes) of each aligned descriptor (example: 4) (at least, minUBOffsetAlignment)
+	size_t						numSubDescriptors;	//!< Useful when the descriptor is an array (used for instance rendering).
+
+	std::vector<uint8_t>		binding;			//!< Array of UBOs will be passed to vertex shader (MVP, M for normals, light...). Its attributes are aligned to 16-byte boundary.
+	std::vector<VkBuffer>		bindingBuffers;		//!< Opaque handle to a buffer object (here, a binding). One for each swap chain image.
+	std::vector<VkDeviceMemory>	bindingMemories;	//!< Opaque handle to a device memory object (here, memory for the binding). One for each swap chain image.
+
+	std::vector<std::string> glslLines;				//!< (Optional) Used in ShaderCreator
+
+	void createBuffer(Renderer* rend);				//!< Create uniform buffers (type of descriptors that can be bound) (VkBuffer & VkDeviceMemory), one for each swap chain image. At least one is created (if count == 0, a buffer of size "range" is created).
+	void destroyBuffer();							//!< Destroy the uniform buffers (VkBuffer) and their memories (VkDeviceMemory).
+
+	bool isFullyConstructed();
+	uint8_t* getDescriptor(size_t index = 0);
+	uint32_t getCapacity() const;
+	uint32_t getSize() const;
+	void setSize(uint32_t newSize);
+	void setSize_subs(uint32_t numActiveSubDescriptors);   //!< Set size based on a number of subDescriptors.
+};
 
 struct Light
 {
@@ -121,96 +181,6 @@ struct Material
 	alignas(16) float shininess;
 };
 
-struct BindingInfo
-{
-	virtual ~BindingInfo();
-
-	template<typename T, typename... Args>
-	static std::shared_ptr<T> create(Args&&... args);   // Factory method (not used)
-};
-
-template<typename T, typename... Args>
-std::shared_ptr<T> BindingInfo::create(Args&&... args)
-{
-	if (std::is_base_of_v<BindingInfo, T> == false)
-		throw std::runtime_error("Not valid object type.");
-
-	return std::make_shared<T>(std::forward<Args>(args)...);
-}
-
-/// A UBO array is a type of Binding. A Binding is an array of descriptors. Each descriptor has attributes. There're different types of descriptors (UBO, sampler...).
-struct BindingBufferInfo
-{
-	BindingBufferInfo(BindingBufferType descriptorType, size_t numDescriptors, size_t numSubDescriptors, size_t descriptorSize, const std::vector<std::string>& glslLines = {});
-
-	BindingBufferType descriptorType;
-	size_t numDescriptors;   //!< Number of UBOs or SSBOs
-	size_t descriptorSize;
-	size_t numSubDescriptors;   //!< Useful when the descriptor is an array (used for instance rendering).
-
-	std::vector<std::string> glslLines;   //!< (Optional) Used in ShaderCreator
-};
-
-/// Container for a binding of uniform buffers, which is an array of uniform buffer descriptors (UBOs). Multiple UBOs are useful for instance rendering.
-struct BindingBuffer
-{
-private:
-	VulkanCore* c;
-	SwapChain* swapChain;
-
-	uint32_t size;   //!< Bytes we want to update.
-
-	uint32_t alignedDescriptorSize(size_t numDescriptors, BindingBufferType descriptorType, size_t originalDescriptorSize);
-
-public:
-	BindingBuffer(Renderer* renderer, const BindingBufferInfo& bindingInfo);
-	BindingBuffer(BindingBuffer&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
-	//BindingBuffer();
-	~BindingBuffer() = default;
-	//BindingBuffer& operator=(BindingBuffer&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
-
-	VkDescriptorType			type;
-	VkBufferUsageFlagBits		usage;
-	const uint32_t				numDescriptors;		//!< Max. possible number of descriptors. This is fixed because it's fixed in the shader.
-	const VkDeviceSize			descriptorSize;		//!< Size (bytes) of each aligned descriptor (example: 4) (at least, minUBOffsetAlignment)
-	size_t numSubDescriptors;   //!< Useful when the descriptor is an array (used for instance rendering).
-
-	std::vector<uint8_t>		binding;			//!< Array of UBOs will be passed to vertex shader (MVP, M for normals, light...). Its attributes are aligned to 16-byte boundary.
-	std::vector<VkBuffer>		bindingBuffers;		//!< Opaque handle to a buffer object (here, a binding). One for each swap chain image.
-	std::vector<VkDeviceMemory>	bindingMemories;	//!< Opaque handle to a device memory object (here, memory for the binding). One for each swap chain image.
-
-	std::vector<std::string> glslLines;				//!< (Optional) Used in ShaderCreator
-
-	void createBinding();							//!< Create uniform buffers (type of descriptors that can be bound) (VkBuffer & VkDeviceMemory), one for each swap chain image. At least one is created (if count == 0, a buffer of size "range" is created).
-	void destroyBinding();							//!< Destroy the uniform buffers (VkBuffer) and their memories (VkDeviceMemory).
-
-	uint8_t* getDescriptor(size_t index = 0);
-	uint32_t getCapacity() const;
-	uint32_t getSize() const;
-	void setSize(uint32_t newSize);
-	void setSize_subs(uint32_t numActiveSubDescriptors);   //!< Set size based on a number of subDescriptors.
-};
-
-struct UboSetInfo
-{
-	std::vector<BindingBuffer*> vsGlobal;
-	std::vector<BindingBuffer*> fsGlobal;
-	std::vector<BindingBufferInfo> vsLocal;   //!< Stores the set of UBOs that will be passed to the vertex shader.
-	std::vector<BindingBufferInfo> fsLocal;   //!< Stores the UBO that will be passed to the fragment shader.
-};
-
-struct UboSet
-{
-	std::vector<BindingBuffer*> vsGlobal;
-	std::vector<BindingBuffer*> fsGlobal;
-	std::vector<BindingBuffer> vsLocal;   //!< Stores the set of UBOs that will be passed to the vertex shader.
-	std::vector<BindingBuffer> fsLocal;   //!< Stores the UBO that will be passed to the fragment shader.
-
-	void createBindings();
-	void destroyBindings();
-	void clear();
-};
-
 /// Model-View-Projection matrix as a UBO (Uniform buffer object) (https://www.opengl-tutorial.org/beginners-tutorials/tutorial-3-matrices/)
 /*
 struct UBO_MVP {
@@ -226,6 +196,5 @@ struct UBO_MVPN {
 	alignas(16) glm::mat3 normalMatrix;
 };
 */
-
 
 #endif

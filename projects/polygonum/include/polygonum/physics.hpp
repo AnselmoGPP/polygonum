@@ -93,4 +93,41 @@ public:
 };
 */
 
+// OTHERS --------------------------------------------------------
+
+/// Precompute all Optical Depth values through the atmosphere. Useful for creating a lookup table for atmosphere rendering.
+class OpticalDepthTable
+{
+    glm::vec3 planetCenter;
+    unsigned planetRadius;
+    unsigned atmosphereRadius;
+    unsigned numOptDepthPoints;
+    float heightStep;
+    float angleStep;
+    float densityFallOff;
+
+    float opticalDepth(glm::vec3 rayOrigin, glm::vec3 rayDir, float rayLength) const;
+    float densityAtPoint(glm::vec3 point) const;
+    glm::vec2 raySphere(glm::vec3 rayOrigin, glm::vec3 rayDir) const;
+
+public:
+    OpticalDepthTable(unsigned numOptDepthPoints, unsigned planetRadius, unsigned atmosphereRadius, float heightStep, float angleStep, float densityFallOff);
+
+    std::vector<unsigned char> table;
+    size_t heightSteps;
+    size_t angleSteps;
+    size_t bytes;
+};
+
+/// Precompute all Density Values through the atmosphere. Useful for creating a lookup table for atmosphere rendering.
+class DensityVector
+{
+public:
+    DensityVector(float planetRadius, float atmosphereRadius, float stepSize, float densityFallOff);
+
+    std::vector<unsigned char> table;
+    size_t heightSteps;
+    size_t bytes;
+};
+
 #endif
