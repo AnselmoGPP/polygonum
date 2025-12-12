@@ -24,8 +24,8 @@ struct BindingSet
 
 	Renderer* r;
 
-	vec<BindingBuffer*> vsGlobal;   //!< [binding]
-	vec<BindingBuffer> vsLocal;   //!< [binding]
+	vec<BindingBuffer*> vsGlobal;   //!< [binding].getDescriptor(i)
+	vec<BindingBuffer> vsLocal;   //!< [binding].getDescriptor(i)
 	vec2<std::shared_ptr<Texture>> vsTextures;   //!< [binding][descriptor]
 
 	vec<BindingBuffer*> fsGlobal;

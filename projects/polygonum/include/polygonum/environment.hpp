@@ -245,7 +245,7 @@ public:
 	Subpass(std::vector<Image*> inputAttachments, uint32_t colorAttachmentsCount)
 		: inputAtts(inputAttachments), colorAttsCount(colorAttachmentsCount) { }
 
-	std::vector<Image*> inputAtts;	//!< Input attachments (input images) per subpass
+	std::vector<Image*> inputAtts;	//!< Input attachments (input images, one per swap chain image) per subpass
 	uint32_t colorAttsCount;		//!< Number of color attachments (output images) per subpass
 };
 
@@ -256,7 +256,7 @@ public:
 
 	void createRenderPass(VkDevice& device, std::vector<VkAttachmentDescription>& allAttachments, std::vector<VkAttachmentReference>& inputAttachments, std::vector<VkAttachmentReference>& colorAttachments, VkAttachmentReference* depthAttachment);
 	void createFramebuffers(VulkanCore& c, SwapChain& swapChain);   //!< Define the swap chain framebuffers and their attachments. Framebuffers directly depend on the swap chain images.
-	void createRenderPassInfo(SwapChain& swapChain);		//!< Create the VkRenderPassBeginInfo objects used at vkCmdBeginRenderPass() for creating the command buffer.
+	void createRenderPassInfo(SwapChain& swapChain);	//!< Create the VkRenderPassBeginInfo objects used at vkCmdBeginRenderPass() for creating the command buffer.
 	void destroy(VulkanCore& c);						//!< Destroy framebuffers and render-pass.
 
 	VkRenderPass renderPass;

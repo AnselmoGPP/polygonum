@@ -31,13 +31,13 @@ struct ModelDataInfo
 	const char* name;
 	uint32_t numInstances;
 	uint32_t maxNumInstances;
-	VkPrimitiveTopology topology;				//!< Primitive topology (VK_PRIMITIVE_TOPOLOGY_ ... POINT_LIST, LINE_LIST, LINE_STRIP, TRIANGLE_LIST, TRIANGLE_STRIP). Used when creating the graphics pipeline.
-	VertexType vertexType;						//!< VertexType defines the characteristics of a vertex (size and type of the vertex' attributes: Position, Color, Texture coordinates, Normals...).
-	VertexesLoader* vertexesLoader;				//!< Info for loading vertices from any source.
-	std::vector<ShaderLoader*> shadersInfo;		//!< Shaders info
-	BindingSet bindings;
+	VkPrimitiveTopology topology;			//!< Primitive topology (VK_PRIMITIVE_TOPOLOGY_ ... POINT_LIST, LINE_LIST, LINE_STRIP, TRIANGLE_LIST, TRIANGLE_STRIP). Used when creating the graphics pipeline.
+	VertexType vertexType;					//!< VertexType defines the characteristics of a vertex (size and type of the vertex' attributes: Position, Color, Texture coordinates, Normals...).
+	VertexesLoader* vertexesLoader;			//!< Info for loading vertices from any source.
+	std::vector<ShaderLoader*> shadersInfo;	//!< Shaders info
+	std::vector<BindingSet> bindSets;		//!< Sets of bindings
 	bool transparency;
-	uint32_t renderPassIndex;					//!< 0 (geometry pass), 1 (lighting pass), 2 (forward pass), 3 (postprocessing pass)
+	uint32_t renderPassIndex;				//!< 0 (geometry pass), 1 (lighting pass), 2 (forward pass), 3 (postprocessing pass)
 	uint32_t subpassIndex;
 	VkCullModeFlagBits cullMode;
 };
@@ -62,24 +62,7 @@ class ModelData
 	/// Layout for the descriptor set (descriptor: handle or pointer into a resource (buffer, sampler, texture...))
 	void createDescriptorSetLayout();
 
-	/**
-		@brief Create the graphics pipeline.
-
-		Graphics pipeline: Sequence of operations that take the vertices and textures of your meshes all the way to the pixels in the render targets. Stages (F: fixed-function stages, P: programable):
-			<ul>
-				<li>Vertex/Index buffer: Raw vertex data.</li>
-				<li>Input assembler (F): Collects data from the buffers and may use an index buffer to repeat certain elements without duplicating the vertex data.</li>
-				<li>Vertex shader (P): Run for every vertex. Generally, applies transformations to turn vertex positions from model space to screen space. Also passes per-vertex data down the pipeline.</li>
-				<li>Tessellation shader (P): Subdivides geometry based on certain rules to increase mesh quality (example: make brick walls look less flat from nearby).</li>
-				<li>Geometry shader (P): Run for every primitive (triangle, line, point). It can discard the primitive or output more new primitives. Similar to tessellation shader, more flexible but with worse performance.</li>
-				<li>Rasterization (F): Discretizes primitives into fragments (pixel elements that fill the framebuffer). Attributes outputted by the vertex shaders are interpolated across fragments. Fragments falling outside the screen are discarded. Usually, fragments behind others are discarded (depth testing).</li>
-				<li>Fragment shader (P): Run for every surviving fragment. Determines which framebuffer/s the fragments are written to and with which color and depth values (uses interpolated data from vertex shader, and may include things like texture coordinates, normals for lighting).</li>
-				<li>Color blending (F): Mixes different fragments that map to the same pixel in the framebuffer (overwrite each other, add up, or mix based upon transparency).</li>
-				<li>Framebuffer.</li>
-			</ul>
-		Some programmable stages are optional (example: tessellation and geometry stages).
-		In Vulkan, the graphics pipeline is almost completely immutable. You will have to create a number of pipelines representing all of the different combinations of states you want to use.
-	*/
+	/// Create the graphics pipeline (sequence of operations that take the vertices and textures of your meshes all the way to the pixels in the render targets).
 	void createGraphicsPipeline();
 
 	/// Descriptor pool creation (a descriptor set for each VkBuffer resource to bind it to the uniform buffer descriptor).
@@ -111,10 +94,11 @@ public:
 	std::vector<std::shared_ptr<Shader>>  shaders;		//!< Vertex shader (0), Fragment shader (1)
 
 	VertexData						vert;				//!< Vertex data + Indices
-	BindingSet						binds;				//!< All bindings (buffers and textures).
-	VkDescriptorSetLayout			descriptorSetLayout;//!< Opaque handle to a descriptor set layout object (combines all of the descriptor bindings).
-	VkDescriptorPool				descriptorPool;		//!< Opaque handle to a descriptor pool object.
-	std::vector<VkDescriptorSet>	descriptorSets;		//!< List. Opaque handle to a descriptor set object. One for each swap chain image.
+
+	std::vector<BindingSet>			bindSets;			//!< [set] Set of binding sets (buffers and textures).
+	std::vector<VkDescriptorSetLayout> descriptorSetLayouts; //!< [set] Opaque handle to a descriptor set layout object (combines all of the descriptor bindings).
+	VkDescriptorPool				descriptorPool;	//!< [set] Opaque handle to a descriptor pool object.
+	vec2<VkDescriptorSet>			descriptorSets;		//!< [sc.img][set]. Opaque handle to a descriptor set object. One for each swap chain image.
 
 	uint32_t						renderPassIndex;	//!< Index of the renderPass used (0 for rendering geometry, 1 for post processing)
 	uint32_t						subpassIndex;

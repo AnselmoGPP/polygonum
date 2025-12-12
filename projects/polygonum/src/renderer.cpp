@@ -401,22 +401,25 @@ void Renderer::updateUBOs(uint32_t imageIndex)
 		{
 			model = &it->second;
 
-			for (const auto& buffer : model->binds.vsLocal)
+			for (const auto& set : model->bindSets)
 			{
-				bytes = buffer.getSize();
-				if (!bytes) continue;
-				vkMapMemory(c.device, buffer.bindingMemories[imageIndex], 0, bytes, 0, &data);   // Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
-				memcpy(data, buffer.binding.data(), bytes);   // Copy some data in that memory. Copies a number of bytes (sizeof(ubo)) from a source (ubo) to a destination (data).
-				vkUnmapMemory(c.device, buffer.bindingMemories[imageIndex]);   // "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
-			}
+				for (const auto& buffer : set.vsLocal)
+				{
+					bytes = buffer.getSize();
+					if (!bytes) continue;
+					vkMapMemory(c.device, buffer.bindingMemories[imageIndex], 0, bytes, 0, &data);   // Get a pointer to some Vulkan/GPU memory of size X. vkMapMemory retrieves a host virtual address pointer (data) to a region of a mappable memory object (uniformBuffersMemory[]). We have to provide the logical device that owns the memory (e.device).
+					memcpy(data, buffer.binding.data(), bytes);   // Copy some data in that memory. Copies a number of bytes (sizeof(ubo)) from a source (ubo) to a destination (data).
+					vkUnmapMemory(c.device, buffer.bindingMemories[imageIndex]);   // "Get rid" of the pointer. Unmap a previously mapped memory object (uniformBuffersMemory[]).
+				}
 
-			for (const auto& buffer : model->binds.fsLocal)
-			{
-				bytes = buffer.getSize();
-				if (!bytes) continue;
-				vkMapMemory(c.device, buffer.bindingMemories[imageIndex], 0, bytes, 0, &data);
-				memcpy(data, buffer.binding.data(), bytes);
-				vkUnmapMemory(c.device, buffer.bindingMemories[imageIndex]);
+				for (const auto& buffer : set.fsLocal)
+				{
+					bytes = buffer.getSize();
+					if (!bytes) continue;
+					vkMapMemory(c.device, buffer.bindingMemories[imageIndex], 0, bytes, 0, &data);
+					memcpy(data, buffer.binding.data(), bytes);
+					vkUnmapMemory(c.device, buffer.bindingMemories[imageIndex]);
+				}
 			}
 		}
 }
@@ -587,7 +590,8 @@ void Help_RP_DS_PP::createLightingPass(Renderer& ren, unsigned numLights, std::s
 	modelInfo.vertexType = vertexType;
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vertexType.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
-	modelInfo.bindings.fsLocal = { uboInfo };
+	modelInfo.bindSets.resize(1);
+	modelInfo.bindSets[0].fsLocal = { uboInfo };
 	modelInfo.transparency = false;
 	modelInfo.renderPassIndex = 1;
 	modelInfo.subpassIndex = 0;
@@ -616,7 +620,7 @@ void Help_RP_DS_PP::createPostprocessingPass(Renderer& ren, std::string vertShad
 	modelInfo.vertexType = vertexType;
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vertexType.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
-	modelInfo.bindings;
+	modelInfo.bindSets;
 	modelInfo.transparency = false;
 	modelInfo.renderPassIndex = 3;
 	modelInfo.subpassIndex = 0;
@@ -638,7 +642,7 @@ void Help_RP_DS_PP::updateLightingPass(Renderer& ren, glm::vec3& camPos, Light* 
 	//	//...
 	//}
 	
-	dest = model->binds.fsLocal[0].getDescriptor();
+	dest = model->bindSets[0].fsLocal[0].getDescriptor();
 	memcpy(dest, &camPos, sizes::vec4);
 	dest += sizes::vec4;
 	memcpy(dest, lights, numLights * sizeof(Light));

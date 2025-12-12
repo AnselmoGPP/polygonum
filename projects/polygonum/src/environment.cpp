@@ -314,7 +314,7 @@ void Commander::updateCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 						vkCmdBindIndexBuffer(CBs[i], model->vert.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
 					if (model->descriptorSets.size())	// has descriptor set (UBOs, SSBOs, textures, input attachments)
-						vkCmdBindDescriptorSets(CBs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->pipelineLayout, 0, 1, &model->descriptorSets[i], 0, 0);
+						vkCmdBindDescriptorSets(CBs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->pipelineLayout, 0, model->descriptorSets[i].size(), model->descriptorSets[i].data(), 0, 0);
 
 					if (model->vert.indexCount)		// has indices
 						vkCmdDrawIndexed(CBs[i], static_cast<uint32_t>(model->vert.indexCount), model->getNumInstances(), 0, 0, 0);

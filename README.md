@@ -172,7 +172,7 @@ Renderer ren(update, width, height, globalDesc_vs, globalDesc_fs, (NewRenderPipe
 
 ### Bindings
 
-**Descriptor sets** are Vulkan objects used for passing data to shaders. They contain a set of **bindings**, each one having a type. Typical types are uniform buffers (UBOs) and samplers (textures). The data we directly pass to the shader is Vertex data (vertex attributes) and Bindings (arrays of UBOs and arrays of textures).
+**Descriptor sets** are Vulkan objects used for passing data to shaders. They contain a set of **bindings**, each one having a type such as UBO (uniform buffer), SSBO (storage buffer), and samplers (textures). The data we directly pass to the shader is Vertex data (vertex attributes) and Bindings (arrays of UBOs and arrays of textures).
 
 Polygonum allows to pass up to 4 bindings to the shaders, each one containing an array of uniform buffer (UB descriptors): each shader (vertex and fragment) can receive 2 bindings, where one is local/specific to the object (kept in the object), and the other is global (kept in the renderer). Global bindings can be used by many objects, and contain only one UBO. Use cases example:
 

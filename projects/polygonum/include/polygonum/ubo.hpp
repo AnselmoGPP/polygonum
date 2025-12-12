@@ -92,7 +92,7 @@ public:
 	size_t						numSubDescriptors;	//!< Useful when the descriptor is an array (used for instance rendering).
 
 	std::vector<uint8_t>		binding;			//!< Array of UBOs will be passed to vertex shader (MVP, M for normals, light...). Its attributes are aligned to 16-byte boundary.
-	std::vector<VkBuffer>		bindingBuffers;		//!< Opaque handle to a buffer object (here, a binding). One for each swap chain image.
+	std::vector<VkBuffer>		bindingBuffers;		//!< [sc.img] Opaque handle to a buffer object (here, a binding).
 	std::vector<VkDeviceMemory>	bindingMemories;	//!< Opaque handle to a device memory object (here, memory for the binding). One for each swap chain image.
 
 	std::vector<std::string> glslLines;				//!< (Optional) Used in ShaderCreator

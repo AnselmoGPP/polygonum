@@ -28,7 +28,7 @@ ModelData::ModelData(Renderer* renderer, ModelDataInfo& modelInfo)
 	renderPassIndex(modelInfo.renderPassIndex),
 	subpassIndex(modelInfo.subpassIndex),
 	maxNumInstances(modelInfo.maxNumInstances),
-	binds(modelInfo.bindings),
+	bindSets(modelInfo.bindSets),
 	fullyConstructed(false),
 	ready(false)
 {
@@ -53,7 +53,8 @@ ModelData::~ModelData()
 		cleanup_pipeline_and_descriptors();
 
 		// Descriptor set layout
-		vkDestroyDescriptorSetLayout(r->c.device, descriptorSetLayout, nullptr);
+		for(auto& set : descriptorSetLayouts)
+			vkDestroyDescriptorSetLayout(r->c.device, set, nullptr);
 
 		// Index buffer
 		if (vert.indexCount)
@@ -77,10 +78,10 @@ ModelData::ModelData(ModelData&& other) noexcept
 	maxNumInstances(std::move(other.maxNumInstances)),
 	pipelineLayout(std::move(other.pipelineLayout)),
 	graphicsPipeline(std::move(other.graphicsPipeline)),
-	binds(std::move(other.binds)),
+	bindSets(std::move(other.bindSets)),
 	shaders(std::move(other.shaders)),
 	vert(std::move(other.vert)),
-	descriptorSetLayout(std::move(other.descriptorSetLayout)),
+	descriptorSetLayouts(std::move(other.descriptorSetLayouts)),
 	descriptorPool(std::move(other.descriptorPool)),
 	descriptorSets(std::move(other.descriptorSets)),
 	renderPassIndex(std::move(other.renderPassIndex)),
@@ -110,7 +111,7 @@ ModelData& ModelData::operator=(ModelData&& other) noexcept
 	maxNumInstances = other.maxNumInstances;
 	pipelineLayout = other.pipelineLayout;
 	graphicsPipeline = other.graphicsPipeline;
-	descriptorSetLayout = other.descriptorSetLayout;
+	descriptorSetLayouts = other.descriptorSetLayouts;
 	descriptorPool = other.descriptorPool;
 	renderPassIndex = other.renderPassIndex;
 	subpassIndex = other.subpassIndex;
@@ -120,7 +121,7 @@ ModelData& ModelData::operator=(ModelData&& other) noexcept
 
 	vertexType = std::move(other.vertexType);
 	shaders = std::move(other.shaders);
-	binds = std::move(other.binds);
+	bindSets = std::move(other.bindSets);
 	vert = std::move(other.vert);
 	descriptorSets = std::move(other.descriptorSets);
 	name = std::move(other.name);
@@ -130,10 +131,10 @@ ModelData& ModelData::operator=(ModelData&& other) noexcept
 	other.primitiveTopology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
 	other.hasTransparencies = false;
 	other.cullMode = VK_CULL_MODE_FLAG_BITS_MAX_ENUM;
-	other.binds.clear();
+	other.bindSets.clear();
 	other.pipelineLayout = other.pipelineLayout;
 	other.graphicsPipeline = other.graphicsPipeline;
-	other.descriptorSetLayout = other.descriptorSetLayout;
+	other.descriptorSetLayouts = other.descriptorSetLayouts;
 	other.descriptorPool = other.descriptorPool;
 	other.renderPassIndex = 0;
 	other.subpassIndex = 0;
@@ -144,7 +145,7 @@ ModelData& ModelData::operator=(ModelData&& other) noexcept
 	
 	other.vertexType = VertexType();
 	other.shaders.clear();
-	other.binds.clear();
+	other.bindSets.clear();
 	other.vert = VertexData();
 	other.descriptorSets.clear();
 	
@@ -163,7 +164,7 @@ ModelData& ModelData::fullConstruction(Renderer& ren)
 	} else std::cout << "Error: No loading info data" << std::endl;
 
 	//binds.createTextures();
-	binds.createBindings(r);
+	for(BindingSet& set : bindSets) set.createBindings(r);
 
 	createDescriptorSetLayout();
 	createGraphicsPipeline();
@@ -183,112 +184,123 @@ void ModelData::createDescriptorSetLayout()
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
 	#endif
 
-	std::vector<VkDescriptorSetLayoutBinding> bindings;
-	uint32_t bindNumber = 0;
+	bool inputAttsAdded = false;
 
-	// 1. Buffers
-	
-	//    1.1. Global UBO (vertex shader)
-	for(const auto& ubo : binds.vsGlobal)
+	for(const auto& set : bindSets)   // each set
 	{
-		VkDescriptorSetLayoutBinding vsGlobalUboLayoutBinding{};
-		vsGlobalUboLayoutBinding.binding = bindNumber++;
-		vsGlobalUboLayoutBinding.descriptorType = ubo->type;
-		vsGlobalUboLayoutBinding.descriptorCount = ubo->numDescriptors;
-		vsGlobalUboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-		vsGlobalUboLayoutBinding.pImmutableSamplers = nullptr;
+		// Describe all bindings.
+
+		std::vector<VkDescriptorSetLayoutBinding> bindings;
+		uint32_t bindNumber = 0;
+
+		//  1. Vertex shader bindings
 		
-		bindings.push_back(vsGlobalUboLayoutBinding);
-	}
+		//   1.1. Global UBO (vertex shader)
+		for(const auto& bind : set.vsGlobal)   // each binding
+		{
+			VkDescriptorSetLayoutBinding vsGlobalUboLayoutBinding{};
+			vsGlobalUboLayoutBinding.binding = bindNumber++;
+			vsGlobalUboLayoutBinding.descriptorType = bind->type;
+			vsGlobalUboLayoutBinding.descriptorCount = bind->numDescriptors;
+			vsGlobalUboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+			vsGlobalUboLayoutBinding.pImmutableSamplers = nullptr;
+			
+			bindings.push_back(vsGlobalUboLayoutBinding);
+		}
 
-	//    1.2. Uniform buffer descriptor (vertex shader)
-	for (const auto& ubo : binds.vsLocal)
-	{
-		VkDescriptorSetLayoutBinding vsUboLayoutBinding{};
-		vsUboLayoutBinding.binding = bindNumber++;
-		vsUboLayoutBinding.descriptorType = ubo.type;				// VK_DESCRIPTOR_TYPE_ ... UNIFORM_BUFFER, UNIFORM_BUFFER_DYNAMIC
-		vsUboLayoutBinding.descriptorCount = ubo.numDescriptors;	// In case you want to specify an array of UBOs <<< (example: for specifying a transformation for each bone in a skeleton for skeletal animation).
-		vsUboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;	// Tell in which shader stages the descriptor will be referenced. This field can be a combination of VkShaderStageFlagBits values or the value VK_SHADER_STAGE_ALL_GRAPHICS.
-		vsUboLayoutBinding.pImmutableSamplers = nullptr;			// [Optional] Only relevant for image sampling related descriptors.
+		//    1.2. Uniform buffer descriptor (vertex shader)
+		for (const auto& bind : set.vsLocal)
+		{
+			VkDescriptorSetLayoutBinding vsUboLayoutBinding{};
+			vsUboLayoutBinding.binding = bindNumber++;
+			vsUboLayoutBinding.descriptorType = bind.type;				// VK_DESCRIPTOR_TYPE_ ... UNIFORM_BUFFER, UNIFORM_BUFFER_DYNAMIC
+			vsUboLayoutBinding.descriptorCount = bind.numDescriptors;	// In case you want to specify an array of UBOs <<< (example: for specifying a transformation for each bone in a skeleton for skeletal animation).
+			vsUboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;	// Tell in which shader stages the descriptor will be referenced. This field can be a combination of VkShaderStageFlagBits values or the value VK_SHADER_STAGE_ALL_GRAPHICS.
+			vsUboLayoutBinding.pImmutableSamplers = nullptr;			// [Optional] Only relevant for image sampling related descriptors.
+			
+			bindings.push_back(vsUboLayoutBinding);
+		}
+
+		//    1.2. Samplers (vertex shader). Combined image sampler descriptor (set of textures) (it lets shaders access an image resource through a sampler object)
+		for (const auto& texSet : set.vsTextures)
+		{
+			VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+			samplerLayoutBinding.binding = bindNumber++;
+			samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			samplerLayoutBinding.descriptorCount = static_cast<uint32_t>(texSet.size());
+			samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;			// We want to use the combined image sampler descriptor in the fragment shader. It's possible to use texture sampling in the vertex shader (example: to dynamically deform a grid of vertices by a heightmap).
+			samplerLayoutBinding.pImmutableSamplers = nullptr;
+
+			bindings.push_back(samplerLayoutBinding);
+		}
+
+		//  2. Fragment shader bindings
+
+		//    2.1. Global UBO (fragment shader)
+		for (const auto& bind : set.fsGlobal)
+		{
+			VkDescriptorSetLayoutBinding fsGlobalUboLayoutBinding{};
+			fsGlobalUboLayoutBinding.binding = bindNumber++;
+			fsGlobalUboLayoutBinding.descriptorType = bind->type;
+			fsGlobalUboLayoutBinding.descriptorCount = bind->numDescriptors;
+			fsGlobalUboLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+			fsGlobalUboLayoutBinding.pImmutableSamplers = nullptr;
+			
+			bindings.push_back(fsGlobalUboLayoutBinding);
+		}
+
+		//    2.2. Uniform buffer descriptor (fragment shader)
+		for (const auto& bind : set.fsLocal)
+		{
+			VkDescriptorSetLayoutBinding fsUboLayoutBinding{};
+			fsUboLayoutBinding.binding = bindNumber++;
+			fsUboLayoutBinding.descriptorType = bind.type;
+			fsUboLayoutBinding.descriptorCount = bind.numDescriptors;
+			fsUboLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+			fsUboLayoutBinding.pImmutableSamplers = nullptr;
+			
+			bindings.push_back(fsUboLayoutBinding);
+		}
 		
-		bindings.push_back(vsUboLayoutBinding);
-	}
+		//    2.3. Samplers (fragment shader)
+		for (const auto& texSet : set.fsTextures)
+		{
+			VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+			samplerLayoutBinding.binding = bindNumber++;
+			samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			samplerLayoutBinding.descriptorCount = static_cast<uint32_t>(texSet.size());
+			samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;			// We want to use the combined image sampler descriptor in the fragment shader. It's possible to use texture sampling in the vertex shader (example: to dynamically deform a grid of vertices by a heightmap).
+			samplerLayoutBinding.pImmutableSamplers = nullptr;
 
-	//    1.3. Global UBO (fragment shader)
-	for (const auto& ubo : binds.fsGlobal)
-	{
-		VkDescriptorSetLayoutBinding fsGlobalUboLayoutBinding{};
-		fsGlobalUboLayoutBinding.binding = bindNumber++;
-		fsGlobalUboLayoutBinding.descriptorType = ubo->type;
-		fsGlobalUboLayoutBinding.descriptorCount = ubo->numDescriptors;
-		fsGlobalUboLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fsGlobalUboLayoutBinding.pImmutableSamplers = nullptr;
+			bindings.push_back(samplerLayoutBinding);
+		}
 		
-		bindings.push_back(fsGlobalUboLayoutBinding);
-	}
+		//    2.4. Input attachments
+		if(r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size() && !inputAttsAdded)
+		{
+			inputAttsAdded = true;
+			VkDescriptorSetLayoutBinding inputAttachmentLayoutBinding{};
+			inputAttachmentLayoutBinding.binding = bindNumber++;
+			inputAttachmentLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;	// VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+			inputAttachmentLayoutBinding.descriptorCount = static_cast<uint32_t>(r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size());
+			inputAttachmentLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+			inputAttachmentLayoutBinding.pImmutableSamplers = nullptr;
 
-	//    1.4. Uniform buffer descriptor (fragment shader)
-	for (const auto& ubo : binds.fsLocal)
-	{
-		VkDescriptorSetLayoutBinding fsUboLayoutBinding{};
-		fsUboLayoutBinding.binding = bindNumber++;
-		fsUboLayoutBinding.descriptorType = ubo.type;
-		fsUboLayoutBinding.descriptorCount = ubo.numDescriptors;
-		fsUboLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fsUboLayoutBinding.pImmutableSamplers = nullptr;
+			bindings.push_back(inputAttachmentLayoutBinding);
+		}
+
+		// Create all descriptor set layouts (one per binding set).
+
+		VkDescriptorSetLayoutCreateInfo layoutInfo{};
+		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+		layoutInfo.pBindings = bindings.data();
 		
-		bindings.push_back(fsUboLayoutBinding);
+		VkDescriptorSetLayout descSetLayout;
+		if (vkCreateDescriptorSetLayout(r->c.device, &layoutInfo, nullptr, &descSetLayout) != VK_SUCCESS)
+			throw std::runtime_error("Failed to create descriptor set layout!");
+		descriptorSetLayouts.push_back(descSetLayout);
 	}
-
-	// 2. Combined image sampler descriptor (set of textures) (it lets shaders access an image resource through a sampler object)
-	
-	//    2.1. Samplers (vertex shader)
-	for(const auto& texSet : binds.vsTextures)
-	{
-		VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-		samplerLayoutBinding.binding = bindNumber++;
-		samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		samplerLayoutBinding.descriptorCount = static_cast<uint32_t>(texSet.size());
-		samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;			// We want to use the combined image sampler descriptor in the fragment shader. It's possible to use texture sampling in the vertex shader (example: to dynamically deform a grid of vertices by a heightmap).
-		samplerLayoutBinding.pImmutableSamplers = nullptr;
-		
-		bindings.push_back(samplerLayoutBinding);
-	}
-
-	//    2.2. Samplers (fragment shader)
-	for (const auto& texSet : binds.fsTextures)
-	{
-		VkDescriptorSetLayoutBinding samplerLayoutBinding{};
-		samplerLayoutBinding.binding = bindNumber++;
-		samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		samplerLayoutBinding.descriptorCount = static_cast<uint32_t>(texSet.size());
-		samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;			// We want to use the combined image sampler descriptor in the fragment shader. It's possible to use texture sampling in the vertex shader (example: to dynamically deform a grid of vertices by a heightmap).
-		samplerLayoutBinding.pImmutableSamplers = nullptr;
-
-		bindings.push_back(samplerLayoutBinding);
-	}
-
-	// 5) Input attachments
-	if(r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size())
-	{
-		VkDescriptorSetLayoutBinding inputAttachmentLayoutBinding{};
-		inputAttachmentLayoutBinding.binding = bindNumber++;
-		inputAttachmentLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;	// VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-		inputAttachmentLayoutBinding.descriptorCount = static_cast<uint32_t>(r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size());
-		inputAttachmentLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-		inputAttachmentLayoutBinding.pImmutableSamplers = nullptr;
-
-		bindings.push_back(inputAttachmentLayoutBinding);
-	}
-
-	// Create a descriptor set layout (combines all of the descriptor bindings)
-	VkDescriptorSetLayoutCreateInfo layoutInfo{};
-	layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-	layoutInfo.pBindings = bindings.data();
-	
-	if (vkCreateDescriptorSetLayout(r->c.device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS)
-		throw std::runtime_error("Failed to create descriptor set layout!");
 }
 
 // (10)
@@ -301,10 +313,10 @@ void ModelData::createGraphicsPipeline()
 	// Create pipeline layout   <<< sameMod
 	VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
 	pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipelineLayoutInfo.setLayoutCount = 1;						// Optional
-	pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;		// Optional	 <<<<<
-	pipelineLayoutInfo.pushConstantRangeCount = 0;				// Optional. <<< Push constants are another way of passing dynamic values to shaders.
-	pipelineLayoutInfo.pPushConstantRanges = nullptr;			// Optional
+	pipelineLayoutInfo.setLayoutCount = descriptorSetLayouts.size();
+	pipelineLayoutInfo.pSetLayouts = descriptorSetLayouts.data();
+	pipelineLayoutInfo.pushConstantRangeCount = 0;					// <<< Push constants are another way of passing dynamic values to shaders.
+	pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
 	if (vkCreatePipelineLayout(r->c.device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create pipeline layout!");
@@ -413,7 +425,7 @@ void ModelData::createGraphicsPipeline()
 	//	- Configuration per attached framebuffer
 	VkPipelineColorBlendAttachmentState colorBlendAttachment{};
 	colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-	if (!hasTransparencies)	// Not alpha blending implemented
+	if (!hasTransparencies)	// No alpha blending implemented
 	{
 		colorBlendAttachment.blendEnable = VK_FALSE;
 		colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;		// Optional. Check VkBlendFactor enum.
@@ -468,11 +480,14 @@ void ModelData::createGraphicsPipeline()
 	// Create graphics pipeline
 	VkGraphicsPipelineCreateInfo pipelineInfo{};
 	pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipelineInfo.stageCount = 2;
+	//pipelineInfo.pNext;
 	//pipelineInfo.flags				= VK_PIPELINE_CREATE_DERIVATIVE_BIT;	// Required for using basePipelineHandle and basePipelineIndex members
+	pipelineInfo.stageCount = 2;
 	pipelineInfo.pStages = shaderStages;
 	pipelineInfo.pVertexInputState = &vertexInputInfo;
 	pipelineInfo.pInputAssemblyState = &inputAssembly;
+	//pipelineInfo.pTessellationState;
+	//pipelineInfo.pTessellationState;
 	pipelineInfo.pViewportState = &viewportState;
 	pipelineInfo.pRasterizationState = &rasterizer;
 	pipelineInfo.pMultisampleState = &multisampling;
@@ -500,66 +515,81 @@ void ModelData::createDescriptorPool()
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
 	#endif
 
-	// Describe our descriptor sets.
+	bool inputAttsAdded = false;
+	uint32_t numSwapchainImages = static_cast<uint32_t>(r->swapChain.images.size());
 	std::vector<VkDescriptorPoolSize> poolSizes;
-	VkDescriptorPoolSize pool;
 
-	for (const auto& ubo : binds.vsGlobal)
+	// Describe all bindings
+
+	for (const auto& set : bindSets)   // each set
 	{
-		pool.type = ubo->type;
-		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
-		poolSizes.push_back(pool);
+		for (const auto& buf : set.vsGlobal)   // each binding
+		{
+			VkDescriptorPoolSize pool;
+			pool.type = buf->type;   // VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER or VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+			pool.descriptorCount = numSwapchainImages * buf->numDescriptors;   // Number of descriptors of this type to allocate
+			poolSizes.push_back(pool);
+		}
+
+		for (const auto& buf : set.vsLocal)
+		{
+			VkDescriptorPoolSize pool;
+			pool.type = buf.type;
+			pool.descriptorCount = numSwapchainImages * buf.numDescriptors;
+			poolSizes.push_back(pool);
+		}
+
+		for (const auto& texSet : set.vsTextures)
+		{
+			VkDescriptorPoolSize pool;
+			pool.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			pool.descriptorCount = numSwapchainImages * texSet.size();   // <<< optional: texture bindings have no need to be created numSwapchainImages times.
+			poolSizes.push_back(pool);
+		}
+
+		for (const auto& buf : set.fsGlobal)
+		{
+			VkDescriptorPoolSize pool;
+			pool.type = buf->type;
+			pool.descriptorCount = numSwapchainImages * buf->numDescriptors;
+			poolSizes.push_back(pool);
+		}
+
+		for (const auto& buf : set.fsLocal)
+		{
+			VkDescriptorPoolSize pool;
+			pool.type = buf.type;
+			pool.descriptorCount = numSwapchainImages * buf.numDescriptors;
+			poolSizes.push_back(pool);
+		}
+
+		for (const auto& texSet : set.fsTextures)
+		{
+			VkDescriptorPoolSize pool;
+			pool.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+			pool.descriptorCount = numSwapchainImages * texSet.size();
+			poolSizes.push_back(pool);
+		}
+
+		if (r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size() && !inputAttsAdded)
+		{
+			inputAttsAdded = true;
+
+			VkDescriptorPoolSize pool;
+			pool.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+			pool.descriptorCount = numSwapchainImages * r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size();
+			poolSizes.push_back(pool);
+		}
 	}
 
-	for (const auto& ubo : binds.vsLocal)
-	{
-		pool.type = ubo.type;								// VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER or VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
-		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());	// Number of descriptors of this type to allocate
-		poolSizes.push_back(pool);
-	}
+	// Create descriptor pool.
 
-	for (const auto& ubo : binds.fsGlobal)
-	{
-		pool.type = ubo->type;
-		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
-		poolSizes.push_back(pool);
-	}
-
-	for (const auto& ubo : binds.fsLocal)
-	{
-		pool.type = ubo.type;
-		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
-		poolSizes.push_back(pool);
-	}
-	
-	for (const auto& tex : binds.vsTextures)
-	{
-		pool.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
-		poolSizes.push_back(pool);
-	}
-
-	for (const auto& tex : binds.fsTextures)
-	{
-		pool.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
-		poolSizes.push_back(pool);
-	}
-
-	if(r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size())
-	{
-		pool.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-		pool.descriptorCount = static_cast<uint32_t>(r->swapChain.images.size());
-		poolSizes.push_back(pool);
-	}
-
-	// Allocate one of these descriptors for every frame.
 	VkDescriptorPoolCreateInfo poolInfo{};
 	poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 	poolInfo.pPoolSizes = poolSizes.data();
-	poolInfo.maxSets = static_cast<uint32_t>(r->swapChain.images.size());	// Max. number of individual descriptor sets that may be allocated
-	poolInfo.flags = 0;														// Determine if individual descriptor sets can be freed (VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT) or not (0). Since we aren't touching the descriptor set after its creation, we put 0 (default).
+	poolInfo.maxSets = numSwapchainImages;	// Max. number of individual descriptor sets that may be allocated
+	poolInfo.flags = 0;						// Determine if individual descriptor sets can be freed (VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT) or not (0). Since we aren't touching the descriptor set after its creation, we put 0 (default).
 
 	if (vkCreateDescriptorPool(r->c.device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
 		throw std::runtime_error("Failed to create descriptor pool!");
@@ -572,216 +602,239 @@ void ModelData::createDescriptorSets()
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
 	#endif
 
-	descriptorSets.resize(r->swapChain.images.size());
+	uint32_t numSets = static_cast<uint32_t>(bindSets.size());
+	uint32_t numSwapChainImgs = static_cast<uint32_t>(r->swapChain.images.size());
+	uint32_t numInputAtts = static_cast<uint32_t>(r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size());
 
-	std::vector<VkDescriptorSetLayout> layouts(r->swapChain.images.size(), descriptorSetLayout);
+	descriptorSets.resize(numSwapChainImgs, std::vector<VkDescriptorSet>(numSets));
 
-	// Describe the descriptor set. Here, we will create one descriptor set for each swap chain image, all with the same layout
 	VkDescriptorSetAllocateInfo allocInfo{};
 	allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-	allocInfo.descriptorPool = descriptorPool;											// Descriptor pool to allocate from
-	allocInfo.descriptorSetCount = static_cast<uint32_t>(r->swapChain.images.size());	// Number of descriptor sets to allocate
-	allocInfo.pSetLayouts = layouts.data();												// Descriptor layout to base them on
+	allocInfo.descriptorPool = descriptorPool;							// Descriptor pool to allocate from
+	allocInfo.descriptorSetCount = numSets;								// Number of descriptor sets to allocate
+	allocInfo.pSetLayouts = descriptorSetLayouts.data();				// Descriptor layout to base them on
 
-	// Allocate the descriptor set handles
-	if (vkAllocateDescriptorSets(r->c.device, &allocInfo, descriptorSets.data()) != VK_SUCCESS)
-		throw std::runtime_error("Failed to allocate descriptor sets!");		
-
+	// Allocate descriptor set handles. Once per swap chain image.
+	for (unsigned i = 0; i < numSwapChainImgs; i++)
+		if (vkAllocateDescriptorSets(r->c.device, &allocInfo, descriptorSets[i].data()) != VK_SUCCESS)
+			throw std::runtime_error("Failed to allocate descriptor sets!");
+	
 	// Populate each descriptor set.
-	for (size_t i = 0; i < r->swapChain.images.size(); i++)
-	{
-		VkDescriptorBufferInfo descriptorInfo;						// Info about one descriptor
-		VkDescriptorImageInfo descriptorImageInfo;
+	for (size_t i = 0; i < numSwapChainImgs; i++)   // each swapchain image
+		for (unsigned j = 0; j < bindSets.size(); j++)   // each set
+		{
+			// Determine the buffer for each descriptor.
+			std::vector<VkDescriptorBufferInfo> globalBufferInfo_vs;   // all descriptors of current set ([sc.img][set]).
+			std::vector<VkDescriptorBufferInfo> bufferInfo_vs;
+			std::vector<VkDescriptorBufferInfo> globalBufferInfo_fs;
+			std::vector<VkDescriptorBufferInfo> bufferInfo_fs;
+			std::vector<VkDescriptorImageInfo > imageInfo_vs;
+			std::vector<VkDescriptorImageInfo > imageInfo_fs;
+			std::vector<VkDescriptorImageInfo > inputAttachInfo;
 
-		// Global UBO vertex shader
-		std::vector< VkDescriptorBufferInfo> globalBufferInfo_vs;	// Info about each descriptor
-		for(const auto& ubo : binds.vsGlobal)
-			for (unsigned j = 0; j < ubo->numDescriptors; j++)
+			// - Global UBO vertex shader
+			for (const auto& buff : bindSets[j].vsGlobal)   // each binding
+				for (unsigned k = 0; k < buff->numDescriptors; k++)   // each descriptor
+				{
+					VkDescriptorBufferInfo descriptorInfo;
+					descriptorInfo.buffer = buff->bindingBuffers[i];
+					descriptorInfo.range = buff->descriptorSize;
+					descriptorInfo.offset = k * buff->descriptorSize;
+					globalBufferInfo_vs.push_back(descriptorInfo);
+				}
+
+			// - UBO vertex shader
+			for (const auto& buf : bindSets[j].vsLocal)
+				for (unsigned k = 0; k < buf.numDescriptors; k++)
+				{
+					VkDescriptorBufferInfo descriptorInfo;
+					descriptorInfo.buffer = buf.bindingBuffers[i];
+					descriptorInfo.range = buf.descriptorSize;
+					descriptorInfo.offset = k * buf.descriptorSize;
+					bufferInfo_vs.push_back(descriptorInfo);
+				}
+
+			// - VS textures
+			for (const auto& texSet : bindSets[j].vsTextures)
+				for (const auto& tex : texSet)
+				{
+					VkDescriptorImageInfo descriptorImageInfo;
+					descriptorImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+					descriptorImageInfo.imageView = tex->texture.view;
+					descriptorImageInfo.sampler = tex->texture.sampler;
+					imageInfo_vs.push_back(descriptorImageInfo);
+				}
+
+			// - Global UBO fragment shader
+			for (const auto& buf : bindSets[j].fsGlobal)
+				for (unsigned k = 0; k < buf->numDescriptors; k++)
+				{
+					VkDescriptorBufferInfo descriptorInfo;
+					descriptorInfo.buffer = buf->bindingBuffers[i];
+					descriptorInfo.range = buf->descriptorSize;
+					descriptorInfo.offset = k * buf->descriptorSize;
+					globalBufferInfo_fs.push_back(descriptorInfo);
+				}
+
+			// - UBO fragment shader
+			for (const auto& buf : bindSets[j].fsLocal)
+				for (unsigned k = 0; k < buf.numDescriptors; k++)
+				{
+					VkDescriptorBufferInfo descriptorInfo;
+					descriptorInfo.buffer = buf.bindingBuffers[i];
+					descriptorInfo.range = buf.descriptorSize;
+					descriptorInfo.offset = k * buf.descriptorSize;
+					bufferInfo_fs.push_back(descriptorInfo);
+				}
+
+			// - FS textures
+			for (const auto& texSet : bindSets[j].fsTextures)
+				for (const auto& tex : texSet)
+				{
+					VkDescriptorImageInfo descriptorImageInfo;
+					descriptorImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+					descriptorImageInfo.imageView = tex->texture.view;
+					descriptorImageInfo.sampler = tex->texture.sampler;
+					imageInfo_fs.push_back(descriptorImageInfo);
+				}
+
+			// - Input attachments (only in 1st set)
+			if(!j)
+				for (unsigned k = 0; k < numInputAtts; k++)
+				{
+					VkDescriptorImageInfo descriptorImageInfo;
+					descriptorImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+					descriptorImageInfo.imageView = r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts[k]->view;
+					descriptorImageInfo.sampler = r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts[k]->sampler;
+					inputAttachInfo.push_back(descriptorImageInfo);
+				}
+
+			// Determine each set.
+			std::vector<VkWriteDescriptorSet> descriptorWrites;
+			uint32_t binding = 0;
+
+			// - Global UBO vertex shader
+			for (const auto& buf : bindSets[j].vsGlobal)   // each binding
 			{
-				descriptorInfo.buffer = ubo->bindingBuffers[i];
-				descriptorInfo.range = ubo->descriptorSize;
-				descriptorInfo.offset = j * ubo->descriptorSize;
-				globalBufferInfo_vs.push_back(descriptorInfo);
+				VkWriteDescriptorSet descriptor;
+				descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				descriptor.dstSet = descriptorSets[i][j];
+				descriptor.dstBinding = binding++;
+				descriptor.dstArrayElement = 0;
+				descriptor.descriptorType = buf->type;
+				descriptor.descriptorCount = buf->numDescriptors;
+				descriptor.pBufferInfo = globalBufferInfo_vs.data();
+				descriptor.pImageInfo = nullptr;
+				descriptor.pTexelBufferView = nullptr;
+				descriptor.pNext = nullptr;
+
+				descriptorWrites.push_back(descriptor);
 			}
 
-		// UBO vertex shader
-		std::vector< VkDescriptorBufferInfo> bufferInfo_vs;
-		for (const auto& ubo : binds.vsLocal)
-			for (unsigned j = 0; j < ubo.numDescriptors; j++)
+			for (const auto& ubo : bindSets[j].vsLocal)
 			{
-				descriptorInfo.buffer = ubo.bindingBuffers[i];
-				descriptorInfo.range  = ubo.descriptorSize;
-				descriptorInfo.offset = j * ubo.descriptorSize;
-				bufferInfo_vs.push_back(descriptorInfo);
+				VkWriteDescriptorSet descriptor;
+				descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				descriptor.dstSet = descriptorSets[i][j];
+				descriptor.dstBinding = binding++;
+				descriptor.dstArrayElement = 0;
+				descriptor.descriptorType = ubo.type;
+				descriptor.descriptorCount = ubo.numDescriptors;
+				descriptor.pBufferInfo = bufferInfo_vs.data();
+				descriptor.pImageInfo = nullptr;
+				descriptor.pTexelBufferView = nullptr;
+				descriptor.pNext = nullptr;
+
+				descriptorWrites.push_back(descriptor);
 			}
 
-		// Global UBO fragment shader
-		std::vector< VkDescriptorBufferInfo> globalBufferInfo_fs;	// Info about each descriptor
-		for (const auto& ubo : binds.fsGlobal)
-			for (unsigned j = 0; j < ubo->numDescriptors; j++)
+			for (const auto& texSet : bindSets[j].vsTextures)
 			{
-				descriptorInfo.buffer = ubo->bindingBuffers[i];
-				descriptorInfo.range = ubo->descriptorSize;
-				descriptorInfo.offset = j * ubo->descriptorSize;
-				globalBufferInfo_fs.push_back(descriptorInfo);
+				VkWriteDescriptorSet descriptor;
+				descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				descriptor.dstSet = descriptorSets[i][j];
+				descriptor.dstBinding = binding++;
+				descriptor.dstArrayElement = 0;
+				descriptor.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+				descriptor.descriptorCount = static_cast<uint32_t>(texSet.size());   // LOOK maybe this can be used instead of the for-loop
+				descriptor.pBufferInfo = nullptr;
+				descriptor.pImageInfo = imageInfo_vs.data();
+				descriptor.pTexelBufferView = nullptr;
+				descriptor.pNext = nullptr;
+
+				descriptorWrites.push_back(descriptor);
 			}
 
-		// UBO fragment shader
-		std::vector< VkDescriptorBufferInfo> bufferInfo_fs;
-		for (const auto& ubo : binds.fsLocal)
-			for (unsigned j = 0; j < ubo.numDescriptors; j++)
+			for (const auto& ubo : bindSets[j].fsGlobal)
 			{
-				descriptorInfo.buffer = ubo.bindingBuffers[i];
-				descriptorInfo.range  = ubo.descriptorSize;
-				descriptorInfo.offset = j * ubo.descriptorSize;
-				bufferInfo_fs.push_back(descriptorInfo);
+				VkWriteDescriptorSet descriptor;
+				descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				descriptor.dstSet = descriptorSets[i][j];
+				descriptor.dstBinding = binding++;
+				descriptor.dstArrayElement = 0;
+				descriptor.descriptorType = ubo->type;
+				descriptor.descriptorCount = ubo->numDescriptors;
+				descriptor.pBufferInfo = globalBufferInfo_fs.data();
+				descriptor.pImageInfo = nullptr;
+				descriptor.pTexelBufferView = nullptr;
+				descriptor.pNext = nullptr;
+
+				descriptorWrites.push_back(descriptor);
 			}
 
-		// Textures
-		std::vector<VkDescriptorImageInfo> imageInfo_vs(binds.vsTextures.size());
-		for (const auto& texSet : binds.vsTextures)
-			for (const auto& tex : texSet) {
-				descriptorImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				descriptorImageInfo.imageView = tex->texture.view;
-				descriptorImageInfo.sampler = tex->texture.sampler;
+			for (const auto& ubo : bindSets[j].fsLocal)
+			{
+				VkWriteDescriptorSet descriptor;
+				descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				descriptor.dstSet = descriptorSets[i][j];
+				descriptor.dstBinding = binding++;
+				descriptor.dstArrayElement = 0;
+				descriptor.descriptorType = ubo.type;
+				descriptor.descriptorCount = ubo.numDescriptors;
+				descriptor.pBufferInfo = bufferInfo_fs.data();
+				descriptor.pImageInfo = nullptr;
+				descriptor.pTexelBufferView = nullptr;
+				descriptor.pNext = nullptr;
+
+				descriptorWrites.push_back(descriptor);
 			}
 
-		std::vector<VkDescriptorImageInfo> imageInfo_fs;
-		for (const auto& texSet : binds.fsTextures)
-			for (const auto& tex : texSet) {
-				descriptorImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				descriptorImageInfo.imageView = tex->texture.view;
-				descriptorImageInfo.sampler = tex->texture.sampler;
-				imageInfo_fs.push_back(descriptorImageInfo);
+			for (const auto& texSet : bindSets[j].fsTextures)
+			{
+				VkWriteDescriptorSet descriptor;
+				descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				descriptor.dstSet = descriptorSets[i][j];
+				descriptor.dstBinding = binding++;
+				descriptor.dstArrayElement = 0;
+				descriptor.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+				descriptor.descriptorCount = static_cast<uint32_t>(texSet.size());   // LOOK maybe this can be used instead of the for-loop
+				descriptor.pBufferInfo = nullptr;
+				descriptor.pImageInfo = imageInfo_fs.data();
+				descriptor.pTexelBufferView = nullptr;
+				descriptor.pNext = nullptr;
+
+				descriptorWrites.push_back(descriptor);
 			}
 
-		// Input attachments
-		std::vector<VkDescriptorImageInfo> inputAttachInfo(r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size());
-		for (unsigned i = 0; i < inputAttachInfo.size(); i++)
-		{
-			inputAttachInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			inputAttachInfo[i].imageView = r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts[i]->view;
-			inputAttachInfo[i].sampler = r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts[i]->sampler;
+			if (!j && r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size())
+			{
+				VkWriteDescriptorSet descriptor;
+				descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				descriptor.dstSet = descriptorSets[i][j];
+				descriptor.dstBinding = binding++;
+				descriptor.dstArrayElement = 0;
+				descriptor.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;	// VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+				descriptor.descriptorCount = static_cast<uint32_t>(inputAttachInfo.size());
+				descriptor.pBufferInfo = nullptr;
+				descriptor.pImageInfo = inputAttachInfo.data();
+				descriptor.pTexelBufferView = nullptr;
+				descriptor.pNext = nullptr;
+
+				descriptorWrites.push_back(descriptor);
+			}
+
+			vkUpdateDescriptorSets(r->c.device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);	// Accepts 2 kinds of arrays as parameters: VkWriteDescriptorSet, VkCopyDescriptorSet.
 		}
-		
-		std::vector<VkWriteDescriptorSet> descriptorWrites;
-		VkWriteDescriptorSet descriptor;
-		uint32_t binding = 0;
-		
-		for(const auto& ubo : binds.vsGlobal)
-		{
-			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			descriptor.dstSet = descriptorSets[i];
-			descriptor.dstBinding = binding++;
-			descriptor.dstArrayElement = 0;
-			descriptor.descriptorType = ubo->type;
-			descriptor.descriptorCount = ubo->numDescriptors;
-			descriptor.pBufferInfo = globalBufferInfo_vs.data();
-			descriptor.pImageInfo = nullptr;
-			descriptor.pTexelBufferView = nullptr;
-			descriptor.pNext = nullptr;
-
-			descriptorWrites.push_back(descriptor);
-		}
-
-		for (const auto& ubo : binds.vsLocal)
-		{
-			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			descriptor.dstSet = descriptorSets[i];
-			descriptor.dstBinding = binding++;
-			descriptor.dstArrayElement = 0;
-			descriptor.descriptorType = ubo.type;
-			descriptor.descriptorCount = ubo.numDescriptors;
-			descriptor.pBufferInfo = bufferInfo_vs.data();
-			descriptor.pImageInfo = nullptr;
-			descriptor.pTexelBufferView = nullptr;
-			descriptor.pNext = nullptr;
-
-			descriptorWrites.push_back(descriptor);
-		}
-
-		for (const auto& ubo : binds.fsGlobal)
-		{
-			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			descriptor.dstSet = descriptorSets[i];
-			descriptor.dstBinding = binding++;
-			descriptor.dstArrayElement = 0;
-			descriptor.descriptorType = ubo->type;
-			descriptor.descriptorCount = ubo->numDescriptors;
-			descriptor.pBufferInfo = globalBufferInfo_fs.data();
-			descriptor.pImageInfo = nullptr;
-			descriptor.pTexelBufferView = nullptr;
-			descriptor.pNext = nullptr;
-
-			descriptorWrites.push_back(descriptor);
-		}
-
-		for (const auto& ubo : binds.fsLocal)
-		{
-			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			descriptor.dstSet = descriptorSets[i];
-			descriptor.dstBinding = binding++;
-			descriptor.dstArrayElement = 0;
-			descriptor.descriptorType = ubo.type;
-			descriptor.descriptorCount = ubo.numDescriptors;
-			descriptor.pBufferInfo = bufferInfo_fs.data();
-			descriptor.pImageInfo = nullptr;
-			descriptor.pTexelBufferView = nullptr;
-			descriptor.pNext = nullptr;
-
-			descriptorWrites.push_back(descriptor);
-		}
-
-		for (const auto& texSet : binds.vsTextures)
-		{
-			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			descriptor.dstSet = descriptorSets[i];
-			descriptor.dstBinding = binding++;
-			descriptor.dstArrayElement = 0;
-			descriptor.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			descriptor.descriptorCount = static_cast<uint32_t>(texSet.size());   // LOOK maybe this can be used instead of the for-loop
-			descriptor.pBufferInfo = nullptr;
-			descriptor.pImageInfo = imageInfo_vs.data();
-			descriptor.pTexelBufferView = nullptr;
-			descriptor.pNext = nullptr;
-
-			descriptorWrites.push_back(descriptor);
-		}
-
-		for (const auto& texSet : binds.fsTextures)
-		{
-			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			descriptor.dstSet = descriptorSets[i];
-			descriptor.dstBinding = binding++;
-			descriptor.dstArrayElement = 0;
-			descriptor.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			descriptor.descriptorCount = static_cast<uint32_t>(texSet.size());   // LOOK maybe this can be used instead of the for-loop
-			descriptor.pBufferInfo = nullptr;
-			descriptor.pImageInfo = imageInfo_fs.data();
-			descriptor.pTexelBufferView = nullptr;
-			descriptor.pNext = nullptr;
-
-			descriptorWrites.push_back(descriptor);
-		}
-		
-		if (r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size())
-		{
-			descriptor.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			descriptor.dstSet = descriptorSets[i];
-			descriptor.dstBinding = binding++;
-			descriptor.dstArrayElement = 0;
-			descriptor.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;	// VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
-			descriptor.descriptorCount = static_cast<uint32_t>(inputAttachInfo.size());
-			descriptor.pBufferInfo = nullptr;
-			descriptor.pImageInfo = inputAttachInfo.data();
-			descriptor.pTexelBufferView = nullptr;
-			descriptor.pNext = nullptr;
-
-			descriptorWrites.push_back(descriptor);
-		}
-		
-		vkUpdateDescriptorSets(r->c.device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);	// Accepts 2 kinds of arrays as parameters: VkWriteDescriptorSet, VkCopyDescriptorSet.
-	}
 }
 
 void ModelData::recreate_pipeline_and_descriptors()
