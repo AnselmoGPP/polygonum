@@ -262,14 +262,14 @@ VertexesLoader::VertexesLoader(size_t vertexSize, std::initializer_list<Vertices
 
 VertexesLoader::~VertexesLoader() {}
 
-void VertexesLoader::loadVertexes(VertexData& result, Renderer& r, std::vector<BindingSet>& bindSets)
+void VertexesLoader::loadVertexes(Renderer& r, ModelData& model)
 {
 	VertexSet rawVertices;
 	std::vector<uint16_t> rawIndices;
 
-	getRawData(rawVertices, rawIndices, bindSets);   // Get raw data from source
+	getRawData(rawVertices, rawIndices, model);   // Get raw data from source
 	applyModifiers(rawVertices);
-	createBuffers(result, rawVertices, rawIndices, r);   // Upload data to Vulkan
+	createBuffers(model.vert, rawVertices, rawIndices, r);   // Upload data to Vulkan
 }
 
 void VertexesLoader::createBuffers(VertexData& result, const VertexSet& rawVertices, const std::vector<uint16_t>& rawIndices, Renderer& r)
@@ -411,7 +411,7 @@ VL_fromBuffer* VL_fromBuffer::factory(const void* verticesData, size_t vertexSiz
 
 VertexesLoader* VL_fromBuffer::clone() { return new VL_fromBuffer(*this); }
 
-void VL_fromBuffer::getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, std::vector<BindingSet>& bindSets)
+void VL_fromBuffer::getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ModelData& model)
 {
 	destVertices = rawVertices;
 	destIndices = rawIndices;
@@ -428,7 +428,7 @@ VL_fromFile* VL_fromFile::factory(std::string filePath, std::initializer_list<Ve
 
 VertexesLoader* VL_fromFile::clone() { return new VL_fromFile(*this); }
 
-void VL_fromFile::getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, std::vector<BindingSet>& bindSets)
+void VL_fromFile::getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ModelData& model)
 {
 	/*
 		Data is imported as a Scene (aiScene), which contains:
@@ -441,7 +441,7 @@ void VL_fromFile::getRawData(VertexSet& destVertices, std::vector<uint16_t>& des
 
 	this->vertices = &destVertices;
 	this->indices = &destIndices;
-	this->bindSets = &bindSets;
+	this->model = &model;
 
 	vertices->reset(vertexSize);
 
@@ -532,7 +532,7 @@ void VL_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*>& mesh
 				{
 					allocateMemForTextures();
 					material->GetTexture(types[i], j, &fileName);					// get texture file location
-					(*bindSets)[0].fsTextures[0].push_back(Tex_fromFile::factory(fileName.C_Str()));	// Get RESOURCES
+					model->bindSets[0].fsTextures[0].push_back(Tex_fromFile::factory(fileName.C_Str()));	// Get RESOURCES
 					fileName.Clear();
 				}
 		}
@@ -544,10 +544,10 @@ void VL_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*>& mesh
 void VL_fromFile::allocateMemForTextures()
 {
 	// Add set 0
-	if (bindSets->empty()) bindSets->push_back(BindingSet());
+	if (model->bindSets.empty()) model->bindSets.push_back(BindingSet());
 
 	// Add binding
-	if ((*bindSets)[0].fsTextures.empty()) (*bindSets)[0].fsTextures.push_back(vec<std::shared_ptr<Texture>>());
+	if (model->bindSets[0].fsTextures.empty()) model->bindSets[0].fsTextures.push_back(vec<std::shared_ptr<Texture>>());
 }
 
 

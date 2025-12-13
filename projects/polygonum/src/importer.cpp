@@ -20,7 +20,7 @@ void ResourcesLoader::loadResources(ModelData& model, Renderer& rend)
 	#endif
 	
 	// Load vertexes and indices
-	vertices->loadVertexes(model.vert, rend, model.bindSets);
+	vertices->loadVertexes(rend, model);
 	
 	{
 		const std::lock_guard<std::mutex> lock(rend.worker.mutResources);

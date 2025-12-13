@@ -30,7 +30,7 @@ struct ModelDataInfo
 
 	const char* name;
 	uint32_t numInstances;
-	uint32_t maxNumInstances;
+	uint32_t maxNumInstances;				//!< Not necessary
 	VkPrimitiveTopology topology;			//!< Primitive topology (VK_PRIMITIVE_TOPOLOGY_ ... POINT_LIST, LINE_LIST, LINE_STRIP, TRIANGLE_LIST, TRIANGLE_STRIP). Used when creating the graphics pipeline.
 	VertexType vertexType;					//!< VertexType defines the characteristics of a vertex (size and type of the vertex' attributes: Position, Color, Texture coordinates, Normals...).
 	VertexesLoader* vertexesLoader;			//!< Info for loading vertices from any source.

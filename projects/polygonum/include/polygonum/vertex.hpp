@@ -17,6 +17,7 @@ struct VertexPCT;
 
 class BindingSet;
 class Renderer;
+class ModelData;
 
 enum VertAttrib { vaPos, vaNorm, vaTan, vaCol, vaCol4, vaUv, vaFixes, vaBoneWeights, vaBoneIndices, vaInstanceTransform, vaMax };
 
@@ -138,7 +139,7 @@ protected:
 	const uint32_t vertexSize;	//!< Size (bytes) of a vertex object
 	std::vector<VerticesModifier*> modifiers;
 
-	virtual void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, std::vector<BindingSet>& bindSets) = 0;   //!< Get vertexes and indices from source. Subclasses define this.
+	virtual void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ModelData& model) = 0;   //!< Get vertexes and indices from source. Subclasses define this.
 	void createBuffers(VertexData& result, const VertexSet& rawVertices, const std::vector<uint16_t>& rawIndices, Renderer& r);	//!< Upload raw vertex data to Vulkan (i.e., create Vulkan buffers)
 	void applyModifiers(VertexSet& vertexes);
 
@@ -151,7 +152,7 @@ public:
 	virtual ~VertexesLoader();
 	virtual VertexesLoader* clone() = 0;		//!< Create a new object of children type and return its pointer.
 
-	void loadVertexes(VertexData& result, Renderer& r, std::vector<BindingSet>& bindSets);   //!< Get vertexes from source and store them in "result" ("resources" is used to store additional resources, if they exist).
+	void loadVertexes(Renderer& r, ModelData& model);   //!< Get vertexes from source and store them in "result" ("resources" is used to store additional resources, if they exist).
 };
 
 /// Pass all the vertices at construction time. Call to getRawData will pass these vertices.
@@ -162,7 +163,7 @@ class VL_fromBuffer : public VertexesLoader
 	VertexSet rawVertices;
 	std::vector<uint16_t> rawIndices;
 
-	void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, std::vector<BindingSet>& bindSets) override;
+	void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ModelData& model) override;
 
 public:
 	static VL_fromBuffer* factory(const void* verticesData, size_t vertexSize, size_t vertexCount, const std::vector<uint16_t>& indices = { }, std::initializer_list<VerticesModifier*> modifiers = {});
@@ -178,13 +179,13 @@ class VL_fromFile : public VertexesLoader
 
 	VertexSet* vertices;
 	std::vector<uint16_t>* indices;
-	std::vector<BindingSet>* bindSets;   //!< Used to store textures if the file includes them.
+	ModelData* model;   //!< Used to store textures if the file includes them.
 
 	void processNode(const aiScene* scene, aiNode* node);					//!< Recursive function. It goes through each node getting all the meshes in each one.
 	void processMeshes(const aiScene* scene, std::vector<aiMesh*>& meshes);	//!< Get Vertex data, Indices, and Resources (textures).
 	void allocateMemForTextures();   //!< Add set and binding in bindSets if they doesn't exist.
 
-	void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, std::vector<BindingSet>& bindSets) override;
+	void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ModelData& model) override;
 
 public:
 	static VL_fromFile* factory(std::string filePath, std::initializer_list<VerticesModifier*> modifiers = {});	//!< From file (vertexSize == (3+3+2) * sizeof(float))
