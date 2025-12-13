@@ -8,6 +8,8 @@
 #include "polygonum/vertex.hpp"
 #include "polygonum/shader.hpp"
 
+#include <unordered_set>
+
 // Forward declarations ----------
 
 class Renderer;
@@ -57,7 +59,6 @@ class ModelData
 	VkCullModeFlagBits cullMode;				//!< VK_CULL_MODE_BACK_BIT, VK_CULL_MODE_NONE, ...
 
 	uint32_t numInstances;
-	uint32_t maxNumInstances;
 
 	/// Layout for the descriptor set (descriptor: handle or pointer into a resource (buffer, sampler, texture...))
 	void createDescriptorSetLayout();
@@ -80,7 +81,7 @@ public:
 	virtual ~ModelData();
 	ModelData& operator=(ModelData&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
 
-	ModelData& fullConstruction(Renderer &ren);   //!< Creates graphic pipeline and descriptor sets, and loads data for creating buffers (vertex, indices, textures). Useful in a second thread
+	void fullConstruction(Renderer &ren);   //!< Creates graphic pipeline and descriptor sets, and loads data for creating buffers (vertex, indices, textures). Useful in a second thread
 
 	void cleanup_pipeline_and_descriptors();   //!< Destroys graphic pipeline and descriptor sets. Called by destructor, and for window resizing (by Renderer::recreateSwapChain()::cleanupSwapChain()).
 	void recreate_pipeline_and_descriptors();   //!< Creates graphic pipeline and descriptor sets. Called for window resizing (by Renderer::recreateSwapChain()).
@@ -110,7 +111,6 @@ public:
 	std::string						name;				//!< For debugging purposes.
 };
 
-
 class ModelsManager
 {
 public:
@@ -125,6 +125,30 @@ public:
 
 	void create_pipelines_and_descriptors(std::mutex* waitMutex);
 	void cleanup_pipelines_and_descriptors(std::mutex* waitMutex);
+};
+
+/// Helper class used for grouping a set of ModelData objects. 
+class ModelSet
+{
+	Renderer* r;
+
+	uint32_t numInstances;
+	uint32_t maxNumInstances;
+
+public:
+	ModelSet(Renderer& ren, std::vector<key64> keyList, uint32_t numInstances = 0, uint32_t maxNumInstances = 0);
+	ModelSet(Renderer& ren, key64 key, uint32_t numInstances = 0, uint32_t maxNumInstances = 0);
+
+	std::unordered_set<key64> models;   // Set of models. Fast lookup, and insert/erase. Undefined order.
+
+	void setNumInstances(uint32_t count);	//!< Set number of instances to render.
+	uint32_t getNumInstances() const;
+	bool fullyConstructed();   //!< Object fully constructed (i.e. model loaded into Vulkan).
+	bool ready();   //!< Object ready for rendering (i.e., it's fully constructed and in Renderer::models)
+
+	size_t size();
+	std::unordered_set<key64>::iterator begin();
+	std::unordered_set<key64>::iterator end();
 };
 
 #endif

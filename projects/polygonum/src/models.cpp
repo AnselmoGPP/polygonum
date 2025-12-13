@@ -27,7 +27,6 @@ ModelData::ModelData(Renderer* renderer, ModelDataInfo& modelInfo)
 	cullMode(modelInfo.cullMode),
 	renderPassIndex(modelInfo.renderPassIndex),
 	subpassIndex(modelInfo.subpassIndex),
-	maxNumInstances(modelInfo.maxNumInstances),
 	bindSets(modelInfo.bindSets),
 	fullyConstructed(false),
 	ready(false)
@@ -75,7 +74,6 @@ ModelData::ModelData(ModelData&& other) noexcept
 	hasTransparencies(std::move(other.hasTransparencies)),
 	cullMode(std::move(other.cullMode)),
 	numInstances(std::move(other.numInstances)),
-	maxNumInstances(std::move(other.maxNumInstances)),
 	pipelineLayout(std::move(other.pipelineLayout)),
 	graphicsPipeline(std::move(other.graphicsPipeline)),
 	bindSets(std::move(other.bindSets)),
@@ -108,7 +106,6 @@ ModelData& ModelData::operator=(ModelData&& other) noexcept
 	hasTransparencies = other.hasTransparencies;
 	cullMode = other.cullMode;
 	numInstances = other.numInstances;
-	maxNumInstances = other.maxNumInstances;
 	pipelineLayout = other.pipelineLayout;
 	graphicsPipeline = other.graphicsPipeline;
 	descriptorSetLayouts = other.descriptorSetLayouts;
@@ -152,7 +149,7 @@ ModelData& ModelData::operator=(ModelData&& other) noexcept
 	return *this;
 }
 
-ModelData& ModelData::fullConstruction(Renderer& ren)
+void ModelData::fullConstruction(Renderer& ren)
 {
 	#ifdef DEBUG_MODELS
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
@@ -174,7 +171,6 @@ ModelData& ModelData::fullConstruction(Renderer& ren)
 	createDescriptorSets();
 	
 	fullyConstructed = true;
-	return *this;
 }
 
 // (9)
@@ -881,16 +877,9 @@ bool ModelData::setNumInstances(uint32_t count)
 	#ifdef DEBUG_MODELS
 		std::cout << typeid(*this).name() << "::" << __func__ << " (" << name << ')' << std::endl;
 	#endif
-	
+
 	if (count == numInstances) return false;
-
-	if (count > maxNumInstances)
-	{
-		std::cerr << "The number of rendered instances (" << name << ") cannot be higher than " << maxNumInstances << std::endl;
-		numInstances = maxNumInstances;
-		return false;
-	}
-
+		
 	numInstances = count;
 	return true;
 
@@ -956,3 +945,63 @@ void ModelsManager::create_pipelines_and_descriptors(std::mutex* waitMutex)
 	for (auto it = data.begin(); it != data.end(); it++)
 		it->second.recreate_pipeline_and_descriptors();
 }
+
+ModelSet::ModelSet(Renderer& ren, std::vector<key64> keyList, uint32_t numInstances, uint32_t maxNumInstances)
+	: r(&ren), numInstances(numInstances), maxNumInstances(maxNumInstances)
+{
+	if (keyList.empty()) throw std::runtime_error("ModelSet must contain one or more models");
+
+	for (const auto key : keyList)
+		models.insert(key);
+
+	setNumInstances(numInstances);
+}
+
+ModelSet::ModelSet(Renderer& ren, key64 key, uint32_t numInstances, uint32_t maxNumInstances)
+	: r(&ren), numInstances(numInstances), maxNumInstances(maxNumInstances)
+{
+	models.insert(key);
+
+	setNumInstances(numInstances);
+}
+
+void ModelSet::setNumInstances(uint32_t count)
+{
+	if (count == numInstances) return;
+
+	if (count > maxNumInstances)
+	{
+		std::string firstModelName = r->getModel(*models.begin())->name;
+		std::cerr << "The number of rendered instances (" << firstModelName << ") cannot be higher than " << maxNumInstances << std::endl;
+		count = maxNumInstances;
+	}
+
+	for (auto it = models.begin(); it != models.end(); it++)
+		r->getModel(*it)->setNumInstances(count);
+
+	numInstances = count;
+}
+
+uint32_t ModelSet::getNumInstances() const { return numInstances; }
+
+bool ModelSet::fullyConstructed()
+{
+	for (auto it = models.begin(); it != models.end(); it++)
+		if (r->getModel(*it)->fullyConstructed == false) return false;
+
+	return true;
+}
+
+bool ModelSet::ready()
+{
+	for (auto it = models.begin(); it != models.end(); it++)
+		if (r->getModel(*it)->ready == false) return false;
+
+	return true;
+}
+
+size_t ModelSet::size() { return models.size(); }
+
+std::unordered_set<key64>::iterator ModelSet::begin() { return models.begin(); }
+
+std::unordered_set<key64>::iterator ModelSet::end() { return models.end(); }
