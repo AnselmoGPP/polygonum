@@ -21,6 +21,7 @@ class ResourcesLoader;
 struct ModelDataInfo;
 class ModelData;
 class ModelsManager;
+class ModelSet;
 
 // Definitions ----------
 
@@ -139,7 +140,10 @@ public:
 	ModelSet(Renderer& ren, std::vector<key64> keyList, uint32_t numInstances = 0, uint32_t maxNumInstances = 0);
 	ModelSet(Renderer& ren, key64 key, uint32_t numInstances = 0, uint32_t maxNumInstances = 0);
 
-	std::unordered_set<key64> models;   // Set of models. Fast lookup, and insert/erase. Undefined order.
+	key64& operator[](size_t index);
+
+	//std::unordered_set<key64> models;   // Set of models. Fast lookup and insert/erase. Undefined order. No random access.
+	std::vector<key64> models;   // Set of models. Slow lookup and insert/erase. Defined order. Random access.
 
 	void setNumInstances(uint32_t count);	//!< Set number of instances to render.
 	uint32_t getNumInstances() const;
@@ -147,8 +151,6 @@ public:
 	bool ready();   //!< Object ready for rendering (i.e., it's fully constructed and in Renderer::models)
 
 	size_t size();
-	std::unordered_set<key64>::iterator begin();
-	std::unordered_set<key64>::iterator end();
 };
 
 #endif

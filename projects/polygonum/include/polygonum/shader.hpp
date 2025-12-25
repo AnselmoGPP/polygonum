@@ -160,8 +160,9 @@ public:
 
 	ShaderCode vs, fs;
 
+	std::string getShader0(unsigned shaderType);   //!< 0 (vertex), 1 (fragment)
 	std::string getShader(unsigned shaderType);   //!< 0 (vertex), 1 (fragment)
-	void printShader(unsigned shaderType);
+	void printShader(unsigned shaderType);   //!< 0 (vertex), 1 (fragment)
 	void printAllShaders();
 
 	ShaderCreator& replaceMainBegin(unsigned shaderType, std::string& text, const std::string& substring, const std::string& replacement);   //!< Replace an entire line in main_begin with your own if it contains certain substring.

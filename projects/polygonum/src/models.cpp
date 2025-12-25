@@ -947,23 +947,20 @@ void ModelsManager::create_pipelines_and_descriptors(std::mutex* waitMutex)
 }
 
 ModelSet::ModelSet(Renderer& ren, std::vector<key64> keyList, uint32_t numInstances, uint32_t maxNumInstances)
-	: r(&ren), numInstances(numInstances), maxNumInstances(maxNumInstances)
+	: r(&ren), models(keyList), numInstances(numInstances), maxNumInstances(maxNumInstances)
 {
 	if (keyList.empty()) throw std::runtime_error("ModelSet must contain one or more models");
-
-	for (const auto key : keyList)
-		models.insert(key);
 
 	setNumInstances(numInstances);
 }
 
 ModelSet::ModelSet(Renderer& ren, key64 key, uint32_t numInstances, uint32_t maxNumInstances)
-	: r(&ren), numInstances(numInstances), maxNumInstances(maxNumInstances)
+	: r(&ren), models({key}), numInstances(numInstances), maxNumInstances(maxNumInstances)
 {
-	models.insert(key);
-
 	setNumInstances(numInstances);
 }
+
+key64& ModelSet::operator[](size_t index) { return models[index]; }
 
 void ModelSet::setNumInstances(uint32_t count)
 {
@@ -971,13 +968,12 @@ void ModelSet::setNumInstances(uint32_t count)
 
 	if (count > maxNumInstances)
 	{
-		std::string firstModelName = r->getModel(*models.begin())->name;
-		std::cerr << "The number of rendered instances (" << firstModelName << ") cannot be higher than " << maxNumInstances << std::endl;
+		std::cerr << "The number of rendered instances (" << r->getModel(models[0])->name << ") cannot be higher than " << maxNumInstances << std::endl;
 		count = maxNumInstances;
 	}
 
-	for (auto it = models.begin(); it != models.end(); it++)
-		r->getModel(*it)->setNumInstances(count);
+	for (auto& modelKey : models)
+		r->getModel(modelKey)->setNumInstances(count);
 
 	numInstances = count;
 }
@@ -986,22 +982,20 @@ uint32_t ModelSet::getNumInstances() const { return numInstances; }
 
 bool ModelSet::fullyConstructed()
 {
-	for (auto it = models.begin(); it != models.end(); it++)
-		if (r->getModel(*it)->fullyConstructed == false) return false;
+	for(auto& modelKey : models)
+		if (r->getModel(modelKey)->fullyConstructed == false)
+			return false;
 
 	return true;
 }
 
 bool ModelSet::ready()
 {
-	for (auto it = models.begin(); it != models.end(); it++)
-		if (r->getModel(*it)->ready == false) return false;
+	for (auto& modelKey : models)
+		if (r->getModel(modelKey)->ready == false)
+			return false;
 
 	return true;
 }
 
 size_t ModelSet::size() { return models.size(); }
-
-std::unordered_set<key64>::iterator ModelSet::begin() { return models.begin(); }
-
-std::unordered_set<key64>::iterator ModelSet::end() { return models.end(); }
