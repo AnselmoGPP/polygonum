@@ -10,7 +10,7 @@
 //} ubo;
 
 // Input
-layout (location = 0) in vec3 inPos;				// NDC position. Since it's in NDCs, no MVP transformation is required-
+layout (location = 0) in vec3 inPos;				// NDC position. Since it's in NDCs, no MVP transformation is required
 layout (location = 1) in vec2 inUVs;
 
 // Output

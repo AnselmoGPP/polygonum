@@ -196,6 +196,8 @@ private:
 	bool findStrAndErase(std::string& text, const std::string& str);
 	bool findStrAndReplace(std::string& text, const std::string& str, const std::string& replacement);
 	bool findStrAndReplaceLine(std::string& text, const std::string& str, const std::string& replacement);
+
+	std::string getShaderInfo(unsigned shaderType);
 };
 
 #endif

@@ -738,7 +738,7 @@ void ShaderCreator::setGeometry(const VertexType& vertexType, const BindingSet& 
 	fs.main_begin.push_back("vec4 albedo = vec4(1.f, 0.1f, 0.1f, 1.f)");
 	fs.main_begin.push_back("vec3 specularity = vec3(0.f, 0.f, 0.f)");
 	fs.main_begin.push_back("float roughness = 0.f");
-	fs.main_begin.push_back("vec3 normal = inNormal;");
+	fs.main_begin.push_back("vec3 normal = inNormal");
 	
 	for (unsigned i = 0; i < bindings.fsTextures.size(); i++)
 		switch (bindings.fsTextures[0][i]->type)
@@ -821,6 +821,8 @@ std::string ShaderCreator::getShader(unsigned shaderType)
 
 	std::ostringstream shader;
 
+	shader << getShaderInfo(shaderType) << "\n";
+
 	// Header
 
 	for (auto& line : code.header)
@@ -901,10 +903,10 @@ std::string ShaderCreator::getShader(unsigned shaderType)
 		shader << "\t" << line << ";\n";
 
 	if (code.main_begin.size()) shader << "\n";
+	// if(shaderType) shader << "\talbedo = vec4(1.f, 0.1f, 0.1f, 1.f);\n";
 
 	for (const auto& line : code.main_processing)
 		shader << "\t" << line << ";\n";
-
 	if (code.main_processing.size()) shader << "\n";
 
 	for (const auto& line : code.main_end)
@@ -1033,6 +1035,19 @@ void ShaderCreator::printAllShaders()
 	std::cout << getShader(0) << "\n";
 	std::cout << "----------\n";
 	std::cout << getShader(1) << "\n";
+}
+
+std::string ShaderCreator::getShaderInfo(unsigned shaderType)
+{
+	std::string shadType = shaderType ? "Fragment shader" : "Vertex shader";
+
+	std::string rendPass;
+	if (rpType = geometry) rendPass = "Geometry";
+	else if (rpType = lighting) rendPass = "Lighting";
+	else if (rpType = forward) rendPass = "Forward";
+	else if (rpType = postprocessing) rendPass = "Postprocessing";
+
+	return "// " + shadType + " - " + rendPass;
 }
 
 bool ShaderCreator::replaceAllIfContains(std::string& text, const std::string& substring, const std::string& replacement)

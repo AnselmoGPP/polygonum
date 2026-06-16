@@ -54,7 +54,7 @@
 //	Postprocessing:
 		vec3 getInversion(vec3 fragColor);
 		vec3 getGreyScale(vec3 fragColor);
-		//vec3 applyKernel(float kernel[9], sampler2D sampler, vec2 uv);
+		vec3 applyKernel(float kernel[9], sampler2D texSampler, vec2 uv);
 //	Others:
 //		getTexScaling
 //		getLowResDist
@@ -486,13 +486,13 @@ vec4 getFragColor(vec3 albedo, vec3 normal, vec3 specularity, float roughness, L
 	
 	vec3 fragDir   = normalize(camPos - fragPos);
 	vec4 result = vec4(0,0,0,1);
-
+	
 	for(int i = 0; i < NUMLIGHTS; i++)		// for each light source
 	{
 		if(inLight[i].type < 0.1) continue;
-		else if(inLight[i].type < 1.1) result.xyz += directionalLightColor(albedo, normal, specularity, roughness, light[i], fragDir);
-		else if(inLight[i].type < 2.1) result.xyz += PointLightColor      (albedo, normal, specularity, roughness, light[i], fragDir, fragPos);
-		else if(inLight[i].type < 3.1) result.xyz += SpotLightColor       (albedo, normal, specularity, roughness, light[i], fragDir, fragPos);
+		else if(inLight[i].type < 1.1) result.xyz += directionalLightColor(albedo, normal, specularity, roughness, inLight[i], fragDir);
+		else if(inLight[i].type < 2.1) result.xyz += PointLightColor      (albedo, normal, specularity, roughness, inLight[i], fragDir, fragPos);
+		else if(inLight[i].type < 3.1) result.xyz += SpotLightColor       (albedo, normal, specularity, roughness, inLight[i], fragDir, fragPos);
 	}
 	
 	return result;

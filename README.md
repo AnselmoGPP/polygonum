@@ -7,6 +7,8 @@
 
 ## Table of Contents
 + [Overview](#overview)
++ [Documentation](#documentation)
++ [Links](#links)
 + [Installation](#installation)
 + [Usage](#usage)
   + [Initialization](#initialization)
@@ -31,12 +33,31 @@
     + [LoadingWorker](#loadingworker)
     + [UBO](#ubo)
     + [TimerSet](#timerset)
-+ [Links](#links)
 
 
 ## Overview
 
 object to render (model)
+
+
+## Documentation
+
+Create the documentation automatically with the `document.py` script. Execute it from `/scripts` with `python3 document.py` or `sudo ./document.py`. It will generate documentation in html format in the `_BUILD/docs` directory. This requires `doxygen`, which can be installed with:
+
+```
+sudo apt update
+sudo apt install -y doxygen
+```
+
+
+## Links
+
+- [Setting up Vulkan](https://sciencesoftcode.wordpress.com/2021/03/09/setting-up-vulkan/)
+- [Vulkan tutorials](https://sciencesoftcode.wordpress.com/2019/04/08/vulkan-tutorials/)
+- [Vulkan notes](https://sciencesoftcode.wordpress.com/2021/11/08/vulkan-notes/)
+- [Vulkan SDK (getting started)](https://vulkan.lunarg.com/doc/sdk/1.2.170.0/linux/getting_started.html)
+- [Vulkan tutorial](https://vulkan-tutorial.com/)
+- [Diagrams](https://github.com/David-DiGioia/vulkan-diagrams)
 
 
 ## Installation
@@ -337,7 +358,7 @@ void update(Renderer& ren)
 
 ### Toolkit
 
-The header toolkit (`#include "toolkit"`) includes a wide range of helpful utilities:
+The header toolkit (`#include "toolkit.h"`) includes a wide range of helpful utilities:
 
 - **Print data**:
   - `PRINT(…)`: Print a variable number of arguments.
@@ -968,11 +989,4 @@ A secondary thread starts running in parallel just after the creation of a Rende
 
 Models with 0 renders have a descriptor set (like every model) but, since it is supposed to render nothing, the commmand for rendering it is not passed to the command buffer.
 
-## Links
 
-- [Setting up Vulkan](https://sciencesoftcode.wordpress.com/2021/03/09/setting-up-vulkan/)
-- [Vulkan tutorials](https://sciencesoftcode.wordpress.com/2019/04/08/vulkan-tutorials/)
-- [Vulkan notes](https://sciencesoftcode.wordpress.com/2021/11/08/vulkan-notes/)
-- [Vulkan SDK (getting started)](https://vulkan.lunarg.com/doc/sdk/1.2.170.0/linux/getting_started.html)
-- [Vulkan tutorial](https://vulkan-tutorial.com/)
-- [Diagrams](https://github.com/David-DiGioia/vulkan-diagrams)

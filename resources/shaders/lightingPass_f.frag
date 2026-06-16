@@ -45,6 +45,6 @@ void main()
 	//savePrecalcLightValues(fragPos, ubo.camPos.xyz, ubo.lights);	//ubo.lightPosDir);
 	//TB3 empty;
 	//savePNT(fragPos, normalize(inNormal), empty);
-	
-	outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, ubo.lights, fragPos, ubo.camPos.xyz );	
+
+	outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, ubo.lights, fragPos, ubo.camPos.xyz );
 }

@@ -111,7 +111,7 @@ protected:
 public:
 	/// Constructor. Requires a callback for user updates (update model matrix, add models, delete models...).
 	template <typename RP = RP_DS_PP>
-	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, RP* renderPipeline);
+	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height);
 	~Renderer();
 
 	std::vector<BindingBuffer> globalBuffers;   //!< Shared between models.
@@ -145,7 +145,7 @@ public:
 
 
 template <typename RP>
-Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, RP* renderPipeline = nullptr) :
+Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height) :
 	c(width, height),
 	swapChain(c, ADDITIONAL_SWAPCHAIN_IMAGES),
 	commander(c, swapChain.images.size(), MAX_FRAMES_IN_FLIGHT),
