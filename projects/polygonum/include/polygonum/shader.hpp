@@ -13,6 +13,7 @@ class ShaderIncluder;
 class ShaderCreator;
 
 enum RPtype { geometry, lighting, forward, postprocessing };
+enum ShaderType { vert, frag };
 
 // Container for a shader.
 class Shader : public InterfaceForPointersManagerElements<std::string, Shader>
@@ -132,9 +133,10 @@ public:
 };
 
 /**
-	Helper class for creating shaders for the render pipeline RP_DS_PP.
-	It creates the vertex (VS) and fragment (FS) shader for a given sub-pass (RPtype).
-*/
+ * @brief Helper class for creating shaders for the render pipeline RP_DS_PP.
+ *
+ * It creates the vertex (VS) and fragment (FS) shader for a given sub-pass (RPtype).
+ */
 class ShaderCreator
 {
 public:
@@ -172,11 +174,11 @@ public:
 private:
 	RPtype rpType;
 
+	ShaderCreator& setForward();   // Shaders for a Forward pass
+	ShaderCreator& setGeometry();   // Shaders for a Geometry pass
 	void setVS();
 	void setFS_forward();
 	void setFS_geometry();
-	ShaderCreator& setForward();   // Shaders for a Forward pass
-	ShaderCreator& setGeometry();   // Shaders for a Geometry pass
 
 	void setBasics();
 	void setBindings(const BindingSet& bindings);

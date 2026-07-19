@@ -21,7 +21,8 @@ class ModelData;
 
 enum VertAttrib { vaPos, vaNorm, vaTan, vaCol, vaCol4, vaUv, vaFixes, vaBoneWeights, vaBoneIndices, vaInstanceTransform, vaMax };
 
-/// VertexType defines the characteristics of a vertex: size and type of attributes the vertex is made of (Position, Color, Texture coordinates, Normals...).
+/// Defines the characteristics of a vertex: size and type of attributes the vertex is made of 
+/// (Position, Color, Texture coordinates, Normals...).
 class VertexType
 {
 	VertexType(std::initializer_list<uint32_t> attribsSizes, std::initializer_list<VkFormat> attribsFormats);	//!< Not used. Set the size (bytes) and type of each vertex attribute (Position, Color, Texture coords, Normal, other...).
@@ -136,7 +137,7 @@ class VertexesLoader
 protected:
 	VertexesLoader(size_t vertexSize, std::initializer_list<VerticesModifier*> modifiers);
 
-	const uint32_t vertexSize;	//!< Size (bytes) of a vertex object
+	uint32_t vertexSize;   //!< Size (bytes) of a vertex object (memory ocuppied by its attributes)
 	std::vector<VerticesModifier*> modifiers;
 
 	virtual void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ModelData& model) = 0;   //!< Get vertexes and indices from source. Subclasses define this.
@@ -186,6 +187,9 @@ class VL_fromFile : public VertexesLoader
 	void allocateMemForTextures();   //!< Add set and binding in bindSets if they doesn't exist.
 
 	void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ModelData& model) override;
+
+	uint32_t getVertexSize(const aiScene* scene, const aiNode* node);   //!< Find first non-empty mesh and get the size of a vertex.
+	void printTree(const aiScene* scene, const aiNode* node);   //!< For debugging purposes.
 
 public:
 	static VL_fromFile* factory(std::string filePath, std::initializer_list<VerticesModifier*> modifiers = {});	//!< From file (vertexSize == (3+3+2) * sizeof(float))

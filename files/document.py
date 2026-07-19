@@ -12,6 +12,9 @@ def run_command(command):
         exit(1)
 
 def main():
+    if os.path.exists("../_BUILD/docs"):
+        shutil.rmtree("../_BUILD/docs");
+
     if not os.path.exists("../_BUILD"):
         os.makedirs("../_BUILD")
         

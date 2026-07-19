@@ -198,7 +198,7 @@ std::shared_ptr<Shader> ShaderLoader::loadShader(PointersManager<std::string, Sh
 	shaderc::CompileOptions options;
 	options.SetIncluder(std::make_unique<ShaderIncluder>());
 	options.SetGenerateDebugInfo();
-	//if (optimize) options.SetOptimizationLevel(shaderc_optimization_level_performance);	// This option makes shaderc::CompileGlslToSpv fail when Assimp::Importer is present in code, even if an Importer object is not created (odd) (Importer is in DataFromFile2::loadVertex).
+	//if (optimize) options.SetOptimizationLevel(shaderc_optimization_level_performance);   // This option makes shaderc::CompileGlslToSpv fail when Assimp::Importer is present in code, even if an Importer object is not created (odd) (Importer is in DataFromFile2::loadVertex).
 
 	shaderc::Compiler compiler;
 
@@ -249,8 +249,7 @@ SL_fromBuffer* SL_fromBuffer::factory(std::string id, const std::string& glslTex
 }
 
 SL_fromFile::SL_fromFile(const std::string& filePath, std::initializer_list<SMod>& modifications)
-	: ShaderLoader(filePath, modifications), filePath(filePath) {
-};
+	: ShaderLoader(filePath, modifications), filePath(filePath) { };
 
 ShaderLoader* SL_fromFile::clone() { return new SL_fromFile(*this); }
 
@@ -403,6 +402,7 @@ ShaderCreator::ShaderCreator(RPtype rendPass, const VertexType& vertexType, cons
 
 void ShaderCreator::setBasics()
 {
+	// Vertex shader
 	vs.header = {
 	"#version 450",
 	"#extension GL_ARB_separate_shader_objects : enable",
@@ -412,6 +412,7 @@ void ShaderCreator::setBasics()
 
 	vs.globals = { "int i = gl_InstanceIndex" };
 
+	// Fragment shader
 	fs.header = {
 		"#version 450",
 		"#extension GL_ARB_separate_shader_objects : enable",
@@ -424,18 +425,20 @@ void ShaderCreator::setBasics()
 
 void ShaderCreator::setBindings(const BindingSet& bindings)
 {
+	// Vertex shader
 	for (const auto& buf : bindings.vsGlobal)
 		vs.bind_globalBuffers.push_back(BindingBuffer(getDescType(buf), buf->numDescriptors, buf->numSubDescriptors, buf->descriptorSize, buf->glslLines));
 
-	for (const auto& buf : bindings.fsGlobal)
-		fs.bind_globalBuffers.push_back(BindingBuffer(getDescType(buf), buf->numDescriptors, buf->numSubDescriptors, buf->descriptorSize, buf->glslLines));
-
 	vs.bind_localBuffers = bindings.vsLocal;
-
-	fs.bind_localBuffers = bindings.fsLocal;
 
 	for (const auto& texSet : bindings.vsTextures)
 		vs.bind_textures.push_back(texSet.size());
+
+	// Fragment shader
+	for (const auto& buf : bindings.fsGlobal)
+		fs.bind_globalBuffers.push_back(BindingBuffer(getDescType(buf), buf->numDescriptors, buf->numSubDescriptors, buf->descriptorSize, buf->glslLines));
+
+	fs.bind_localBuffers = bindings.fsLocal;
 
 	for (const auto& texSet : bindings.fsTextures)
 		fs.bind_textures.push_back(texSet.size());
@@ -1042,10 +1045,24 @@ std::string ShaderCreator::getShaderInfo(unsigned shaderType)
 	std::string shadType = shaderType ? "Fragment shader" : "Vertex shader";
 
 	std::string rendPass;
-	if (rpType = geometry) rendPass = "Geometry";
-	else if (rpType = lighting) rendPass = "Lighting";
-	else if (rpType = forward) rendPass = "Forward";
-	else if (rpType = postprocessing) rendPass = "Postprocessing";
+	switch (rpType)
+	{
+	case geometry:
+		rendPass = "Geometry";
+		break;
+	case lighting:
+		rendPass = "Lighting";
+		break;
+	case forward:
+		rendPass = "Forward";
+		break;
+	case postprocessing:
+		rendPass = "Postprocessing";
+		break;
+	default:
+		rendPass = "<error>";
+		break;
+	}
 
 	return "// " + shadType + " - " + rendPass;
 }

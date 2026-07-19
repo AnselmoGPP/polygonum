@@ -69,7 +69,7 @@ class ModelData;
 // Enums ----------
 
 
-enum ShaderType { vertexS, fragS };
+//enum ShaderType { vertexS, fragS };
 
 
 // RESOURCES --------------------------------------------------------

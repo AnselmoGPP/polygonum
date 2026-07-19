@@ -520,45 +520,51 @@ void LoadingWorker::thread_loadData(Renderer& renderer, ModelsManager& models, C
 	std::cout << "- Loading thread ID: " << std::this_thread::get_id() << std::endl;
 #endif
 
-	key64 key;
-	Task task;
-
-	for(;;)
+	try
 	{
+		key64 key;
+		Task task;
+
+		for(;;)
+		{
 #ifdef DEBUG_WORKER
 		std::cout << "- New iteration -----" << std::endl;
 #endif
 
-		std::unique_lock lock(mutTasks);
-		cond.wait(lock, [this] { return (!tasks.empty() || stopThread); });   // Wait for new tasks or a stop order.
-		
-		if (tasks.empty() && stopThread) return;   // Stop order executed here
-
-		key = tasks.front().first;   // Get task info
-		task = tasks.front().second;
-		tasks.pop();
-
-		lock.unlock();
-		
-		// Complete task
-		switch (task)
-		{
-		case construct:
-			models.data[key].fullConstruction(renderer);
-			models.data[key].ready = true;
-			commander.updateCommandBuffer = true;
-			break;
-
-		case delet:
-			extractModel(models, key);
-			modelTP.clear();
-			commander.updateCommandBuffer = true;
-			break;
-
-		default:
-			break;
+			std::unique_lock lock(mutTasks);
+			cond.wait(lock, [this] { return (!tasks.empty() || stopThread); });   // Wait for new tasks or a stop order.
+			
+			if (tasks.empty() && stopThread) return;   // Stop order executed here
+	
+			key = tasks.front().first;   // Get task info
+			task = tasks.front().second;
+			tasks.pop();
+	
+			lock.unlock();
+			
+			// Complete task
+			switch (task)
+			{
+			case construct:
+				models.data[key].fullConstruction(renderer);
+				models.data[key].ready = true;
+				commander.updateCommandBuffer = true;
+				break;
+	
+			case delet:
+				extractModel(models, key);
+				modelTP.clear();
+				commander.updateCommandBuffer = true;
+				break;
+	
+			default:
+				break;
+			}
 		}
+
 	}
+	catch (const std::exception& e) { std::cerr << "Loading thread error: " << e.what() << std::endl; }
+	catch (const char* msg) { std::cout << "Loading thread error: " << msg << std::endl; }
 
 #ifdef DEBUG_WORKER
 	std::cout << "- " << typeid(*this).name() << "::" << __func__ << " (end)" << std::endl;

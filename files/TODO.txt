@@ -1,0 +1,25 @@
+Observations and suggestions, organized by priority:
+
+Architecture & Design
+1. Hardcoded Vulkan SDK path (C:/VulkanSDK/1.3.280.0/ in CMakeLists) — fragile. Better to use the VULKAN_SDK environment variable or a CMake variable.
+2. #define VAL_LAYERS in environment.hpp — hardcoded enable. Should be a CMake option (option(ENABLE_VALIDATION_LAYERS ON)).
+3. Render pipeline uses raw pointers for attachments (Image* in Subpass) — a vector of unique_ptr or optional<Image> would be safer.
+4. LoadingWorker exposes internal mutexes publicly (mutModels, mutResources, mutTasks are public members). Encapsulate behind accessor methods.
+5. Commons.hpp defines key64 = uint64_t and vec<T> aliases — these pollute the global namespace of any file that includes them. The vec<T> aliases in particular are unnecessary (just write std::vector<T>).
+6. VertexData stores vertex data as raw float vectors with manual stride/offset tracking — this is error-prone and hard to extend.
+Code Quality
+ 7. Typo: "delet" instead of "delete" in LoadingWorker::enum Task (renderer.hpp:18).
+ 8. Typo: "Tansfers" instead of "Transfers" (models.hpp:81).
+ 9. VulkanCore holds an IOmanager io public member — couples the graphics API module with window/input handling. Consider injecting it.
+10. #include "polygonum/commons.hpp" included transitively everywhere — this pulls in Vulkan, GLFW, GLM, Assimp, and shaderc includes into every translation unit, increasing compile time significantly.
+Missing Features / Nice-to-Haves
+11. No test suite — even simple Vulkan-less unit tests for the math, sorting, and ECS modules would help catch regressions.
+12. No CMake presets (CMakePresets.json) — would make configuring and building easier.
+13. No ndebug macro / release configuration — -O2/-O3 is commented out in the CMakeLists.
+14. profiler timer in Renderer is created but never used (dead code).
+15. No shadow mapping — the most common next step for a deferred renderer.
+Smallest quick wins
+- Fix the two typos
+- Move VAL_LAYERS to CMake
+- Replace raw Image* in Subpass with std::vector<std::reference_wrapper<Image>> or std::vector<Image*> const
+- Encapsulate LoadingWorker's mutexes

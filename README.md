@@ -42,12 +42,10 @@ object to render (model)
 
 ## Documentation
 
-Create the documentation automatically with the `document.py` script. Execute it from `/scripts` with `python3 document.py` or `sudo ./document.py`. It will generate documentation in html format in the `_BUILD/docs` directory. This requires `doxygen`, which can be installed with:
+Create the documentation automatically with the `document.py` script. Execute it from `/files` with `python document.py` (Windows) or `sudo ./document.py` (Linux). It will generate documentation in html format in the `_BUILD/docs` directory. This requires:
 
-```
-sudo apt update
-sudo apt install -y doxygen
-```
+- **Doxygen**: This can be installed with `sudo apt update && sudo apt install -y doxygen` (Linux) or downloaded from the [website](https://www.doxygen.nl/download.html).
+- **Graphviz**: Install it with `winget install Graphviz.Graphviz` (Windows) or `sudo apt update && sudo apt install graphviz` (Linux). Also add in the doxyfile `HAVE_DOT = YES` and `DOT_PATH = <path_to_dot.exe>` (example: `DOT_PATH = C:/Program Files/Graphviz/bin`)
 
 
 ## Links

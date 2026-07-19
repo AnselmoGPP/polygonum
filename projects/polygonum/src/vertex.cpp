@@ -73,7 +73,7 @@ VkFormat VertexType::getFormat(VertAttrib attribute)
 		return VK_FORMAT_R32G32_SFLOAT;   // glm::vec2
 	case vaBoneIndices:
 		return VK_FORMAT_R32G32B32A32_UINT;   // uvec4
-		//case instanceTransform:
+	//case instanceTransform:
 		//	return VK_FORMAT_R32G32B32A32_SFLOAT(x4);   // glm::mat4
 	default:
 		throw std::runtime_error("Attribute not mapped");
@@ -247,7 +247,7 @@ void VertexSet::reset(uint32_t vertexSize, uint32_t numOfVertex, const void* buf
 
 void VertexSet::reset(uint32_t vertexSize)
 {
-	if (buffer) delete[] this->buffer;
+	delete[] this->buffer;
 
 	this->vertexSize = vertexSize;
 	numVertex = 0;
@@ -418,8 +418,7 @@ void VL_fromBuffer::getRawData(VertexSet& destVertices, std::vector<uint16_t>& d
 }
 
 VL_fromFile::VL_fromFile(std::string filePath, std::initializer_list<VerticesModifier*> modifiers)
-	: VertexesLoader((3 + 3 + 2) * sizeof(float), modifiers), path(filePath), vertices(nullptr), indices(nullptr) {
-}
+	: VertexesLoader(8 * sizeof(float), modifiers), path(filePath), vertices(nullptr), indices(nullptr) { }
 
 VL_fromFile* VL_fromFile::factory(std::string filePath, std::initializer_list<VerticesModifier*> modifiers)
 {
@@ -443,18 +442,17 @@ void VL_fromFile::getRawData(VertexSet& destVertices, std::vector<uint16_t>& des
 	this->indices = &destIndices;
 	this->model = &model;
 
-	vertices->reset(vertexSize);
-
 	Assimp::Importer importer;
 	const aiScene* scene = importer.ReadFile(path, aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_CalcTangentSpace);
 	// aiProcess_JoinIdenticalVertices | aiProcess_MakeLeftHanded
 
 	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
-	{
-		std::cout << "ERROR::ASSIMP::" << importer.GetErrorString() << std::endl;
-		return;
-	}
+		throw("ERROR::ASSIMP::" + std::string(importer.GetErrorString()));
 
+	vertexSize = getVertexSize(scene, scene->mRootNode);
+	vertices->reset(vertexSize);
+
+	//printTree(scene, scene->mRootNode);
 	processNode(scene, scene->mRootNode);	// recursive
 }
 
@@ -465,7 +463,6 @@ void VL_fromFile::processNode(const aiScene* scene, aiNode* node)
 
 	for (unsigned i = 0; i < node->mNumMeshes; i++)
 	{
-		//mesh = scene->mMeshes[node->mMeshes[i]];
 		meshes.push_back(scene->mMeshes[node->mMeshes[i]]);
 		processMeshes(scene, meshes);
 	}
@@ -478,20 +475,20 @@ void VL_fromFile::processNode(const aiScene* scene, aiNode* node)
 void VL_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*>& meshes)
 {
 	//<<< destVertices->reserve(destVertices->size() + mesh->mNumVertices);
-	float* vertex = new float[vertexSize / sizeof(float)];			// [3 + 3 + 2]  (pos, normal, UV)
-	unsigned i, j, k;
+	//float* vertex = new float[vertexSize / sizeof(float)];
+	std::vector<float> vertex(vertexSize / sizeof(float));
 
 	// Go through each mesh contained in this node
-	for (k = 0; k < meshes.size(); k++)
+	for (unsigned k = 0; k < meshes.size(); k++)
 	{
 		// Get VERTEX data (positions, normals, UVs)
-		for (i = 0; i < meshes[k]->mNumVertices; i++)
+		for (unsigned i = 0; i < meshes[k]->mNumVertices; i++)
 		{
 			vertex[0] = meshes[k]->mVertices[i].x;
 			vertex[1] = meshes[k]->mVertices[i].y;
 			vertex[2] = meshes[k]->mVertices[i].z;
 
-			if (meshes[k]->mNormals)
+			if (meshes[k]->HasNormals())
 			{
 				vertex[3] = meshes[k]->mNormals[i].x;
 				vertex[4] = meshes[k]->mNormals[i].y;
@@ -499,7 +496,7 @@ void VL_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*>& mesh
 			}
 			else { vertex[3] = 0.f; vertex[4] = 0.f; vertex[5] = 1.f; };
 
-			if (meshes[k]->mTextureCoords)
+			if (meshes[k]->HasTextureCoords(0))
 			{
 				vertex[6] = meshes[k]->mTextureCoords[0][i].x;
 				vertex[7] = meshes[k]->mTextureCoords[0][i].y;
@@ -508,15 +505,15 @@ void VL_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*>& mesh
 
 			//if (meshes[k]->mTangents) { };
 
-			vertices->push_back(vertex);	// Get VERTICES
+			vertices->push_back(vertex.data());	// Get VERTICES
 		}
 
 		// Get INDICES
 		aiFace face;
-		for (i = 0; i < meshes[k]->mNumFaces; i++)
+		for (unsigned i = 0; i < meshes[k]->mNumFaces; i++)
 		{
 			face = meshes[k]->mFaces[i];
-			for (j = 0; j < face.mNumIndices; j++)
+			for (unsigned j = 0; j < face.mNumIndices; j++)
 				indices->push_back(face.mIndices[j]);	// Get INDICES
 		}
 
@@ -531,14 +528,12 @@ void VL_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*>& mesh
 				for (unsigned j = 0; j < material->GetTextureCount(types[i]); j++)
 				{
 					allocateMemForTextures();
-					material->GetTexture(types[i], j, &fileName);					// get texture file location
-					model->bindSets[0].fsTextures[0].push_back(Tex_fromFile::factory(fileName.C_Str()));	// Get RESOURCES
+					material->GetTexture(types[i], j, &fileName);   // get texture file location
+					model->bindSets[0].fsTextures[0].push_back(Tex_fromFile::factory(fileName.C_Str()));   // Get RESOURCES
 					fileName.Clear();
 				}
 		}
 	}
-
-	delete[] vertex;
 }
 
 void VL_fromFile::allocateMemForTextures()
@@ -550,6 +545,53 @@ void VL_fromFile::allocateMemForTextures()
 	if (model->bindSets[0].fsTextures.empty()) model->bindSets[0].fsTextures.push_back(vec<std::shared_ptr<Texture>>());
 }
 
+uint32_t VL_fromFile::getVertexSize(const aiScene* scene, const aiNode* node)
+{
+	uint32_t vertexSiz = 0;
+
+	// Check node's meshes
+	for (unsigned i = 0; i < node->mNumMeshes; ++i)
+	{
+		aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+		if (mesh->mNumVertices)
+		{
+			vertexSiz += (mesh->mVertices ? 3 : 0);
+			vertexSiz += (mesh->HasNormals() ? 3 : 0);
+			vertexSiz += (mesh->HasTextureCoords(0) ? 2 : 0);
+			vertexSiz *= sizeof(float);
+			return vertexSiz;
+		}
+	}
+
+	// Check children's meshes
+	for (unsigned i = 0; i < node->mNumChildren; ++i)
+	{
+		vertexSiz = getVertexSize(scene, node->mChildren[i]);
+		if (vertexSiz) return vertexSiz;
+	}
+
+	return 0;
+}
+
+void VL_fromFile::printTree(const aiScene* scene, const aiNode* node)
+{
+	std::cout << "Node: " << node << std::endl;
+
+	std::cout << "    Meshes (" << node->mNumMeshes << "): ";
+	for (unsigned i = 0; i < node->mNumMeshes; ++i)
+		std::cout << scene->mMeshes[node->mMeshes[i]]->mNumVertices << " ";
+	
+	std::cout << std::endl;
+
+	std::cout << "    Children (" << node->mNumChildren << "): ";
+	for (unsigned i = 0; i < node->mNumChildren; ++i)
+		std::cout << node->mChildren[i] << " ";
+
+	std::cout << std::endl;
+
+	for (unsigned i = 0; i < node->mNumChildren; ++i)
+		printTree(scene, node->mChildren[i]);
+}
 
 VerticesModifier::VerticesModifier(glm::vec4 params)
 	: params(params) {
