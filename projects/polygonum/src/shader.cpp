@@ -377,19 +377,22 @@ void DataFromFile::loadVertex()
 ShaderCreator::ShaderCreator(RPtype rendPass, const VertexType& vertexType, const BindingSet& bindings)
 	: rpType(rendPass)
 {
+	if (!vertexType.contains(vaPos))
+		throw("Vertex must contain the position attribute.");
+
 	setBasics();
 	setBindings(bindings);
 
 	switch (rendPass)
 	{
-	case forward:
-		setForward(vertexType, bindings);
-		break;
 	case geometry:
 		setGeometry(vertexType, bindings);
 		break;
 	case lighting:
 		setLighting();
+		break;
+	case forward:
+		setForward(vertexType, bindings);
 		break;
 	case postprocessing:
 		setPostprocess();
@@ -427,7 +430,7 @@ void ShaderCreator::setBindings(const BindingSet& bindings)
 {
 	// Vertex shader
 	for (const auto& buf : bindings.vsGlobal)
-		vs.bind_globalBuffers.push_back(BindingBuffer(getDescType(buf), buf->numDescriptors, buf->numSubDescriptors, buf->descriptorSize, buf->glslLines));
+		vs.bind_globalBuffers.push_back(*buf);
 
 	vs.bind_localBuffers = bindings.vsLocal;
 
@@ -436,28 +439,12 @@ void ShaderCreator::setBindings(const BindingSet& bindings)
 
 	// Fragment shader
 	for (const auto& buf : bindings.fsGlobal)
-		fs.bind_globalBuffers.push_back(BindingBuffer(getDescType(buf), buf->numDescriptors, buf->numSubDescriptors, buf->descriptorSize, buf->glslLines));
+		fs.bind_globalBuffers.push_back(*buf);
 
 	fs.bind_localBuffers = bindings.fsLocal;
 
 	for (const auto& texSet : bindings.fsTextures)
 		fs.bind_textures.push_back(texSet.size());
-}
-
-ShaderCreator& ShaderCreator::setForward()
-{
-	setVS();
-	setFS_forward();
-
-	return *this;
-}
-
-ShaderCreator& ShaderCreator::setGeometry()
-{
-	setVS();
-	setFS_geometry();
-
-	return *this;
 }
 
 void ShaderCreator::setLighting()
@@ -528,106 +515,17 @@ void ShaderCreator::setPostprocess()
 	fs.main_end = { "outColor = vec4(texture(inputAtt[0], inUV).rgb, 1.0)" };
 }
 
-void ShaderCreator::setVS()
+ShaderCreator::ShaderCode& ShaderCreator::getShaderCode(ShaderType shaderType)
 {
-	vs.header = {
-		"#version 450",
-		"#extension GL_ARB_separate_shader_objects : enable",
-		"#pragma shader_stage(vertex)" };
-
-	vs.includes = { "#include \"..\..\extern\polygonum\resources\shaders\vertexTools.vert\"" };
-
-	vs.flags;
-
-	vs.bind_globalBuffers = { BindingBuffer(ubo, 1, 1, 0, { "mat4 view", "mat4 proj", "vec4 camPos_t" }) };
-	vs.bind_localBuffers = { BindingBuffer(ubo, 1, 1, 0, {"mat4 model", "mat4 normalMat" }) };
-
-	vs.input = { "vec3 inPos", "vec2 inUV", "vec3 inNormal", "vec3 inTan" };
-
-	vs.output = { "vec3 outPos", "vec2 outUV", "vec3 outNormal", "TB outTB" };
-
-	vs.globals = { "int i = gl_InstanceIndex" };
-
-	vs.main_begin = {
-		"vec3 worldPos = (lBuf.ins[i].model * vec4(inPos, 1.0)).xyz",
-		"vec4 clipPos = gBuf.proj * gBuf.view * vec4(worldPos, 1.0)",
-		"vec2 uv = inUV",
-		"vec3 normal = mat3(lBuf.ins[i].normalMat) * inNormal",
-		"TB tb = getTB(inNormal, inTan)" };
-
-	vs.main_processing;
-
-	vs.main_end = {
-		"gl_Position = clipPos",
-		"outPos = worldPos",
-		"outUV = uv",
-		"outNormal = normal",
-		"outTB = tb" };
-}
-
-void ShaderCreator::setFS_forward()
-{
-	fs.header = {
-		"#version 450",
-		"#extension GL_ARB_separate_shader_objects : enable",
-		"#pragma shader_stage(fragment)" };
-
-	fs.includes = { "#include \"..\..\extern\polygonum\resources\shaders\fragTools.vert\"" };
-
-	fs.flags = { "layout(early_fragment_tests) in" };
-
-	fs.bind_globalBuffers = { BindingBuffer(ubo, 1, 1, 0, { "vec4 camPos_t", "Light light[]" }) };
-	fs.bind_textures = { 4 };   // albedo, spec, rough, normal
-
-	fs.input = { "vec3 inPos", "vec2 inUV", "vec3 inNormal", "TB inTB" };
-
-	fs.output = { "vec4 outColor" };
-
-	fs.globals;
-
-	fs.main_begin = {
-		"vec3 albedo = texture(texSampler[0], inUV).xyz",
-		"vec4 specRough = texture(texSampler[1], inUV)",
-		"vec3 normal = planarNormal(texSampler[2], inNormal, inTB, inUV, 1.f)" };
-
-	fs.main_processing;
-
-	fs.main_end = {
-		"outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, gBuf.light, inPos, gBuf.camPos_t.xyz)" };
-}
-
-void ShaderCreator::setFS_geometry()
-{
-	fs.header = {
-		"#version 450",
-		"#extension GL_ARB_separate_shader_objects : enable",
-		"#pragma shader_stage(fragment)" };
-
-	fs.includes = { "#include \"..\..\extern\polygonum\resources\shaders\fragTools.vert\"" };
-
-	fs.flags = { "layout(early_fragment_tests) in" };
-
-	fs.bind_globalBuffers = { BindingBuffer(ubo, 1, 1, 0, { "vec4 camPos_t", "Light light[NUMLIGHTS]" }) };
-	fs.bind_textures = { 4 };   // albedo, spec, rough, normal
-
-	fs.input = { "vec3 inPos", "vec2 inUV", "vec3 inNormal", "TB inTB" };
-
-	fs.output = { "vec4 outPos", "vec4 outAlbedo", "vec4 outSpecRoug", "vec4 outNormal" };
-
-	fs.globals;
-
-	fs.main_begin = {
-		"vec4 albedo = vec4(texture(texSampler[0], inUV).xyz, 1.f)",
-		"vec4 specRough = texture(texSampler[1], inUV)",
-		"vec3 normal = planarNormal(texSampler[2], inNormal, inTB, inUV, 1.f)" };
-
-	fs.main_processing;
-
-	fs.main_end = {
-		"outPos = vec4(inPos, 1.f)",
-		"outAlbedo = albedo",
-		"outSpecRoug = vec4(specular, roughness)",
-		"outNormal = vec4(normalize(inNormal), 1.0)" };
+	switch (shaderType)
+	{
+	case vert:
+		return vs;
+	case frag:
+		return fs;
+	default:
+		throw("Non-valid shader type.");
+	}
 }
 
 void ShaderCreator::setVS_general(const VertexType& vertexType)
@@ -656,6 +554,8 @@ void ShaderCreator::setVS_general(const VertexType& vertexType)
 			fs.input.push_back("in vec3 inNormal");
 			continue;
 		case vaTan:
+			if (!vertexType.contains(vaNorm))
+				continue;
 			vs.input.push_back("in vec3 inTan");
 			vs.output.push_back("out TB outTB");
 			vs.main_begin.push_back("TB tb = getTB(inNormal, inTan)");
@@ -685,7 +585,6 @@ void ShaderCreator::setVS_general(const VertexType& vertexType)
 			continue;
 		case vaFixes:
 			vs.input.push_back("in vec3 inFixes");
-			vs.output.push_back("out vec3 outFixes");
 			continue;
 		case vaBoneWeights:
 			vs.input.push_back("in vec4 inBoneWeights");
@@ -710,11 +609,13 @@ void ShaderCreator::setVS_general(const VertexType& vertexType)
 
 void ShaderCreator::setForward(const VertexType& vertexType, const BindingSet& bindings)
 {
-	std::unordered_map<VertAttrib, unsigned> attribs = usedAttribTypes(vertexType);
+	//std::unordered_map<VertAttrib, unsigned> attribs = usedAttribTypes(vertexType);
 	//std::unordered_map<TexType, unsigned> tex = usedTextureTypes(textures);
 
+	// Vertex shader
 	setVS_general(vertexType);
 
+	// Fragment shader
 	fs.output.push_back("out vec4 outColor");
 
 	fs.main_begin.push_back("vec3 worldPos = inPos");
@@ -724,24 +625,42 @@ void ShaderCreator::setForward(const VertexType& vertexType, const BindingSet& b
 
 	fs.main_end.push_back("outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, gBuf[0].light, worldPos, gBuf[0].camPos_t.xyz)");
 
-	if (attribs.find(vaTan) == attribs.end())
+	if (!vertexType.contains(vaUv))
+	{
+		fs.main_begin[1] = "vec3 albedo = vec3(0.f, 1.f, 0.f)";
+		fs.main_begin[2] = "vec4 specRough = vec4(0.f, 0.f, 0.f, 0.f)";
 		fs.main_begin[3] = "vec3 normal = inNormal";
+
+		if (vertexType.contains(vaCol) || vertexType.contains(vaCol4))
+			fs.main_begin[1] = "vec3 albedo = inColor.xyz";
+	}
+
+	if (!vertexType.contains(vaTan))
+		fs.main_begin[3] = "vec3 normal = inNormal";
+
+	if (!vertexType.contains(vaNorm))
+		throw std::runtime_error("ShaderCreator: Vertex doesn't contain normal as attribute.");
 }
 
 void ShaderCreator::setGeometry(const VertexType& vertexType, const BindingSet& bindings)
 {
+	// Vertex shader
 	setVS_general(vertexType);
 
+	// Fragment shader
 	fs.output.push_back("out vec4 outPos");
 	fs.output.push_back("out vec4 outAlbedo");
 	fs.output.push_back("out vec4 outNormal");
 	fs.output.push_back("out vec4 outSpecRoug");
 
 	fs.main_begin.push_back("vec3 worldPos = inPos");
-	fs.main_begin.push_back("vec4 albedo = vec4(1.f, 0.1f, 0.1f, 1.f)");
+	fs.main_begin.push_back("vec4 albedo = vec4(0.f, 1.f, 0.f, 1.f)");
 	fs.main_begin.push_back("vec3 specularity = vec3(0.f, 0.f, 0.f)");
 	fs.main_begin.push_back("float roughness = 0.f");
 	fs.main_begin.push_back("vec3 normal = inNormal");
+
+	if (!vertexType.contains(vaNorm))
+		throw std::runtime_error("ShaderCreator: Vertex doesn't contain normal as attribute.");
 	
 	for (unsigned i = 0; i < bindings.fsTextures.size(); i++)
 		switch (bindings.fsTextures[0][i]->type)
@@ -762,9 +681,8 @@ void ShaderCreator::setGeometry(const VertexType& vertexType, const BindingSet& 
 			continue;
 		case tNorm:
 			fs.main_begin[4] = "vec3 normal = inNormal";
-			for (const auto& type : vertexType.attribsTypes)
-				if (type == vaTan)
-					fs.main_begin[4] = "vec3 normal = planarNormal(tex[" + std::to_string(i) + "], inNormal, inTB, inUV, 1.f)";
+			if(vertexType.contains(vaTan))
+				fs.main_begin[4] = "vec3 normal = planarNormal(tex[" + std::to_string(i) + "], inNormal, inTB, inUV, 1.f)";
 			continue;
 		default:
 			continue;
@@ -776,18 +694,17 @@ void ShaderCreator::setGeometry(const VertexType& vertexType, const BindingSet& 
 	fs.main_end.push_back("outNormal = vec4(normalize(normal), 1.0)");
 }
 
-unsigned ShaderCreator::firstBindingNumber(unsigned shaderType)
+unsigned ShaderCreator::firstBindingNumber(ShaderType shaderType)
 {
-	if (shaderType == 1)   // if in fragment shader
+	if (shaderType == frag)   // if in fragment shader
 		return vs.bind_globalBuffers.size() + vs.bind_localBuffers.size() + vs.bind_textures.size();
 
 	return 0;
 }
 
-
-ShaderCreator& ShaderCreator::replaceMainBegin(unsigned shaderType, std::string& text, const std::string& substring, const std::string& replacement)
+ShaderCreator& ShaderCreator::replaceMainBegin(ShaderType shaderType, std::string& text, const std::string& substring, const std::string& replacement)
 {
-	ShaderCode& shader = shaderType ? fs : vs;
+	ShaderCode& shader = getShaderCode(shaderType);
 
 	for (auto& line : shader.main_begin)
 		if (!replaceAllIfContains(text, substring, replacement))
@@ -796,9 +713,9 @@ ShaderCreator& ShaderCreator::replaceMainBegin(unsigned shaderType, std::string&
 	return *this;
 }
 
-ShaderCreator& ShaderCreator::replaceMainEnd(unsigned shaderType, std::string& text, const std::string& substring, const std::string& replacement)
+ShaderCreator& ShaderCreator::replaceMainEnd(ShaderType shaderType, std::string& text, const std::string& substring, const std::string& replacement)
 {
-	ShaderCode& shader = shaderType ? fs : vs;
+	ShaderCode& shader = getShaderCode(shaderType);
 
 	for (auto& line : shader.main_end)
 		if (!replaceAllIfContains(text, substring, replacement))
@@ -818,9 +735,9 @@ ShaderCreator& ShaderCreator::setVerticalNormals()
 	return *this;
 }
 
-std::string ShaderCreator::getShader(unsigned shaderType)
+std::string ShaderCreator::getShader(ShaderType shaderType)
 {
-	ShaderCode& code = (shaderType ? fs : vs);
+	ShaderCode& code = getShaderCode(shaderType);
 
 	std::ostringstream shader;
 
@@ -925,9 +842,9 @@ std::string ShaderCreator::getShader(unsigned shaderType)
 	return shader.str();
 }
 
-std::string ShaderCreator::getShader0(unsigned shaderType)
+std::string ShaderCreator::getShader0(ShaderType shaderType)
 {
-	ShaderCode& code = (shaderType ? fs : vs);
+	ShaderCode& code = getShaderCode(shaderType);
 
 	std::string shader;
 
@@ -1030,19 +947,30 @@ std::string ShaderCreator::getShader0(unsigned shaderType)
 	return shader;
 }
 
-void ShaderCreator::printShader(unsigned shaderType) { std::cout << getShader(shaderType) << std::endl; }
+void ShaderCreator::printShader(ShaderType shaderType) { std::cout << getShader(shaderType) << std::endl; }
 
 void ShaderCreator::printAllShaders()
 {
 	std::cout << "----------\n";
-	std::cout << getShader(0) << "\n";
+	std::cout << getShader(vert) << "\n";
 	std::cout << "----------\n";
-	std::cout << getShader(1) << "\n";
+	std::cout << getShader(frag) << "\n";
 }
 
-std::string ShaderCreator::getShaderInfo(unsigned shaderType)
+std::string ShaderCreator::getShaderInfo(ShaderType shaderType)
 {
-	std::string shadType = shaderType ? "Fragment shader" : "Vertex shader";
+	std::string shadType;
+	switch (shaderType)
+	{
+	case vert:
+		shadType = "Vertex shader";
+		break;
+	case frag:
+		shadType = "Fragment shader";
+		break;
+	default:
+		shadType = "Invalid shader type";
+	}
 
 	std::string rendPass;
 	switch (rpType)

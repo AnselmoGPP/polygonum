@@ -38,11 +38,12 @@ public:
 
 	VkVertexInputBindingDescription getBindingDescription() const;						//!< Used for passing the binding number and the vertex stride (usually, vertexSize) to the graphics pipeline.
 	std::vector<VkVertexInputAttributeDescription> getAttributeDescriptions() const;	//!< Used for passing the format, location and offset of each vertex attribute to the graphics pipeline.
+	bool contains(VertAttrib vertAttrib) const;   // O(n) because attribsTypes cannot be a hash-table (we need attributes in order). It's ok, vertex doesn't contain too many attributes.
 
 	std::vector<VkFormat> attribsFormats;			//!< Format (VkFormat) of each vertex attribute. E.g.: VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32_SFLOAT...
 	std::vector<uint32_t> attribsSizes;				//!< Size of each attribute type. E.g.: 3 * sizeof(float)...
 	uint32_t vertexSize;							//!< Size (bytes) of a vertex object
-	std::vector<VertAttrib> attribsTypes; // <<< set to map?
+	std::vector<VertAttrib> attribsTypes;
 };
 
 /// Container for any object type, similarly to a std::vector, but storing such objects directly in bytes (char array). This allows ModelData objects store different Vertex types in a clean way (otherwise, templates and inheritance would be required, but code would be less clean).

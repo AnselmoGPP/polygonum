@@ -155,40 +155,35 @@ public:
 		std::vector <std::string> output;
 		std::vector <std::string> globals;
 		std::vector <std::string> main_begin;
-		std::vector <std::string> main_processing;
+		std::vector <std::string> main_processing; //!< User can add processing here.
 		std::vector <std::string> main_end;
 		std::vector <std::string> others;
-	};
+	} vs, fs;
 
-	ShaderCode vs, fs;
-
-	std::string getShader0(unsigned shaderType);   //!< 0 (vertex), 1 (fragment)
-	std::string getShader(unsigned shaderType);   //!< 0 (vertex), 1 (fragment)
-	void printShader(unsigned shaderType);   //!< 0 (vertex), 1 (fragment)
+	std::string getShader0(ShaderType shaderType);   //!< 0 (vertex), 1 (fragment)
+	std::string getShader(ShaderType shaderType);   //!< 0 (vertex), 1 (fragment)
+	void printShader(ShaderType shaderType);   //!< 0 (vertex), 1 (fragment)
 	void printAllShaders();
 
-	ShaderCreator& replaceMainBegin(unsigned shaderType, std::string& text, const std::string& substring, const std::string& replacement);   //!< Replace an entire line in main_begin with your own if it contains certain substring.
-	ShaderCreator& replaceMainEnd(unsigned shaderType, std::string& text, const std::string& substring, const std::string& replacement);   //!< Replace an entire line in main_end with your own if it contains certain substring.
+	ShaderCreator& replaceMainBegin(ShaderType shaderType, std::string& text, const std::string& substring, const std::string& replacement);   //!< Replace an entire line in main_begin with your own if it contains certain substring.
+	ShaderCreator& replaceMainEnd(ShaderType shaderType, std::string& text, const std::string& substring, const std::string& replacement);   //!< Replace an entire line in main_end with your own if it contains certain substring.
 	ShaderCreator& setVerticalNormals();   //!< (VS) Make all normals vertical (0,0,1) before MVP transformation.
 
 private:
 	RPtype rpType;
 
-	ShaderCreator& setForward();   // Shaders for a Forward pass
-	ShaderCreator& setGeometry();   // Shaders for a Geometry pass
-	void setVS();
-	void setFS_forward();
-	void setFS_geometry();
-
 	void setBasics();
 	void setBindings(const BindingSet& bindings);
-	void setVS_general(const VertexType& vertexType);
-	void setForward(const VertexType& vertexType, const BindingSet& bindings);
-	void setGeometry(const VertexType& vertexType, const BindingSet& bindings);
-	void setLighting();   // Shaders for a Lighting pass
-	void setPostprocess();   // Shaders for a Postprocessing pass
 
-	unsigned firstBindingNumber(unsigned shaderType);
+	void setVS_general(const VertexType& vertexType);   //!< For Forward and Geometry passes
+	void setForward(const VertexType& vertexType, const BindingSet& bindings);  //!< For Forward pass
+	void setGeometry(const VertexType& vertexType, const BindingSet& bindings);  //!< For Geometry pass
+	void setLighting();  //!< For Lighting pass
+	void setPostprocess();  //!< For Postprocessing pass
+
+	ShaderCode& getShaderCode(ShaderType shaderType);
+
+	unsigned firstBindingNumber(ShaderType shaderType);
 	BindingBufferType getDescType(const BindingBuffer* bindBuffer);
 	std::string getBuffer(const BindingBuffer& buffer, unsigned bindingName, unsigned nameName, bool isGlobal);
 	std::unordered_map<VertAttrib, unsigned> usedAttribTypes(const VertexType& vertexType);
@@ -199,7 +194,7 @@ private:
 	bool findStrAndReplace(std::string& text, const std::string& str, const std::string& replacement);
 	bool findStrAndReplaceLine(std::string& text, const std::string& str, const std::string& replacement);
 
-	std::string getShaderInfo(unsigned shaderType);
+	std::string getShaderInfo(ShaderType shaderType);
 };
 
 #endif

@@ -136,6 +136,15 @@ std::vector<VkVertexInputAttributeDescription> VertexType::getAttributeDescripti
 	return attributeDescriptions;
 }
 
+bool VertexType::contains(VertAttrib vertAttrib) const
+{
+	for (unsigned i = 0; i < attribsTypes.size(); ++i)
+		if (vertAttrib == attribsTypes[i])
+			return true;
+
+	return false;
+}
+
 VertexSet::VertexSet() : vertexSize(0), buffer(nullptr), capacity(0), numVertex(0) {}
 
 VertexSet::VertexSet(size_t vertexSize)

@@ -4,6 +4,8 @@
 
 + [Shaders](#shaders)
 + [Subpasses](#subpasses)
++ [Vertex type](#vertex-type)
++ [Automating shaders](#automating-shaders)
 + [ShaderCreator](#shadercreator)
 
 ## Shaders
@@ -82,11 +84,103 @@ void main()
 **Render pipeline**: It's made of **Render passes**, each one made of one or more subpasses. Common passes are:
 
 - **Geometry pass** (GP): Receives vertex data. Outputs fragment's lighting parameters.
-- **Lighting pass** (LP): Receives a quad and pixel's lighting parameters. Outputs fragment's final color after lighting processing.
+- **Lighting pass** (LP): Receives vertex data (quad) and textures with pixel's lighting parameters. Outputs fragment's final color after lighting processing.
 - **Forward pass** (FP): Receives vertex data. Outputs fragment's final color after lighting processing.
-- **Post-processing pass** (PP): Receives quad with rendering. Outputs quad with processed rendering.
+- **Post-processing pass** (PP): Receives vertex data (quad) with rendering. Outputs quad with processed rendering.
 
 **Deferred shading** (DS): Combination of two subpasses: Geometry and Lighting. This is more efficient than a Forward pass because DS only processes lighting for all pixels, while FP does it for all framents.
+
+All subpasses have the same vertex shader. It receives vertex data (of a quad or any other object/s) and at least passes `gl_Position` to the fragment shader.
+
+## Vertex type
+
+The mesh is made of vertexes. Vertexes are made of vertex attributes, like Position, Normal, UVs, Tangent, Color.
+
+## Automating shaders
+
+We want to automate shader creation (VS & FS) depending on these elements:
+
+- **Subpass**: Geometry, Lighting, Forward, Postprocessing
+  - Determines: inputs, outputs, main
+- **Vertex type**: Position, Normal, UVs, Tangent
+  - Determines: VS inputs, main (color/lighting)
+- **Bindings**: Descriptor set, Binding, Descriptors
+  - Determines: bindings (buffers, textures), main (color/lighting)
+
+Rules and assumptions:
+
+- Vertex data always contains Position as vertex attribute.
+- Normal maps can only be used if vertex data contains Tangent as vertex attribute.
+- By default, albedo is (0,1,0), specularity is (0,0,0), and roughness is 0.
+
+`ShaderCreator`'s constructor adds:
+
+- Header lines: Version, extensions, shader stage, includes, …
+- Bindings: SSBOs, UBOs, textures
+- Shader content: Input, output, `main` operations
+
+### Vertex shader (Geometry, Forward)
+
+- All vertex attributes add a line to VS's `intput`, `output`, `main_begin`, `main_end`, and to FS's `input`.
+  - Exception: `vaFix` is only added to `input`.
+- `main` computations:
+  - `vaPos` (always) → `gl_Position` and `outPos` (world_position). Requires `LocalBuffer` and `GlobalBuffer`.
+  - `vaNorm` → `outNormal`. Requires `LocalBuffer` (transforms normal using `normalMat`).
+  - `vaTan` → `outTB` (tangent & bitangent). Requires `vaNorm` (otherwise, `outTB` is not computed).
+  - Other attributes (`vaCol`, `vaUV`…) → Output directly
+  - `vaFixes` → Not output
+- Bindings assumed:
+
+```
+struct InstanceData   // in vertexTools.vert
+{
+	mat4 model;
+	mat4 normalMat;
+};
+
+layout(set = 0, binding = 0) uniform GlobalBuffer {   // UBO
+        mat4 view;
+        mat4 proj;
+        vec4 camPos_t;
+} gBuf;
+
+layout(set = 0, binding = 1) buffer LocalBuffer {   // SSBO
+        InstanceData ins[];
+} lBuf;
+```
+
+### Fragment shader (Forward)
+
+- `main` computations:
+  - Output: `outColor`. Requires `textures`, `inUV`, `GlobalBuffer`, `inTB` (normals).
+    - No `vaUv` → Default albedo, specularity, and roughness. Uses vertex normal only (no normal map).
+	  - Has `vaColor` or `vaCol4` → Use vertex color as albedo.
+	- No `vaTan` → Uses vertex normal only
+	- No `vaNorm` → Exception error (vertex normals required for lighting)
+
+### Fragment shader (Geometry)
+
+- Required outputs: `outPos`, `outAlbedo`, `outNormal`, `outSpecRoug`
+  - Each value is taken from the appropriate texture, if it exists (`tAlb`, `tSpec`, `tRoug`, `tSpecroug`, `tNorm`).
+  - No texture → Default values
+  - If `tNorm` and `vaTan` exist, both are used to compute `outNormal`
+
+- Bindings assumed:
+
+```
+layout(set = 0, binding = 2) uniform GlobalBuffer {
+        vec4 camPos_t;
+        Light light[NUMLIGHTS];
+} gBuf;
+
+layout(set = 0, binding = 3) uniform sampler2D tex[4];  // Albedo > Spec > Rough > Normal
+```
+
+### Vertex & Fragment shader (Lighting, Postprocessing)
+
+- A quad is rendered
+- [`inPos` (NDC), `inUVs`] → Vertex shader → [`gl_Position`, `outUV`]
+- [`inUV`] → Fragment shader → [`outColor`]
 
 ## ShaderCreator
 

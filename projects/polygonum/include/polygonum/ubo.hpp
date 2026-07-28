@@ -80,7 +80,7 @@ private:
 public:
 	BindingBuffer(BindingBufferType type, uint32_t numDescriptors, uint32_t numSubDescriptors, VkDeviceSize descriptorSize, const std::vector<std::string>& glslLines = { });
 	BindingBuffer(const BindingBuffer& obj);
-	BindingBuffer(BindingBuffer&& other) noexcept;   //!< Move constructor: Tansfers resources of a temporary object (rvalue) to another object.
+	BindingBuffer(BindingBuffer&& other) noexcept;   //!< Move constructor: Transfers resources of a temporary object (rvalue) to another object.
 	BindingBuffer& operator=(const BindingBuffer& obj);
 	~BindingBuffer();
 	//BindingBuffer& operator=(BindingBuffer&& other) noexcept;   //!< Move assignment operator: Transfers resources from one object to another existing object.
