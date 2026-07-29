@@ -181,7 +181,7 @@ class VL_fromFile : public VertexesLoader
 
 	VertexSet* vertices;
 	std::vector<uint16_t>* indices;
-	ModelData* model;   //!< Used to store textures if the file includes them.
+	ModelData* model;   //!< <<< Used to store textures if the file includes them.
 
 	void processNode(const aiScene* scene, aiNode* node);					//!< Recursive function. It goes through each node getting all the meshes in each one.
 	void processMeshes(const aiScene* scene, std::vector<aiMesh*>& meshes);	//!< Get Vertex data, Indices, and Resources (textures).
@@ -189,7 +189,8 @@ class VL_fromFile : public VertexesLoader
 
 	void getRawData(VertexSet& destVertices, std::vector<uint16_t>& destIndices, ModelData& model) override;
 
-	uint32_t getVertexSize(const aiScene* scene, const aiNode* node);   //!< Find first non-empty mesh and get the size of a vertex.
+	uint32_t getVertexSize(const aiScene* scene);   //!< Find first non-empty mesh and get the size of a vertex.
+	uint32_t getVertexSizeRecursive(const aiScene* scene, const aiNode* node);
 	void printTree(const aiScene* scene, const aiNode* node);   //!< For debugging purposes.
 
 public:

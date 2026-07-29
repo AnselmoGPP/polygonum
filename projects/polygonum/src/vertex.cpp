@@ -427,7 +427,7 @@ void VL_fromBuffer::getRawData(VertexSet& destVertices, std::vector<uint16_t>& d
 }
 
 VL_fromFile::VL_fromFile(std::string filePath, std::initializer_list<VerticesModifier*> modifiers)
-	: VertexesLoader(8 * sizeof(float), modifiers), path(filePath), vertices(nullptr), indices(nullptr) { }
+	: VertexesLoader(11 * sizeof(float), modifiers), path(filePath), vertices(nullptr), indices(nullptr) { }
 
 VL_fromFile* VL_fromFile::factory(std::string filePath, std::initializer_list<VerticesModifier*> modifiers)
 {
@@ -458,7 +458,7 @@ void VL_fromFile::getRawData(VertexSet& destVertices, std::vector<uint16_t>& des
 	if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
 		throw("ERROR::ASSIMP::" + std::string(importer.GetErrorString()));
 
-	vertexSize = getVertexSize(scene, scene->mRootNode);
+	vertexSize = getVertexSize(scene);
 	vertices->reset(vertexSize);
 
 	//printTree(scene, scene->mRootNode);
@@ -485,8 +485,8 @@ void VL_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*>& mesh
 {
 	//<<< destVertices->reserve(destVertices->size() + mesh->mNumVertices);
 	//float* vertex = new float[vertexSize / sizeof(float)];
-	std::vector<float> vertex(vertexSize / sizeof(float));
-
+	std::vector<float> vertex(vertexSize / sizeof(float)); // <<< what if attributes are not float?
+	
 	// Go through each mesh contained in this node
 	for (unsigned k = 0; k < meshes.size(); k++)
 	{
@@ -503,16 +503,23 @@ void VL_fromFile::processMeshes(const aiScene* scene, std::vector<aiMesh*>& mesh
 				vertex[4] = meshes[k]->mNormals[i].y;
 				vertex[5] = meshes[k]->mNormals[i].z;
 			}
-			else { vertex[3] = 0.f; vertex[4] = 0.f; vertex[5] = 1.f; };
+			else { vertex[3] = 0.f; vertex[4] = 0.f; vertex[5] = 1.f; }; // <<<
 
 			if (meshes[k]->HasTextureCoords(0))
 			{
 				vertex[6] = meshes[k]->mTextureCoords[0][i].x;
 				vertex[7] = meshes[k]->mTextureCoords[0][i].y;
 			}
-			else { vertex[6] = 0.f; vertex[7] = 0.f; };
+			else { vertex[6] = 0.f; vertex[7] = 0.f; };  // <<<
 
-			//if (meshes[k]->mTangents) { };
+			if (meshes[k]->mTangents)
+			{
+				vertex[8] = meshes[k]->mTangents[i].x;
+				vertex[9] = meshes[k]->mTangents[i].y;
+				vertex[10] = meshes[k]->mTangents[i].z;
+			};
+
+			//if (meshes[k]->mBitangents) { };
 
 			vertices->push_back(vertex.data());	// Get VERTICES
 		}
@@ -554,7 +561,14 @@ void VL_fromFile::allocateMemForTextures()
 	if (model->bindSets[0].fsTextures.empty()) model->bindSets[0].fsTextures.push_back(vec<std::shared_ptr<Texture>>());
 }
 
-uint32_t VL_fromFile::getVertexSize(const aiScene* scene, const aiNode* node)
+uint32_t VL_fromFile::getVertexSize(const aiScene* scene)
+{
+	uint32_t vertexSiz = getVertexSizeRecursive(scene, scene->mRootNode);
+	vertexSiz += 3 * sizeof(float);   // <<< vaTan (assumption)
+	return vertexSiz;
+}
+
+uint32_t VL_fromFile::getVertexSizeRecursive(const aiScene* scene, const aiNode* node)
 {
 	uint32_t vertexSiz = 0;
 
@@ -575,7 +589,7 @@ uint32_t VL_fromFile::getVertexSize(const aiScene* scene, const aiNode* node)
 	// Check children's meshes
 	for (unsigned i = 0; i < node->mNumChildren; ++i)
 	{
-		vertexSiz = getVertexSize(scene, node->mChildren[i]);
+		vertexSiz = getVertexSizeRecursive(scene, node->mChildren[i]);
 		if (vertexSiz) return vertexSiz;
 	}
 

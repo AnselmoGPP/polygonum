@@ -160,9 +160,8 @@ public:
 		std::vector <std::string> others;
 	} vs, fs;
 
-	std::string getShader0(ShaderType shaderType);   //!< 0 (vertex), 1 (fragment)
-	std::string getShader(ShaderType shaderType);   //!< 0 (vertex), 1 (fragment)
-	void printShader(ShaderType shaderType);   //!< 0 (vertex), 1 (fragment)
+	std::string getShader(ShaderType shaderType);
+	void printShader(ShaderType shaderType);
 	void printAllShaders();
 
 	ShaderCreator& replaceMainBegin(ShaderType shaderType, std::string& text, const std::string& substring, const std::string& replacement);   //!< Replace an entire line in main_begin with your own if it contains certain substring.
@@ -174,7 +173,6 @@ private:
 
 	void setBasics();
 	void setBindings(const BindingSet& bindings);
-
 	void setVS_general(const VertexType& vertexType);   //!< For Forward and Geometry passes
 	void setForward(const VertexType& vertexType, const BindingSet& bindings);  //!< For Forward pass
 	void setGeometry(const VertexType& vertexType, const BindingSet& bindings);  //!< For Geometry pass

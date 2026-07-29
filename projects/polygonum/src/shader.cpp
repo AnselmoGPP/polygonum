@@ -662,7 +662,15 @@ void ShaderCreator::setGeometry(const VertexType& vertexType, const BindingSet& 
 	if (!vertexType.contains(vaNorm))
 		throw std::runtime_error("ShaderCreator: Vertex doesn't contain normal as attribute.");
 	
-	for (unsigned i = 0; i < bindings.fsTextures.size(); i++)
+	//for (unsigned i = 0; i < bindings.fsTextures.size(); i++)
+	//	switch (bindings.fsTextures[0][i]->type)
+
+	std::cout << bindings.fsTextures.size() << ", " << bindings.fsTextures[0].size() << std::endl;
+
+	//for(const auto &binding : bindings.fsTextures)
+	//	for(const auto &texture : binding)
+	//		switch (texture->type)
+	for (unsigned i = 0; i < bindings.fsTextures[0].size(); i++)
 		switch (bindings.fsTextures[0][i]->type)
 		{
 		case tAlb:
@@ -696,7 +704,7 @@ void ShaderCreator::setGeometry(const VertexType& vertexType, const BindingSet& 
 
 unsigned ShaderCreator::firstBindingNumber(ShaderType shaderType)
 {
-	if (shaderType == frag)   // if in fragment shader
+	if (shaderType == frag)
 		return vs.bind_globalBuffers.size() + vs.bind_localBuffers.size() + vs.bind_textures.size();
 
 	return 0;
@@ -840,111 +848,6 @@ std::string ShaderCreator::getShader(ShaderType shaderType)
 		shader << line << "\n\n";
 
 	return shader.str();
-}
-
-std::string ShaderCreator::getShader0(ShaderType shaderType)
-{
-	ShaderCode& code = getShaderCode(shaderType);
-
-	std::string shader;
-
-	// Header
-
-	for (auto& line : code.header)
-		shader += line + "\n";
-
-	if (code.header.size()) shader += "\n";
-
-	// Includes
-
-	for (auto& line : code.includes)
-		shader += line + "\n";
-
-	if (code.includes.size()) shader += "\n";
-
-	// Flags
-
-	for (auto& line : code.flags)
-		shader += line + ";\n";
-
-	if (code.flags.size()) shader += "\n";
-
-	// Structs
-
-	for (auto& line : code.structs)
-		shader += line + ";\n";
-
-	if (code.structs.size()) shader += "\n";
-
-	// Bindings
-
-	unsigned bindingNumber = firstBindingNumber(shaderType);
-
-	//   - Global buffers
-
-	for (unsigned i = 0; i < code.bind_globalBuffers.size(); i++)
-		shader += getBuffer(code.bind_globalBuffers[i], bindingNumber++, i, true);
-
-	//   - Local buffers
-
-	for (unsigned i = 0; i < code.bind_localBuffers.size(); i++)
-		shader += getBuffer(code.bind_localBuffers[i], bindingNumber++, i, false);
-
-	//   - Textures
-
-	for (unsigned i = 0; i < code.bind_textures.size(); i++)
-	{
-		shader += "layout(set = 0, binding = " + std::to_string(bindingNumber++) + ") uniform sampler2D tex";
-		if (i) shader += std::to_string(i);
-		shader += "[" + std::to_string(code.bind_textures[i]) + "];\n\n";
-	}
-
-	// Input
-
-	for (unsigned i = 0; i < code.input.size(); i++)
-		shader += "layout(location = " + std::to_string(i) + ") " + code.input[i] + ";\n";
-
-	if (code.input.size()) shader += "\n";
-
-	// Output
-
-	for (unsigned i = 0; i < code.output.size(); i++)
-		shader += "layout(location = " + std::to_string(i) + ") " + code.output[i] + ";\n";
-
-	if (code.output.size()) shader += "\n";
-
-	// Globals
-
-	for (const auto& line : code.globals)
-		shader += line + ";\n";
-
-	if (code.globals.size()) shader += "\n";
-
-	// main
-
-	shader += "void main()\n{\n";
-
-	for (const auto& line : code.main_begin)
-		shader += "\t" + line + ";\n";
-
-	if (code.main_begin.size()) shader += "\n";
-
-	for (const auto& line : code.main_processing)
-		shader += "\t" + line + ";\n";
-
-	if (code.main_processing.size()) shader += "\n";
-
-	for (const auto& line : code.main_end)
-		shader += "\t" + line + ";\n";
-
-	shader += "}\n\n";
-
-	// Others
-
-	for (const auto& line : code.others)
-		shader += line + "\n\n";
-
-	return shader;
 }
 
 void ShaderCreator::printShader(ShaderType shaderType) { std::cout << getShader(shaderType) << std::endl; }
