@@ -500,12 +500,11 @@ void ShaderCreator::setPostprocess()
 	vs.includes.clear();
 	vs.input = {
 		"in vec3 inPos",   // NDC position. Since it's in NDCs, no MVP transformation is required.
-		"in vec2 inUV"
 	};
 	vs.output = { "out vec2 outUV" };
 	vs.main_end = {
 		"gl_Position = vec4(inPos, 1.0f)",
-		"outUV = inUV"
+		"outUV = (inPos * 0.5 + 0.5).xy;"  // Convert clip space [-1.0, 1.0] -> texture space [0.0, 1.0]
 	};
 
 	// Fragment shader
@@ -661,15 +660,7 @@ void ShaderCreator::setGeometry(const VertexType& vertexType, const BindingSet& 
 
 	if (!vertexType.contains(vaNorm))
 		throw std::runtime_error("ShaderCreator: Vertex doesn't contain normal as attribute.");
-	
-	//for (unsigned i = 0; i < bindings.fsTextures.size(); i++)
-	//	switch (bindings.fsTextures[0][i]->type)
 
-	std::cout << bindings.fsTextures.size() << ", " << bindings.fsTextures[0].size() << std::endl;
-
-	//for(const auto &binding : bindings.fsTextures)
-	//	for(const auto &texture : binding)
-	//		switch (texture->type)
 	for (unsigned i = 0; i < bindings.fsTextures[0].size(); i++)
 		switch (bindings.fsTextures[0][i]->type)
 		{

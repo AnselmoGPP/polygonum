@@ -132,8 +132,12 @@ public:
 	void ReleaseInclude(shaderc_include_result* data) override;
 };
 
+enum SC_configs {
+	SC_
+};
+
 /**
- * @brief Helper class for creating shaders for the render pipeline RP_DS_PP.
+ * @brief Helper class for creating shaders for the render pipeline RP_DDFP.
  *
  * It creates the vertex (VS) and fragment (FS) shader for a given sub-pass (RPtype).
  */

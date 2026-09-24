@@ -425,6 +425,17 @@ size_t getGrid(std::vector<float>& vertexDestination, std::vector<uint16_t>& ind
 void getScreenQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float zValue, float radius)
 {
 	vertices = {
+		-radius,-radius, zValue,
+		-radius, radius, zValue,
+		 radius, radius, zValue,
+		 radius,-radius, zValue };
+
+	indices = std::vector<uint16_t>{ 0,1,3, 1,2,3 };
+}
+
+void getScreenQuadWithUV(std::vector<float>& vertices, std::vector<uint16_t>& indices, float zValue, float radius)
+{
+	vertices = {
 		-radius,-radius, zValue,  0, 0,
 		-radius, radius, zValue,  0, 1,
 		 radius, radius, zValue,  1, 1,

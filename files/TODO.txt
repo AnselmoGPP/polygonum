@@ -23,3 +23,13 @@ Smallest quick wins
 - Move VAL_LAYERS to CMake
 - Replace raw Image* in Subpass with std::vector<std::reference_wrapper<Image>> or std::vector<Image*> const
 - Encapsulate LoadingWorker's mutexes
+
+
+makeEntity_background -> Use shader builder
+Create shaders at the beginning? Or create and store in map, and use from there?
+
+
+Troubles for generalization:
+- Each model has its own 
+  - Shaders
+  - Sets of binding buffers with its own variables

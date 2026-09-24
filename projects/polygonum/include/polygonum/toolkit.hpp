@@ -196,6 +196,7 @@ size_t getGrid(std::vector<float>& vertexDestination, std::vector<uint16_t>& ind
 
 /// Get vertex data (NDC space vertices & UVs coordinates) and indices of a screen quad. Used for draws that doesn't use MVP matrix (example: reticule or postprocessing effects).
 void getScreenQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float zValue = 0.f, float radius = 1.f);
+void getScreenQuadWithUV(std::vector<float>& vertices, std::vector<uint16_t>& indices, float zValue = 0.f, float radius = 1.f);
 
 // Quads
 extern std::vector<float> v_YZquad;

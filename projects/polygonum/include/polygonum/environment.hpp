@@ -43,8 +43,8 @@ class  RenderPass;
 class  Commander;
 
 class RenderPipeline;
-class RP_DS;
-class RP_DS_PP;
+class RP_DD;
+class RP_DDFP;
 
 
 // Definitions ----------
@@ -374,10 +374,10 @@ private:
 };
 
 /// Render pipeline containing Deferred shading (lighting pass + geometry pass)
-class RP_DS : public RenderPipeline
+class RP_DD : public RenderPipeline
 {
 public:
-	RP_DS(VulkanCore& core, SwapChain& swapChain, Commander& commander);
+	RP_DD(VulkanCore& core, SwapChain& swapChain, Commander& commander);
 
 	Image position;
 	Image albedo;
@@ -412,10 +412,10 @@ protected:
     DA (0)
     CA (1): color (swapchain)
 */
-class RP_DS_PP : public RenderPipeline
+class RP_DDFP : public RenderPipeline
 {
 public:
-	RP_DS_PP(VulkanCore& core, SwapChain& swapChain, Commander& commander);
+	RP_DDFP(VulkanCore& core, SwapChain& swapChain, Commander& commander);
 	
 	Image position;
 	Image albedo;

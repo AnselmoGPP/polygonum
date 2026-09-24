@@ -101,6 +101,7 @@ uint32_t EntitiesManager::addEntity(Entity* entity)
 	uint32_t newId = getNewId();
 	if (newId)
 		entities[newId] = std::unique_ptr<Entity>(entity);
+	// <<< else ?
 
 	return newId;
 }

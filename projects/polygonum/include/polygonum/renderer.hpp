@@ -6,7 +6,7 @@
 
 class LoadingWorker;
 class Renderer;
-class Help_RP_DS_PP;
+class Help_RP_DDFP;
 
 /// Reponsible for the loading thread and its processes.
 class LoadingWorker
@@ -110,7 +110,7 @@ protected:
 
 public:
 	/// Constructor. Requires a callback for user updates (update model matrix, add models, delete models...).
-	template <typename RP = RP_DS_PP>
+	template <typename RP = RP_DDFP>
 	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height);
 	~Renderer();
 
@@ -166,11 +166,11 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height) :
 	//else rw = std::make_shared<RW_PP>(*this);
 }
 
-/// Helper class for the RP_DS_PP render pipeline. Used to create and update the Lighting pass and Post-processing pass.
-class Help_RP_DS_PP
+/// Helper class for the RP_DDFP render pipeline. Used to create and update the Lighting pass and Post-processing pass.
+class Help_RP_DDFP
 {
 public:
-	Help_RP_DS_PP();
+	Help_RP_DDFP();
 
 	key64 lightingPass;
 	key64 postprocessingPass;

@@ -571,9 +571,9 @@ void LoadingWorker::thread_loadData(Renderer& renderer, ModelsManager& models, C
 #endif
 }
 
-Help_RP_DS_PP::Help_RP_DS_PP() : lightingPass(0), postprocessingPass(0) { }
+Help_RP_DDFP::Help_RP_DDFP() : lightingPass(0), postprocessingPass(0) { }
 
-void Help_RP_DS_PP::createLightingPass(Renderer& ren, unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader)
+void Help_RP_DDFP::createLightingPass(Renderer& ren, unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader)
 {
 	std::vector<float> v_quad;	// [4 * 5]
 	std::vector<uint16_t> i_quad;
@@ -586,7 +586,7 @@ void Help_RP_DS_PP::createLightingPass(Renderer& ren, unsigned numLights, std::s
 	
 	BindingBuffer uboInfo(ubo, 1, 1, sizes::vec4 + numLights * sizeof(Light), { "vec4 camPos", "Light lights[NUMLIGHTS]" });
 	
-	VertexType vertexType({ vaPos, vaUv });
+	VertexType vertexType({ vaPos });
 
 	ModelDataInfo modelInfo;
 	modelInfo.name = "lightingPass";
@@ -605,9 +605,9 @@ void Help_RP_DS_PP::createLightingPass(Renderer& ren, unsigned numLights, std::s
 	lightingPass = ren.newModel(modelInfo);
 }
 
-void Help_RP_DS_PP::createPostprocessingPass(Renderer& ren, std::string vertShaderPath, std::string fragShaderPath)
+void Help_RP_DDFP::createPostprocessingPass(Renderer& ren, std::string vertShaderPath, std::string fragShaderPath)
 {
-	std::vector<float> v_quad;	// [4 * 5]
+	std::vector<float> v_quad;	// [4 * 3]
 	std::vector<uint16_t> i_quad;
 	getScreenQuad(v_quad, i_quad);	// <<< The parameter zValue doesn't represent heigth (otherwise, this value should serve for hiding one plane behind another).
 
@@ -616,7 +616,7 @@ void Help_RP_DS_PP::createPostprocessingPass(Renderer& ren, std::string vertShad
 		SL_fromFile::factory(fragShaderPath)
 	};
 
-	VertexType vertexType({ vaPos, vaUv });
+	VertexType vertexType({ vaPos });
 
 	ModelDataInfo modelInfo;
 	modelInfo.name = "postprocessingPass";
@@ -626,7 +626,7 @@ void Help_RP_DS_PP::createPostprocessingPass(Renderer& ren, std::string vertShad
 	modelInfo.vertexType = vertexType;
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vertexType.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
-	modelInfo.bindSets;
+	modelInfo.bindSets.resize(1);
 	modelInfo.transparency = false;
 	modelInfo.renderPassIndex = 3;
 	modelInfo.subpassIndex = 0;
@@ -634,7 +634,7 @@ void Help_RP_DS_PP::createPostprocessingPass(Renderer& ren, std::string vertShad
 	postprocessingPass = ren.newModel(modelInfo);
 }
 
-void Help_RP_DS_PP::updateLightingPass(Renderer& ren, glm::vec3& camPos, Light* lights, unsigned numLights)
+void Help_RP_DDFP::updateLightingPass(Renderer& ren, glm::vec3& camPos, Light* lights, unsigned numLights)
 {
 	//if (models.data.find(lightingPass) == models.data.end()) return;
 	ModelData* model = ren.getModel(lightingPass);
@@ -654,7 +654,7 @@ void Help_RP_DS_PP::updateLightingPass(Renderer& ren, glm::vec3& camPos, Light* 
 	memcpy(dest, lights, numLights * sizeof(Light));
 }
 
-void Help_RP_DS_PP::updatePostprocessingPass(Renderer& ren)
+void Help_RP_DDFP::updatePostprocessingPass(Renderer& ren)
 {
 	// No code necessary here
 }

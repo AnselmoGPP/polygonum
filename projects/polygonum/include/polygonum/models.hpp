@@ -137,8 +137,8 @@ class ModelSet
 	uint32_t maxNumInstances;
 
 public:
-	ModelSet(Renderer& ren, std::vector<key64> keyList, uint32_t numInstances = 0, uint32_t maxNumInstances = 0);
-	ModelSet(Renderer& ren, key64 key, uint32_t numInstances = 0, uint32_t maxNumInstances = 0);
+	ModelSet(Renderer& ren, std::vector<key64> keyList, uint32_t numInstances, uint32_t maxNumInstances);
+	ModelSet(Renderer& ren, key64 key, uint32_t numInstances, uint32_t maxNumInstances);
 
 	key64& operator[](size_t index);
 

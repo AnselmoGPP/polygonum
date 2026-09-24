@@ -1712,7 +1712,7 @@ void RenderPass::destroy(VulkanCore& c)
 		vkDestroyFramebuffer(c.device, framebuffer, nullptr);
 }
 
-RP_DS::RP_DS(VulkanCore& core, SwapChain& swapChain, Commander& commander) 
+RP_DD::RP_DD(VulkanCore& core, SwapChain& swapChain, Commander& commander) 
 	: RenderPipeline(core, swapChain, commander), position(&c), albedo(&c), normal(&c), specRoug(&c), depth(&c)
 {
 	// Render passes -------------------------
@@ -1759,7 +1759,7 @@ RP_DS::RP_DS(VulkanCore& core, SwapChain& swapChain, Commander& commander)
 	createRenderPipeline();
 }
 
-void RP_DS::createRenderPass()
+void RP_DD::createRenderPass()
 {
 	#ifdef DEBUG_ENV_CORE
 		std::cout << "   " << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -1987,7 +1987,7 @@ void RP_DS::createRenderPass()
 		throw std::runtime_error("Failed to create render pass!");
 }
 
-void RP_DS::createImageResources()
+void RP_DD::createImageResources()
 {
 	#ifdef DEBUG_ENV_CORE
 		std::cout << "   " << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -2106,7 +2106,7 @@ void RP_DS::createImageResources()
 	depth.createSampler(samplerInfo);
 }
 
-void RP_DS::destroyAttachments()
+void RP_DD::destroyAttachments()
 {
 	position.destroy();
 	albedo.destroy();
@@ -2115,7 +2115,7 @@ void RP_DS::destroyAttachments()
 	depth.destroy();
 }
 
-RP_DS_PP::RP_DS_PP(VulkanCore& core, SwapChain& swapChain, Commander& commander)
+RP_DDFP::RP_DDFP(VulkanCore& core, SwapChain& swapChain, Commander& commander)
 	: RenderPipeline(core, swapChain, commander), position(&c), albedo(&c), normal(&c), specRoug(&c), depth(&c), color(&c)
 {
 	renderPasses = {
@@ -2174,7 +2174,7 @@ RP_DS_PP::RP_DS_PP(VulkanCore& core, SwapChain& swapChain, Commander& commander)
 	createRenderPipeline();
 }
 
-void RP_DS_PP::createRenderPass()
+void RP_DDFP::createRenderPass()
 {
 	#ifdef DEBUG_ENV_CORE
 		std::cout << "   " << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -2252,7 +2252,8 @@ void RP_DS_PP::createRenderPass()
 	// RP2::SP1::inputAttachment (position)
 	VkAttachmentDescription iaPosAtt21 = defaultAtt;
 	iaPosAtt21.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-	iaPosAtt21.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	iaPosAtt21.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	iaPosAtt21.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	iaPosAtt21.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VkAttachmentReference iaPosAttRef21{};
@@ -2262,7 +2263,8 @@ void RP_DS_PP::createRenderPass()
 	// RP2::SP1::inputAttachment (albedo)
 	VkAttachmentDescription iaAlbedoAtt21 = defaultAtt;
 	iaAlbedoAtt21.format = swapChain.imageFormat;
-	iaAlbedoAtt21.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	iaAlbedoAtt21.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	iaAlbedoAtt21.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	iaAlbedoAtt21.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VkAttachmentReference iaAlbedoAttRef21{};
@@ -2272,7 +2274,8 @@ void RP_DS_PP::createRenderPass()
 	// RP2::SP1::inputAttachment (normal)
 	VkAttachmentDescription iaNormalAtt21 = defaultAtt;
 	iaNormalAtt21.format = VK_FORMAT_R32G32B32A32_SFLOAT;
-	iaNormalAtt21.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	iaNormalAtt21.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	iaNormalAtt21.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	iaNormalAtt21.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VkAttachmentReference iaNormalAttRef21{};
@@ -2282,7 +2285,8 @@ void RP_DS_PP::createRenderPass()
 	// RP2::SP1::inputAttachment (specularity & roughness)
 	VkAttachmentDescription iaSpecRougAtt21 = defaultAtt;
 	iaSpecRougAtt21.format = swapChain.imageFormat;
-	iaSpecRougAtt21.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	iaNormalAtt21.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	iaNormalAtt21.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	iaSpecRougAtt21.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VkAttachmentReference iaSpecRougAttRef21{};
@@ -2309,7 +2313,8 @@ void RP_DS_PP::createRenderPass()
 	// RP3::SP1::depth/stencilAttachment (depth)
 	VkAttachmentDescription depthAtt31 = defaultAtt;
 	depthAtt31.format = c.deviceData.depthFormat;
-	depthAtt31.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	depthAtt31.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	depthAtt31.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	depthAtt31.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
 	VkAttachmentReference depthAttRef31{};
@@ -2319,7 +2324,8 @@ void RP_DS_PP::createRenderPass()
 	// RP3::SP1::colorAttachment (color)
 	VkAttachmentDescription caColorAtt31 = defaultAtt;
 	caColorAtt31.format = swapChain.imageFormat;
-	caColorAtt31.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	caColorAtt31.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	caColorAtt31.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	caColorAtt31.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 	VkAttachmentReference caColorAttRef31{};
@@ -2336,7 +2342,8 @@ void RP_DS_PP::createRenderPass()
 	// RP4::SP1::inputAttachment (color)
 	VkAttachmentDescription iaColorAtt41 = defaultAtt;
 	iaColorAtt41.format = swapChain.imageFormat;
-	iaColorAtt41.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	iaColorAtt41.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	iaColorAtt41.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 	iaColorAtt41.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VkAttachmentReference iaColorAttRef41{};
@@ -2346,7 +2353,8 @@ void RP_DS_PP::createRenderPass()
 	// RP4::SP1::inputAttachment (depth)
 	VkAttachmentDescription iaDepthAtt41 = defaultAtt;
 	iaDepthAtt41.format = c.deviceData.depthFormat;
-	iaDepthAtt41.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	iaDepthAtt41.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	iaDepthAtt41.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	iaDepthAtt41.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 	VkAttachmentReference iaDepthAttRef41{};
@@ -2378,7 +2386,7 @@ void RP_DS_PP::createRenderPass()
 	renderPasses[3].createRenderPass(c.device, allAttachments41, inputAttachments41, colorAttachments41, depthAttachment41);
 }
 
-void RP_DS_PP::createImageResources()
+void RP_DDFP::createImageResources()
 {
 	#ifdef DEBUG_ENV_CORE
 		std::cout << "   " << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -2502,7 +2510,7 @@ void RP_DS_PP::createImageResources()
 	color.createSampler(samplerInfo);
 }
 
-void RP_DS_PP::destroyAttachments()
+void RP_DDFP::destroyAttachments()
 {
 	position.destroy();
 	albedo.destroy();

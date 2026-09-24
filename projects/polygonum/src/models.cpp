@@ -572,7 +572,7 @@ void ModelData::createDescriptorPool()
 			inputAttsAdded = true;
 
 			VkDescriptorPoolSize pool;
-			pool.type = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+			pool.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; // <<<
 			pool.descriptorCount = numSwapchainImages * r->rp->getSubpass(renderPassIndex, subpassIndex).inputAtts.size();
 			poolSizes.push_back(pool);
 		}
