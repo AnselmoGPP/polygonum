@@ -11,7 +11,7 @@ void readFile(const char* filename, std::vector<char>& destination)
 {
 	std::ifstream file(filename, std::ios::ate | std::ios::binary);	// Open file. // ate: Start reading at the end of the file  /  binary: Read file as binary file (avoid text transformations)
 	if (!file.is_open())
-		throw std::runtime_error("Failed to open file!");
+		throw std::runtime_error("Failed to open file! (" + std::string(filename) + ")");
 	
 	size_t fileSize = 0;
 	fileSize = (size_t)file.tellg();
@@ -28,7 +28,7 @@ void readFile(const char* filename, std::string& destination)
 {
 	std::ifstream file(filename, std::ios::ate | std::ios::binary);	// Open file. // ate: Start reading at the end of the file  /  binary: Read file as binary file (avoid text transformations)
 	if (!file.is_open())
-		throw std::runtime_error("Failed to open file!");
+		throw std::runtime_error("Failed to open file! (" + std::string(filename) + ")");
 
 	size_t fileSize = 0;
 	fileSize = (size_t)file.tellg();

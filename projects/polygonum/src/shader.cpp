@@ -374,7 +374,7 @@ void DataFromFile::loadVertex()
 }
 */
 
-ShaderCreator::ShaderCreator(RPtype rendPass, const VertexType& vertexType, const BindingSet& bindings)
+ShaderCreator::ShaderCreator(RPtype rendPass, const VertexType& vertexType, const BindingSet& bindings, unsigned numLights)
 	: rpType(rendPass)
 {
 	if (!vertexType.contains(vaPos))
@@ -389,7 +389,7 @@ ShaderCreator::ShaderCreator(RPtype rendPass, const VertexType& vertexType, cons
 		setGeometry(vertexType, bindings);
 		break;
 	case lighting:
-		setLighting();
+		setLighting(numLights);
 		break;
 	case forward:
 		setForward(vertexType, bindings);
@@ -428,6 +428,8 @@ void ShaderCreator::setBasics()
 
 void ShaderCreator::setBindings(const BindingSet& bindings)
 {
+	unsigned count = 0;
+
 	// Vertex shader
 	for (const auto& buf : bindings.vsGlobal)
 		vs.bind_globalBuffers.push_back(*buf);
@@ -435,7 +437,9 @@ void ShaderCreator::setBindings(const BindingSet& bindings)
 	vs.bind_localBuffers = bindings.vsLocal;
 
 	for (const auto& texSet : bindings.vsTextures)
-		vs.bind_textures.push_back(texSet.size());
+		vs.bind_textures.push_back({ std::string("tex" + std::to_string(count++)), texSet.size() });
+
+	count = 0;
 
 	// Fragment shader
 	for (const auto& buf : bindings.fsGlobal)
@@ -444,29 +448,28 @@ void ShaderCreator::setBindings(const BindingSet& bindings)
 	fs.bind_localBuffers = bindings.fsLocal;
 
 	for (const auto& texSet : bindings.fsTextures)
-		fs.bind_textures.push_back(texSet.size());
+		fs.bind_textures.push_back({ std::string("tex" + std::to_string(count++)), texSet.size() });
 }
 
-void ShaderCreator::setLighting()
+void ShaderCreator::setLighting(unsigned numLights)
 {
 	// Vertex shader
 	vs.includes.clear();
 	vs.input = {
 		"in vec3 inPos",   // NDC position. Since it's in NDCs, no MVP transformation is required
-		"in vec2 inUV"
 	};
 	vs.output = {
-		"out vec3 outUV"
+		"out vec2 outUV"
 	};
 	vs.main_end = {
 		"gl_Position = vec4(inPos, 1.0f)",
-		"outUVs = inUVs"
+		"outUV = (inPos * 0.5 + 0.5).xy;"  // Convert clip space [-1.0, 1.0] -> texture space [0.0, 1.0]
 	};
 
 	// Fragment shader
 	fs.flags.clear();
-	fs.bind_globalBuffers = { BindingBuffer(ubo, 1, 1, 0, {"vec4 camPos_t", "Light lights[NUMLIGHTS]"}) };
-	fs.bind_textures = { 4 };   // pos, albedo, normal specRough (sampler2D for single-sample | sampler2DMS for multisampling)
+	//Expects: fs.bind_localBuffers = { BindingBuffer(ubo, 1, 1, sizes::vec4 + numLights * sizeof(Light), { "vec4 camPos", "Light lights[NUMLIGHTS]" }) };
+	fs.bind_textures = { {"inputAtt", 4 } };   // pos, albedo, normal specRough (sampler2D for single-sample | sampler2DMS for multisampling)
 	fs.input = { "in vec2 inUV" };
 	fs.output = { "out vec4 outColor" };
 	fs.globals = {
@@ -477,10 +480,10 @@ void ShaderCreator::setLighting()
 		"vec4 showRoughness() { return vec4(vec3(texture(inputAtt[3], inUV).w), 1.0); }"
 	};
 	fs.main_begin = {
-		"vec3 fragPos = texture(inputAtt[0], inUVs).xyz",
-		"vec3 albedo = texture(inputAtt[1], inUVs).xyz",
-		"vec3 normal = texture(inputAtt[2], inUVs, 1).xyz",   //unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);	//unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);
-		"vec4 specRough = texture(inputAtt[3], inUVs)"
+		"vec3 fragPos = texture(inputAtt[0], inUV).xyz",
+		"vec3 albedo = texture(inputAtt[1], inUV).xyz",
+		"vec3 normal = texture(inputAtt[2], inUV, 1).xyz",   //unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);	//unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);
+		"vec4 specRough = texture(inputAtt[3], inUV)"
 	};
 	fs.main_processing = {
 		"//outColor = showPositions(5000); return",
@@ -490,7 +493,7 @@ void ShaderCreator::setLighting()
 		"//outColor = showRoughness(); return"
 	};
 	fs.main_end = {
-		"outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, ubo.lights, fragPos, ubo.camPos.xyz)"
+		"outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, lBuf.lights, fragPos, lBuf.camPos.xyz)"
 	};
 }
 
@@ -508,7 +511,7 @@ void ShaderCreator::setPostprocess()
 	};
 
 	// Fragment shader
-	fs.bind_textures = { 2 };   // Color (sampler2D for single-sample | sampler2DMS for multisampling)
+	fs.bind_textures = { {"inputAtt", 2} };   // Color (sampler2D for single-sample | sampler2DMS for multisampling)
 	fs.input = { "in vec2 inUV" };
 	fs.output = { "out vec4 outColor" };
 	fs.main_end = { "outColor = vec4(texture(inputAtt[0], inUV).rgb, 1.0)" };
@@ -618,9 +621,9 @@ void ShaderCreator::setForward(const VertexType& vertexType, const BindingSet& b
 	fs.output.push_back("out vec4 outColor");
 
 	fs.main_begin.push_back("vec3 worldPos = inPos");
-	fs.main_begin.push_back("vec3 albedo = texture(tex[0], inUV).xyz");
-	fs.main_begin.push_back("vec4 specRough = vec4(texture(tex[1], inUV).xyz, texture(tex[2], inUV).x)");
-	fs.main_begin.push_back("vec3 normal = planarNormal(tex[3], inNormal, inTB, inUV, 1.f)");
+	fs.main_begin.push_back("vec3 albedo = texture(tex0[0], inUV).xyz");
+	fs.main_begin.push_back("vec4 specRough = vec4(texture(tex0[1], inUV).xyz, texture(tex0[2], inUV).x)");
+	fs.main_begin.push_back("vec3 normal = planarNormal(tex0[3], inNormal, inTB, inUV, 1.f)");
 
 	fs.main_end.push_back("outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, gBuf[0].light, worldPos, gBuf[0].camPos_t.xyz)");
 
@@ -665,23 +668,23 @@ void ShaderCreator::setGeometry(const VertexType& vertexType, const BindingSet& 
 		switch (bindings.fsTextures[0][i]->type)
 		{
 		case tAlb:
-			fs.main_begin[1] = "vec4 albedo = vec4(texture(tex[" + std::to_string(i) + "], inUV).xyz, 1.f)";
+			fs.main_begin[1] = "vec4 albedo = vec4(texture(tex0[" + std::to_string(i) + "], inUV).xyz, 1.f)";
 			continue;
 		case tSpec:
-			fs.main_begin[2] = "vec3 specularity = texture(tex[" + std::to_string(i) + "], inUV).xyz";
+			fs.main_begin[2] = "vec3 specularity = texture(tex0[" + std::to_string(i) + "], inUV).xyz";
 			continue;
 		case tRoug:
-			fs.main_begin[3] = "float roughness = texture(tex[" + std::to_string(i) + "], inUV).x";
+			fs.main_begin[3] = "float roughness = texture(tex0[" + std::to_string(i) + "], inUV).x";
 			continue;
 		case tSpecroug:
-			fs.main_begin[2] = "vec4 specRough = texture(tex[" + std::to_string(i) + "], inUV)\n";
+			fs.main_begin[2] = "vec4 specRough = texture(tex0[" + std::to_string(i) + "], inUV)\n";
 			fs.main_begin[2] += "\tvec3 specularity = specRough.xyz";
 			fs.main_begin[3] = "float roughness = specRough.w";
 			continue;
 		case tNorm:
 			fs.main_begin[4] = "vec3 normal = inNormal";
 			if(vertexType.contains(vaTan))
-				fs.main_begin[4] = "vec3 normal = planarNormal(tex[" + std::to_string(i) + "], inNormal, inTB, inUV, 1.f)";
+				fs.main_begin[4] = "vec3 normal = planarNormal(tex0[" + std::to_string(i) + "], inNormal, inTB, inUV, 1.f)";
 			continue;
 		default:
 			continue;
@@ -788,9 +791,10 @@ std::string ShaderCreator::getShader(ShaderType shaderType)
 
 	for (unsigned i = 0; i < code.bind_textures.size(); i++)
 	{
-		shader << "layout(set = 0, binding = " << std::to_string(bindingNumber++) << ") uniform sampler2D tex";
+		shader << "layout(set = 0, binding = " << std::to_string(bindingNumber++) << ") ";
+		shader << "uniform sampler2D " << code.bind_textures[i].first;
 		if (i) shader << std::to_string(i);
-		shader << "[" << std::to_string(code.bind_textures[i]) << "];\n\n";
+		shader << "[" << std::to_string(code.bind_textures[i].second) << "];\n\n";
 	}
 
 	// Input
@@ -810,7 +814,7 @@ std::string ShaderCreator::getShader(ShaderType shaderType)
 	// Globals
 
 	for (const auto& line : code.globals)
-		shader << line << ";\n";
+		shader << line << (line.back() == '}' ? "\n" : ";\n");
 
 	if (code.globals.size()) shader << "\n";
 
@@ -839,6 +843,16 @@ std::string ShaderCreator::getShader(ShaderType shaderType)
 		shader << line << "\n\n";
 
 	return shader.str();
+}
+
+void ShaderCreator::setVertexHelper(std::string helper)
+{
+	vertexHelper = helper;
+}
+
+void ShaderCreator::setFragmentHelper(std::string helper)
+{
+	fragmentHelper = helper;
 }
 
 void ShaderCreator::printShader(ShaderType shaderType) { std::cout << getShader(shaderType) << std::endl; }

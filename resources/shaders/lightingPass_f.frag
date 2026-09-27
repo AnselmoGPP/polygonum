@@ -2,7 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 #pragma shader_stage(fragment)
 
-#include "..\..\..\resources\shaders\fragTools.vert"			// modify this path according to your folder system
+#include "..\..\resources\shaders\fragTools.vert"			// modify this path according to your folder system
 
 //layout(early_fragment_tests) in;
 

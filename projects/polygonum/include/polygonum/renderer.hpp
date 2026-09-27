@@ -175,8 +175,8 @@ public:
 	key64 lightingPass;
 	key64 postprocessingPass;
 
-	void createLightingPass(Renderer& ren, unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader);
-	void createPostprocessingPass(Renderer& ren, std::string vertShaderPath, std::string fragShaderPath);
+	void createLightingPass(Renderer& ren, unsigned numLights, std::string vertShaderPath = "", std::string fragShaderPath = "");
+	void createPostprocessingPass(Renderer& ren, std::string vertShaderPath = "", std::string fragShaderPath = "");
 
 	void updateLightingPass(Renderer& ren, glm::vec3& camPos, Light* lights, unsigned numLights);
 	void updatePostprocessingPass(Renderer& ren);

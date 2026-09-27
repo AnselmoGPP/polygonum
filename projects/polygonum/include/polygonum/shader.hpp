@@ -144,7 +144,7 @@ enum SC_configs {
 class ShaderCreator
 {
 public:
-	ShaderCreator(RPtype rendPass, const VertexType& vertexType, const BindingSet& bindings);
+	ShaderCreator(RPtype rendPass, const VertexType& vertexType, const BindingSet& bindings, unsigned numLights);
 
 	struct ShaderCode
 	{
@@ -154,7 +154,7 @@ public:
 		std::vector <std::string> structs;
 		std::vector <BindingBuffer> bind_globalBuffers;
 		std::vector <BindingBuffer> bind_localBuffers;
-		std::vector <unsigned> bind_textures;
+		std::vector <std::pair<std::string, unsigned>> bind_textures;
 		std::vector <std::string> input;
 		std::vector <std::string> output;
 		std::vector <std::string> globals;
@@ -165,6 +165,10 @@ public:
 	} vs, fs;
 
 	std::string getShader(ShaderType shaderType);
+
+	void setVertexHelper(std::string helper);
+	void setFragmentHelper(std::string helper);
+
 	void printShader(ShaderType shaderType);
 	void printAllShaders();
 
@@ -174,13 +178,15 @@ public:
 
 private:
 	RPtype rpType;
+	inline static std::string vertexHelper = "\"..\\..\\extern\\polygonum\\resources\\shaders\\vertexTools.vert\"";
+	inline static std::string fragmentHelper = "\"..\\..\\extern\\polygonum\\resources\\shaders\\fragTools.vert\"";
 
 	void setBasics();
 	void setBindings(const BindingSet& bindings);
 	void setVS_general(const VertexType& vertexType);   //!< For Forward and Geometry passes
 	void setForward(const VertexType& vertexType, const BindingSet& bindings);  //!< For Forward pass
 	void setGeometry(const VertexType& vertexType, const BindingSet& bindings);  //!< For Geometry pass
-	void setLighting();  //!< For Lighting pass
+	void setLighting(unsigned numLights);  //!< For Lighting pass
 	void setPostprocess();  //!< For Postprocessing pass
 
 	ShaderCode& getShaderCode(ShaderType shaderType);

@@ -24,7 +24,8 @@ BindingBuffer::BindingBuffer(BindingBufferType descType, uint32_t numDescs, uint
 	descriptorSize(alignedDescriptorSize(numDescs, descType, descSize)),
 	glslLines(glslLines)
 {
-	if (!numDescriptors || !descriptorSize) throw std::runtime_error("Buffer cannot have size 0");
+	if (!numDescriptors || !descriptorSize)
+		throw std::runtime_error("Buffer cannot have size 0");
 
 	binding.resize(numDescriptors * descriptorSize);
 	size = binding.size();

@@ -573,20 +573,31 @@ void LoadingWorker::thread_loadData(Renderer& renderer, ModelsManager& models, C
 
 Help_RP_DDFP::Help_RP_DDFP() : lightingPass(0), postprocessingPass(0) { }
 
-void Help_RP_DDFP::createLightingPass(Renderer& ren, unsigned numLights, std::string vertShaderPath, std::string fragShaderPath, std::string fragToolsHeader)
+void Help_RP_DDFP::createLightingPass(Renderer& ren, unsigned numLights, std::string vertShaderPath, std::string fragShaderPath)
 {
 	std::vector<float> v_quad;	// [4 * 5]
 	std::vector<uint16_t> i_quad;
 	getScreenQuad(v_quad, i_quad);	// <<< The parameter zValue doesn't represent height (otherwise, this value should serve for hiding one plane behind another).
 
-	std::vector<ShaderLoader*> usedShaders{
-		SL_fromFile::factory(vertShaderPath),
-		SL_fromFile::factory(fragShaderPath, { SMod::changeHeader(fragToolsHeader) })
-	};
-	
-	BindingBuffer uboInfo(ubo, 1, 1, sizes::vec4 + numLights * sizeof(Light), { "vec4 camPos", "Light lights[NUMLIGHTS]" });
-	
 	VertexType vertexType({ vaPos });
+
+	BindingSet bindings;
+	bindings.fsLocal = { BindingBuffer(ubo, 1, 1, sizes::vec4 + numLights * sizeof(Light), { "vec4 camPos", "Light lights[NUMLIGHTS]" }) };
+
+	std::vector<ShaderLoader*> usedShaders;
+	if (vertShaderPath == "" && fragShaderPath == "")
+	{
+		ShaderCreator shaders(RPtype::lighting, vertexType, bindings, numLights);
+		usedShaders.push_back(SL_fromBuffer::factory("Light_v", shaders.getShader(vert)));
+		usedShaders.push_back(SL_fromBuffer::factory("Light_f", shaders.getShader(frag)));
+		std::cout << __FUNCTION__ << std::endl;
+		shaders.printAllShaders();
+	}
+	else
+	{
+		usedShaders.push_back(SL_fromFile::factory(vertShaderPath));
+		usedShaders.push_back(SL_fromFile::factory(fragShaderPath));
+	}
 
 	ModelDataInfo modelInfo;
 	modelInfo.name = "lightingPass";
@@ -596,10 +607,9 @@ void Help_RP_DDFP::createLightingPass(Renderer& ren, unsigned numLights, std::st
 	modelInfo.vertexType = vertexType;
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vertexType.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
-	modelInfo.bindSets.resize(1);
-	modelInfo.bindSets[0].fsLocal = { uboInfo };
+	modelInfo.bindSets.push_back(bindings);
 	modelInfo.transparency = false;
-	modelInfo.renderPassIndex = 1;
+	modelInfo.renderPassIndex = RPtype::lighting;
 	modelInfo.subpassIndex = 0;
 
 	lightingPass = ren.newModel(modelInfo);
@@ -611,12 +621,24 @@ void Help_RP_DDFP::createPostprocessingPass(Renderer& ren, std::string vertShade
 	std::vector<uint16_t> i_quad;
 	getScreenQuad(v_quad, i_quad);	// <<< The parameter zValue doesn't represent heigth (otherwise, this value should serve for hiding one plane behind another).
 
-	std::vector<ShaderLoader*> usedShaders{
-		SL_fromFile::factory(vertShaderPath),
-		SL_fromFile::factory(fragShaderPath)
-	};
-
 	VertexType vertexType({ vaPos });
+
+	BindingSet bindings;
+
+	std::vector<ShaderLoader*> usedShaders;
+	if (vertShaderPath == "" && fragShaderPath == "")
+	{
+		ShaderCreator shaders(RPtype::postprocessing, vertexType, bindings, 0);
+		usedShaders.push_back(SL_fromBuffer::factory("Pp_v", shaders.getShader(vert)));
+		usedShaders.push_back(SL_fromBuffer::factory("Pp_f", shaders.getShader(frag)));
+		std::cout << __FUNCTION__ << std::endl;
+		shaders.printAllShaders();
+	}
+	else
+	{
+		usedShaders.push_back(SL_fromFile::factory(vertShaderPath));
+		usedShaders.push_back(SL_fromFile::factory(fragShaderPath));
+	}
 
 	ModelDataInfo modelInfo;
 	modelInfo.name = "postprocessingPass";
@@ -626,9 +648,9 @@ void Help_RP_DDFP::createPostprocessingPass(Renderer& ren, std::string vertShade
 	modelInfo.vertexType = vertexType;
 	modelInfo.vertexesLoader = VL_fromBuffer::factory(v_quad.data(), vertexType.vertexSize, 4, i_quad, {});
 	modelInfo.shadersInfo = usedShaders;
-	modelInfo.bindSets.resize(1);
+	modelInfo.bindSets.push_back(bindings);
 	modelInfo.transparency = false;
-	modelInfo.renderPassIndex = 3;
+	modelInfo.renderPassIndex = RPtype::postprocessing;
 	modelInfo.subpassIndex = 0;
 
 	postprocessingPass = ren.newModel(modelInfo);
