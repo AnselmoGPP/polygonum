@@ -590,8 +590,8 @@ void Help_RP_DDFP::createLightingPass(Renderer& ren, unsigned numLights, std::st
 		ShaderCreator shaders(RPtype::lighting, vertexType, bindings, numLights);
 		usedShaders.push_back(SL_fromBuffer::factory("Light_v", shaders.getShader(vert)));
 		usedShaders.push_back(SL_fromBuffer::factory("Light_f", shaders.getShader(frag)));
-		std::cout << __FUNCTION__ << std::endl;
-		shaders.printAllShaders();
+		//std::cout << __FUNCTION__ << std::endl;
+		//shaders.printAllShaders();
 	}
 	else
 	{
@@ -631,8 +631,8 @@ void Help_RP_DDFP::createPostprocessingPass(Renderer& ren, std::string vertShade
 		ShaderCreator shaders(RPtype::postprocessing, vertexType, bindings, 0);
 		usedShaders.push_back(SL_fromBuffer::factory("Pp_v", shaders.getShader(vert)));
 		usedShaders.push_back(SL_fromBuffer::factory("Pp_f", shaders.getShader(frag)));
-		std::cout << __FUNCTION__ << std::endl;
-		shaders.printAllShaders();
+		//std::cout << __FUNCTION__ << std::endl;
+		//shaders.printAllShaders();
 	}
 	else
 	{

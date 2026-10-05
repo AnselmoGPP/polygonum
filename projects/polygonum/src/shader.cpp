@@ -374,6 +374,23 @@ void DataFromFile::loadVertex()
 }
 */
 
+ShaderCreator::ShaderCreator(const BindingSet& bindings)
+	: rpType(forward)
+{
+	setBasics();
+	setBindings(bindings);
+
+	vs.input.push_back("in vec3 inPos");
+	vs.output.push_back("out vec3 outPos");
+	vs.main_end.push_back("outPos = inPos");
+	vs.main_end.push_back("gl_Position = vec4(inPos, 1.0)");
+
+	fs.input.push_back("in vec3 inPos");
+	fs.output.push_back("out vec4 outColor");
+	fs.main_begin.push_back("vec2 uv = inPos.xy * 0.5 + 0.5");
+	fs.main_end.push_back("outColor = texture(tex0[0], uv)");
+}
+
 ShaderCreator::ShaderCreator(RPtype rendPass, const VertexType& vertexType, const BindingSet& bindings, unsigned numLights)
 	: rpType(rendPass)
 {

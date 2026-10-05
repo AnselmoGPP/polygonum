@@ -27,6 +27,8 @@
 
 //#include "btBulletDynamicsCommon.h"
 
+#include <unordered_set>
+#include <optional>
 
 // Debugging macros ----------
 
@@ -47,17 +49,35 @@
 //#define DEBUG_ECS
 
 
-// Typedefs ----------
+// Aliases ----------
 
 using key64 = uint64_t;
+
 template<typename T>
-using vec = std::vector<T>;
+using vec     = std::vector<T>;
 template<typename T>
-using vec2 = std::vector<std::vector<T>>;
+using vec2    = std::vector<std::vector<T>>;
 template<typename T>
-using vec3 = std::vector<std::vector<std::vector<T>>>;
+using vec3    = std::vector<std::vector<std::vector<T>>>;
 template<typename T1, typename T2>
 using vecpair = std::vector<std::pair<T1, T2>>;
+
+template<typename K, typename T>
+using unMap = std::unordered_map<K, T>;
+template<typename T>
+using unSet = std::unordered_set<T>;
+
+template<typename T>   // Multiple ownership. Nullable.
+using shr  = std::shared_ptr<T>;
+template<typename T>   // Multiple ownership optional. Nullable.
+using wk   = std::weak_ptr<T>;
+template<typename T>   // Single ownership. Nullable
+using uniq = std::unique_ptr<T>;
+
+template<typename T>   // No ownership. Not nullable.
+using ref  = std::reference_wrapper<T>;
+template<typename T>   // No ownership. Nullable.
+using wref = std::optional<std::reference_wrapper<T>>;
 
 
 // Functions ----------

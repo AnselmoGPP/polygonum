@@ -144,7 +144,8 @@ enum SC_configs {
 class ShaderCreator
 {
 public:
-	ShaderCreator(RPtype rendPass, const VertexType& vertexType, const BindingSet& bindings, unsigned numLights);
+	ShaderCreator(const BindingSet& bindings); // For 2D rendering (forward pass)
+	ShaderCreator(RPtype rendPass, const VertexType& vertexType, const BindingSet& bindings, unsigned numLights); // For 3D rendering
 
 	struct ShaderCode
 	{

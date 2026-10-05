@@ -71,7 +71,7 @@ uint32_t EntitiesManager::getNewId()
 	return 0;
 }
 
-void EntitiesManager::update(float timeStep)
+void EntitiesManager::update(double timeStep)
 {
 	#ifdef DEBUG_ECS
 		std::cout << typeid(*this).name() << "::" << __func__ << std::endl;

@@ -15,7 +15,7 @@ class VertexesLoader;
    class VL_fromFile;
 struct VertexPCT;
 
-class BindingSet;
+struct BindingSet;
 class Renderer;
 class ModelData;
 

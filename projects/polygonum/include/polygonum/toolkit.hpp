@@ -3,6 +3,7 @@
 
 #include <array>
 #include <chrono>
+#include <iostream>
 
 #include "polygonum/commons.hpp"
 
@@ -474,21 +475,20 @@ template<typename T>
 class QuadNode
 {
 public:
-	//QuadNode() { };
-	QuadNode(const T& element, QuadNode* a = nullptr, QuadNode* b = nullptr, QuadNode* c = nullptr, QuadNode* d = nullptr) : element(element), a(a), b(b), c(c), d(d) { };
-	~QuadNode() { if (a) delete a; if (b) delete b; if (c) delete c; if (d) delete d; };
+	QuadNode(const T& element, shr<QuadNode> parent = nullptr, shr<QuadNode> a = nullptr, shr<QuadNode> b = nullptr, shr<QuadNode> c = nullptr, shr<QuadNode> d = nullptr) : element(element), a(a), b(b), c(c), d(d) { };
+	~QuadNode() { };
 
 	void setElement(const T& newElement) { element = newElement; }
-	void setA(QuadNode<T>* node) { a = node; }
-	void setB(QuadNode<T>* node) { b = node; }
-	void setC(QuadNode<T>* node) { c = node; }
-	void setD(QuadNode<T>* node) { d = node; }
+	void setA(shr<QuadNode<T>> node) { a = node; }
+	void setB(shr<QuadNode<T>> node) { b = node; }
+	void setC(shr<QuadNode<T>> node) { c = node; }
+	void setD(shr<QuadNode<T>> node) { d = node; }
 
 	T& getElement() { return element; }
-	QuadNode<T>* getA() { return a; }
-	QuadNode<T>* getB() { return b; }
-	QuadNode<T>* getC() { return c; }
-	QuadNode<T>* getD() { return d; }
+	shr<QuadNode<T>> getA() { return a; }
+	shr<QuadNode<T>> getB() { return b; }
+	shr<QuadNode<T>> getC() { return c; }
+	shr<QuadNode<T>> getD() { return d; }
 
 	bool isLeaf() { return !(a || b || c || d); }	//!< Is leaf if all subnodes are null; otherwise, it's not. Full binary tree: Every node either has zero children [leaf node] or two children. All leaf nodes have an element associated. There are no nodes with only one child. Each internal node has exactly two children.
 	//bool isLeaf_BST() { return (a); }	//!< For simple Binary Trees (BT).
@@ -496,7 +496,8 @@ public:
 private:
 	// Ways to deal with keys and comparing records: (1) Key / value pairs (our choice), (2) Especial comparison method, (3) Passing in a comparator function.
 	T element;
-	QuadNode<T>* a, * b, * c, * d;
+	shr<QuadNode<T>> parent;
+	shr<QuadNode<T>> a, b, c, d;
 };
 
 

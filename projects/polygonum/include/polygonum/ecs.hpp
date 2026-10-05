@@ -3,7 +3,8 @@
 
 #include <unordered_map>
 #include <typeindex>
-
+#include <memory>
+#include <string>
 
 // Prototypes ----------
 
@@ -12,7 +13,6 @@ struct Component;
 class System;
 class EntitiesManager;
 class MainEntityFactory;
-
 
 // Class definitions ----------
 
@@ -72,7 +72,7 @@ public:
     EntitiesManager();
     ~EntitiesManager();
 
-    void update(float timeStep);
+    void update(double timeStep);
     void printInfo();
 
     uint32_t addEntity(Entity* entity);   //!< Add new entity by defining its components.
@@ -80,12 +80,12 @@ public:
 
     template<typename T> std::vector<uint32_t> getEntities();               //!< Get set of entities containing component of type X.
     template<typename T, typename Q> std::vector<uint32_t> getEntities();   //!< Get set of entities containing component of type X and type Y.
-    template<typename T> T* getComponent(uint32_t entityId);   //!< Get a certain component from an entity.
+    template<typename T> T* getComponent(uint32_t entityId);   //!< Get a certain component from an entity. Return null if not found.
     std::string getName(uint32_t entityId);
 
     void removeEntity(uint32_t entityId);
 
-    // Useful ids. Feel free to define new ones here.
+    // Useful ids. Feel free to define new ones here:
     uint32_t singletonId;   // Id of the entity containing all the singleton components (implementation dependent)
     uint32_t planetId;
     uint32_t seaId;
