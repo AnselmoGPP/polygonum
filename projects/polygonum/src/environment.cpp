@@ -794,6 +794,14 @@ void VulkanCore::destroy()
 	io.destroy();
 }
 
+glm::uvec2 VulkanCore::getWindowResolution()
+{
+	VkSurfaceCapabilitiesKHR capabilities;
+	vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &capabilities);
+
+	return glm::uvec2(capabilities.currentExtent.width, capabilities.currentExtent.height);
+}
+
 void VulkanCore::queueWaitIdle(VkQueue queue, std::mutex* waitMutex)
 {
 	if(waitMutex) const std::lock_guard<std::mutex> lock(*waitMutex);

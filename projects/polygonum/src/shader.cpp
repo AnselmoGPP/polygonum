@@ -380,15 +380,15 @@ ShaderCreator::ShaderCreator(const BindingSet& bindings)
 	setBasics();
 	setBindings(bindings);
 
-	vs.input.push_back("in vec3 inPos");
-	vs.output.push_back("out vec3 outPos");
-	vs.main_end.push_back("outPos = inPos");
-	vs.main_end.push_back("gl_Position = vec4(inPos, 1.0)");
+	vs.input.push_back("in vec3 inPos;");
+	vs.output.push_back("out vec3 outPos;");
+	vs.main_end.push_back("outPos = inPos;");
+	vs.main_end.push_back("gl_Position = vec4(inPos, 1.0);");
 
-	fs.input.push_back("in vec3 inPos");
-	fs.output.push_back("out vec4 outColor");
-	fs.main_begin.push_back("vec2 uv = inPos.xy * 0.5 + 0.5");
-	fs.main_end.push_back("outColor = texture(tex0[0], uv)");
+	fs.input.push_back("in vec3 inPos;");
+	fs.output.push_back("out vec4 outColor;");
+	fs.main_begin.push_back("vec2 uv = inPos.xy * 0.5 + 0.5;");
+	fs.main_end.push_back("outColor = texture(tex0[0], uv);");
 }
 
 ShaderCreator::ShaderCreator(RPtype rendPass, const VertexType& vertexType, const BindingSet& bindings, unsigned numLights)
@@ -430,7 +430,7 @@ void ShaderCreator::setBasics()
 
 	vs.includes = { "#include \"..\\..\\extern\\polygonum\\resources\\shaders\\vertexTools.vert\"" };
 
-	vs.globals = { "int i = gl_InstanceIndex" };
+	vs.globals = { "int i = gl_InstanceIndex;" };
 
 	// Fragment shader
 	fs.header = {
@@ -440,7 +440,7 @@ void ShaderCreator::setBasics()
 
 	fs.includes = { "#include \"..\\..\\extern\\polygonum\\resources\\shaders\\fragTools.vert\"" };
 
-	fs.flags = { "layout(early_fragment_tests) in" };
+	fs.flags = { "layout(early_fragment_tests) in;" };
 }
 
 void ShaderCreator::setBindings(const BindingSet& bindings)
@@ -473,13 +473,13 @@ void ShaderCreator::setLighting(unsigned numLights)
 	// Vertex shader
 	vs.includes.clear();
 	vs.input = {
-		"in vec3 inPos",   // NDC position. Since it's in NDCs, no MVP transformation is required
+		"in vec3 inPos;",   // NDC position. Since it's in NDCs, no MVP transformation is required
 	};
 	vs.output = {
-		"out vec2 outUV"
+		"out vec2 outUV;"
 	};
 	vs.main_end = {
-		"gl_Position = vec4(inPos, 1.0f)",
+		"gl_Position = vec4(inPos, 1.0f);",
 		"outUV = (inPos * 0.5 + 0.5).xy;"  // Convert clip space [-1.0, 1.0] -> texture space [0.0, 1.0]
 	};
 
@@ -497,20 +497,20 @@ void ShaderCreator::setLighting(unsigned numLights)
 		"vec4 showRoughness() { return vec4(vec3(texture(inputAtt[3], inUV).w), 1.0); }"
 	};
 	fs.main_begin = {
-		"vec3 fragPos = texture(inputAtt[0], inUV).xyz",
-		"vec3 albedo = texture(inputAtt[1], inUV).xyz",
-		"vec3 normal = texture(inputAtt[2], inUV, 1).xyz",   //unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);	//unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);
-		"vec4 specRough = texture(inputAtt[3], inUV)"
+		"vec3 fragPos = texture(inputAtt[0], inUV).xyz;",
+		"vec3 albedo = texture(inputAtt[1], inUV).xyz;",
+		"vec3 normal = texture(inputAtt[2], inUV, 1).xyz;",   //unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);	//unpackNormal(texture(inputAttachments[2], unpackUV(inUVs, 1)).xyz);
+		"vec4 specRough = texture(inputAtt[3], inUV);"
 	};
 	fs.main_processing = {
-		"//outColor = showPositions(5000); return",
-		"//outColor = showAlbedo(); return",
-		"//outColor = showNormals(); return",
-		"//outColor = showSpecularity(); return",
-		"//outColor = showRoughness(); return"
+		"//outColor = showPositions(5000); return;",
+		"//outColor = showAlbedo(); return;",
+		"//outColor = showNormals(); return;",
+		"//outColor = showSpecularity(); return;",
+		"//outColor = showRoughness(); return;"
 	};
 	fs.main_end = {
-		"outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, lBuf.lights, fragPos, lBuf.camPos.xyz)"
+		"outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, lBuf.lights, fragPos, lBuf.camPos.xyz);"
 	};
 }
 
@@ -519,19 +519,19 @@ void ShaderCreator::setPostprocess()
 	// Vertex shader
 	vs.includes.clear();
 	vs.input = {
-		"in vec3 inPos",   // NDC position. Since it's in NDCs, no MVP transformation is required.
+		"in vec3 inPos;",   // NDC position. Since it's in NDCs, no MVP transformation is required.
 	};
-	vs.output = { "out vec2 outUV" };
+	vs.output = { "out vec2 outUV;" };
 	vs.main_end = {
-		"gl_Position = vec4(inPos, 1.0f)",
+		"gl_Position = vec4(inPos, 1.0f);",
 		"outUV = (inPos * 0.5 + 0.5).xy;"  // Convert clip space [-1.0, 1.0] -> texture space [0.0, 1.0]
 	};
 
 	// Fragment shader
 	fs.bind_textures = { {"inputAtt", 2} };   // Color (sampler2D for single-sample | sampler2DMS for multisampling)
-	fs.input = { "in vec2 inUV" };
-	fs.output = { "out vec4 outColor" };
-	fs.main_end = { "outColor = vec4(texture(inputAtt[0], inUV).rgb, 1.0)" };
+	fs.input = { "in vec2 inUV;" };
+	fs.output = { "out vec4 outColor;" };
+	fs.main_end = { "outColor = vec4(texture(inputAtt[0], inUV).rgb, 1.0);" };
 }
 
 ShaderCreator::ShaderCode& ShaderCreator::getShaderCode(ShaderType shaderType)
@@ -557,67 +557,67 @@ void ShaderCreator::setVS_general(const VertexType& vertexType)
 		switch (attrib)
 		{
 		case vaPos:
-			vs.input.push_back("in vec3 inPos");
-			vs.output.push_back("out vec3 outPos");
-			vs.main_begin.push_back("vec3 worldPos = (lBuf.ins[i].model * vec4(inPos, 1.0)).xyz");
-			vs.main_begin.push_back("vec4 clipPos = gBuf.proj * gBuf.view * vec4(worldPos, 1.0)");
-			vs.main_end.push_back("gl_Position = clipPos");
-			vs.main_end.push_back("outPos = worldPos");
-			fs.input.push_back("in vec3 inPos");
+			vs.input.push_back("in vec3 inPos;");
+			vs.output.push_back("out vec3 outPos;");
+			vs.main_begin.push_back("vec3 worldPos = (lBuf.ins[i].model * vec4(inPos, 1.0)).xyz;");
+			vs.main_begin.push_back("vec4 clipPos = gBuf.proj * gBuf.view * vec4(worldPos, 1.0);");
+			vs.main_end.push_back("gl_Position = clipPos;");
+			vs.main_end.push_back("outPos = worldPos;");
+			fs.input.push_back("in vec3 inPos;");
 			continue;
 		case vaNorm:
-			vs.input.push_back("in vec3 inNormal");
-			vs.output.push_back("out vec3 outNormal");
-			vs.main_begin.push_back("vec3 normal = mat3(lBuf.ins[i].normalMat) * inNormal");
-			vs.main_end.push_back("outNormal = normal");
-			fs.input.push_back("in vec3 inNormal");
+			vs.input.push_back("in vec3 inNormal;");
+			vs.output.push_back("out vec3 outNormal;");
+			vs.main_begin.push_back("vec3 normal = mat3(lBuf.ins[i].normalMat) * inNormal;");
+			vs.main_end.push_back("outNormal = normal;");
+			fs.input.push_back("in vec3 inNormal;");
 			continue;
 		case vaTan:
 			if (!vertexType.contains(vaNorm))
 				continue;
-			vs.input.push_back("in vec3 inTan");
-			vs.output.push_back("out TB outTB");
-			vs.main_begin.push_back("TB tb = getTB(inNormal, inTan)");
-			vs.main_end.push_back("outTB = tb");
-			fs.input.push_back("in TB inTB");
+			vs.input.push_back("in vec3 inTan;");
+			vs.output.push_back("out TB outTB;");
+			vs.main_begin.push_back("TB tb = getTB(inNormal, inTan);");
+			vs.main_end.push_back("outTB = tb;");
+			fs.input.push_back("in TB inTB;");
 			continue;
 		case vaCol:
-			vs.input.push_back("in vec4 inColor");
-			vs.output.push_back("out vec4 outColor");
-			vs.main_begin.push_back("vec4 color = inColor");
-			vs.main_end.push_back("outColor = color");
-			fs.input.push_back("in vec4 inColor");
+			vs.input.push_back("in vec4 inColor;");
+			vs.output.push_back("out vec4 outColor;");
+			vs.main_begin.push_back("vec4 color = inColor;");
+			vs.main_end.push_back("outColor = color;");
+			fs.input.push_back("in vec4 inColor;");
 			continue;
 		case vaCol4:
-			vs.input.push_back("in u8vec4 inColor");
-			vs.output.push_back("out u8vec4 outColor");
-			vs.main_begin.push_back("u8vec4 color = inColor");
-			vs.main_end.push_back("outColor = color");
-			fs.input.push_back("in u8vec4 inColor");
+			vs.input.push_back("in u8vec4 inColor;");
+			vs.output.push_back("out u8vec4 outColor;");
+			vs.main_begin.push_back("u8vec4 color = inColor;");
+			vs.main_end.push_back("outColor = color;");
+			fs.input.push_back("in u8vec4 inColor;");
 			continue;
 		case vaUv:
-			vs.input.push_back("in vec2 inUV");
-			vs.output.push_back("out vec2 outUV");
-			vs.main_begin.push_back("vec2 uv = inUV");
-			vs.main_end.push_back("outUV = uv");
-			fs.input.push_back("in vec2 inUV");
+			vs.input.push_back("in vec2 inUV;");
+			vs.output.push_back("out vec2 outUV;");
+			vs.main_begin.push_back("vec2 uv = inUV;");
+			vs.main_end.push_back("outUV = uv;");
+			fs.input.push_back("in vec2 inUV;");
 			continue;
 		case vaFixes:
-			vs.input.push_back("in vec3 inFixes");
+			vs.input.push_back("in vec3 inFixes;");
 			continue;
 		case vaBoneWeights:
-			vs.input.push_back("in vec4 inBoneWeights");
-			vs.output.push_back("out vec4 outBoneWeights");
-			vs.main_begin.push_back("vec4 boneWeights = inBoneWeights");
-			vs.main_end.push_back("outBoneWeights = boneWeights");
-			fs.input.push_back("in vec4 inBoneWeights");
+			vs.input.push_back("in vec4 inBoneWeights;");
+			vs.output.push_back("out vec4 outBoneWeights;");
+			vs.main_begin.push_back("vec4 boneWeights = inBoneWeights;");
+			vs.main_end.push_back("outBoneWeights = boneWeights;");
+			fs.input.push_back("in vec4 inBoneWeights;");
 			continue;
 		case vaBoneIndices:
-			vs.input.push_back("in uvec4 inBoneIndices");
-			vs.output.push_back("out uvec4 outBoneIndices");
-			vs.main_begin.push_back("uvec4 boneIndices = inBoneIndices");
-			vs.main_end.push_back("outBoneIndices = boneIndices");
-			fs.input.push_back("in uvec4 inBoneIndices");
+			vs.input.push_back("in uvec4 inBoneIndices;");
+			vs.output.push_back("out uvec4 outBoneIndices;");
+			vs.main_begin.push_back("uvec4 boneIndices = inBoneIndices;");
+			vs.main_end.push_back("outBoneIndices = boneIndices;");
+			fs.input.push_back("in uvec4 inBoneIndices;");
 			continue;
 			//case vaInstanceTransform:
 			//	continue;
@@ -635,27 +635,27 @@ void ShaderCreator::setForward(const VertexType& vertexType, const BindingSet& b
 	setVS_general(vertexType);
 
 	// Fragment shader
-	fs.output.push_back("out vec4 outColor");
+	fs.output.push_back("out vec4 outColor;");
 
-	fs.main_begin.push_back("vec3 worldPos = inPos");
-	fs.main_begin.push_back("vec3 albedo = texture(tex0[0], inUV).xyz");
-	fs.main_begin.push_back("vec4 specRough = vec4(texture(tex0[1], inUV).xyz, texture(tex0[2], inUV).x)");
-	fs.main_begin.push_back("vec3 normal = planarNormal(tex0[3], inNormal, inTB, inUV, 1.f)");
+	fs.main_begin.push_back("vec3 worldPos = inPos;");
+	fs.main_begin.push_back("vec3 albedo = texture(tex0[0], inUV).xyz;");
+	fs.main_begin.push_back("vec4 specRough = vec4(texture(tex0[1], inUV).xyz, texture(tex0[2], inUV).x);");
+	fs.main_begin.push_back("vec3 normal = planarNormal(tex0[3], inNormal, inTB, inUV, 1.f);");
 
-	fs.main_end.push_back("outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, gBuf[0].light, worldPos, gBuf[0].camPos_t.xyz)");
+	fs.main_end.push_back("outColor = getFragColor(albedo, normal, specRough.xyz, specRough.w * 255, gBuf[0].light, worldPos, gBuf[0].camPos_t.xyz);");
 
 	if (!vertexType.contains(vaUv))
 	{
-		fs.main_begin[1] = "vec3 albedo = vec3(0.f, 1.f, 0.f)";
-		fs.main_begin[2] = "vec4 specRough = vec4(0.f, 0.f, 0.f, 0.f)";
-		fs.main_begin[3] = "vec3 normal = inNormal";
+		fs.main_begin[1] = "vec3 albedo = vec3(0.f, 1.f, 0.f);";
+		fs.main_begin[2] = "vec4 specRough = vec4(0.f, 0.f, 0.f, 0.f);";
+		fs.main_begin[3] = "vec3 normal = inNormal;";
 
 		if (vertexType.contains(vaCol) || vertexType.contains(vaCol4))
-			fs.main_begin[1] = "vec3 albedo = inColor.xyz";
+			fs.main_begin[1] = "vec3 albedo = inColor.xyz;";
 	}
 
 	if (!vertexType.contains(vaTan))
-		fs.main_begin[3] = "vec3 normal = inNormal";
+		fs.main_begin[3] = "vec3 normal = inNormal;";
 
 	if (!vertexType.contains(vaNorm))
 		throw std::runtime_error("ShaderCreator: Vertex doesn't contain normal as attribute.");
@@ -667,16 +667,16 @@ void ShaderCreator::setGeometry(const VertexType& vertexType, const BindingSet& 
 	setVS_general(vertexType);
 
 	// Fragment shader
-	fs.output.push_back("out vec4 outPos");
-	fs.output.push_back("out vec4 outAlbedo");
-	fs.output.push_back("out vec4 outNormal");
-	fs.output.push_back("out vec4 outSpecRoug");
+	fs.output.push_back("out vec4 outPos;");
+	fs.output.push_back("out vec4 outAlbedo;");
+	fs.output.push_back("out vec4 outNormal;");
+	fs.output.push_back("out vec4 outSpecRoug;");
 
-	fs.main_begin.push_back("vec3 worldPos = inPos");
-	fs.main_begin.push_back("vec4 albedo = vec4(0.f, 1.f, 0.f, 1.f)");
-	fs.main_begin.push_back("vec3 specularity = vec3(0.f, 0.f, 0.f)");
-	fs.main_begin.push_back("float roughness = 0.f");
-	fs.main_begin.push_back("vec3 normal = inNormal");
+	fs.main_begin.push_back("vec3 worldPos = inPos;");
+	fs.main_begin.push_back("vec4 albedo = vec4(0.f, 1.f, 0.f, 1.f);");
+	fs.main_begin.push_back("vec3 specularity = vec3(0.f, 0.f, 0.f);");
+	fs.main_begin.push_back("float roughness = 0.f;");
+	fs.main_begin.push_back("vec3 normal = inNormal;");
 
 	if (!vertexType.contains(vaNorm))
 		throw std::runtime_error("ShaderCreator: Vertex doesn't contain normal as attribute.");
@@ -685,32 +685,31 @@ void ShaderCreator::setGeometry(const VertexType& vertexType, const BindingSet& 
 		switch (bindings.fsTextures[0][i]->type)
 		{
 		case tAlb:
-			fs.main_begin[1] = "vec4 albedo = vec4(texture(tex0[" + std::to_string(i) + "], inUV).xyz, 1.f)";
+			fs.main_begin[1] = "vec4 albedo = vec4(texture(tex0[" + std::to_string(i) + "], inUV).xyz, 1.f);";
 			continue;
 		case tSpec:
-			fs.main_begin[2] = "vec3 specularity = texture(tex0[" + std::to_string(i) + "], inUV).xyz";
+			fs.main_begin[2] = "vec3 specularity = texture(tex0[" + std::to_string(i) + "], inUV).xyz;";
 			continue;
 		case tRoug:
-			fs.main_begin[3] = "float roughness = texture(tex0[" + std::to_string(i) + "], inUV).x";
+			fs.main_begin[3] = "float roughness = texture(tex0[" + std::to_string(i) + "], inUV).x;";
 			continue;
 		case tSpecroug:
-			fs.main_begin[2] = "vec4 specRough = texture(tex0[" + std::to_string(i) + "], inUV)\n";
-			fs.main_begin[2] += "\tvec3 specularity = specRough.xyz";
-			fs.main_begin[3] = "float roughness = specRough.w";
+			fs.main_begin[2] = "vec4 specRough = texture(tex0[" + std::to_string(i) + "], inUV);";
+			fs.main_begin[3] = "vec3 specularity = specRough.xyz; \nfloat roughness = specRough.w;";
 			continue;
 		case tNorm:
-			fs.main_begin[4] = "vec3 normal = inNormal";
+			fs.main_begin[4] = "vec3 normal = inNormal;";
 			if(vertexType.contains(vaTan))
-				fs.main_begin[4] = "vec3 normal = planarNormal(tex0[" + std::to_string(i) + "], inNormal, inTB, inUV, 1.f)";
+				fs.main_begin[4] = "vec3 normal = planarNormal(tex0[" + std::to_string(i) + "], inNormal, inTB, inUV, 1.f);";
 			continue;
 		default:
 			continue;
 		}
 
-	fs.main_end.push_back("outPos = vec4(worldPos, 1.f)");
-	fs.main_end.push_back("outAlbedo = albedo");
-	fs.main_end.push_back("outSpecRoug = vec4(specularity, roughness)");
-	fs.main_end.push_back("outNormal = vec4(normalize(normal), 1.0)");
+	fs.main_end.push_back("outPos = vec4(worldPos, 1.f);");
+	fs.main_end.push_back("outAlbedo = albedo;");
+	fs.main_end.push_back("outSpecRoug = vec4(specularity, roughness);");
+	fs.main_end.push_back("outNormal = vec4(normalize(normal), 1.0);");
 }
 
 unsigned ShaderCreator::firstBindingNumber(ShaderType shaderType)
@@ -748,7 +747,7 @@ ShaderCreator& ShaderCreator::setVerticalNormals()
 	for (auto& line : vs.main_begin)
 		if (findStrAndReplace(line,
 			"\tvec3 normal = mat3(ubo[i].normalMat) * inNormal; \n",
-			"\tvec3 normal = mat3(ubo[i].normalMat) * vec3(0,0,1) \n"))
+			"\tvec3 normal = mat3(ubo[i].normalMat) * vec3(0,0,1); \n"))
 			break;
 
 	return *this;
@@ -779,14 +778,14 @@ std::string ShaderCreator::getShader(ShaderType shaderType)
 	// Flags
 
 	for (auto& line : code.flags)
-		shader << line << ";\n";
+		shader << line << "\n";
 
 	if (code.flags.size()) shader << "\n";
 
 	// Structs
 
 	for (auto& line : code.structs)
-		shader << line << ";\n";
+		shader << line << "\n";
 
 	if (code.structs.size()) shader << "\n";
 
@@ -817,21 +816,21 @@ std::string ShaderCreator::getShader(ShaderType shaderType)
 	// Input
 
 	for (unsigned i = 0; i < code.input.size(); i++)
-		shader << "layout(location = " << std::to_string(i) << ") " << code.input[i] << ";\n";
+		shader << "layout(location = " << std::to_string(i) << ") " << code.input[i] << "\n";
 
 	if (code.input.size()) shader << "\n";
 
 	// Output
 
 	for (unsigned i = 0; i < code.output.size(); i++)
-		shader << "layout(location = " << std::to_string(i) << ") " << code.output[i] << ";\n";
+		shader << "layout(location = " << std::to_string(i) << ") " << code.output[i] << "\n";
 
 	if (code.output.size()) shader << "\n";
 
 	// Globals
 
 	for (const auto& line : code.globals)
-		shader << line << (line.back() == '}' ? "\n" : ";\n");
+		shader << line << "\n";
 
 	if (code.globals.size()) shader << "\n";
 
@@ -840,17 +839,17 @@ std::string ShaderCreator::getShader(ShaderType shaderType)
 	shader << "void main()\n{\n";
 
 	for (const auto& line : code.main_begin)
-		shader << "\t" << line << ";\n";
+		shader << "\t" << line << "\n";
 
 	if (code.main_begin.size()) shader << "\n";
 	// if(shaderType) shader << "\talbedo = vec4(1.f, 0.1f, 0.1f, 1.f);\n";
 
 	for (const auto& line : code.main_processing)
-		shader << "\t" << line << ";\n";
+		shader << "\t" << line << "\n";
 	if (code.main_processing.size()) shader << "\n";
 
 	for (const auto& line : code.main_end)
-		shader << "\t" << line << ";\n";
+		shader << "\t" << line << "\n";
 
 	shader << "}\n\n";
 

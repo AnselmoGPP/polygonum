@@ -24,7 +24,7 @@ public:
 
 	// Output (window)
 	void createWindowSurface(VkInstance instance, VkAllocationCallbacks* allocator, VkSurfaceKHR* surface);
-	void getFramebufferSize(int* width, int* height);
+	void getFramebufferSize(int* width, int* height); // Window resolution
 	float getAspectRatio();
 	void setWindowShouldClose(bool b);
 	bool getWindowShouldClose();

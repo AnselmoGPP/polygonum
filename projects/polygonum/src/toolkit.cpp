@@ -964,11 +964,16 @@ float angleBetween(glm::vec3 a, glm::vec3 b)
 	return glm::acos(adjacent);
 }
 
-glm::vec4 getRotQuat(glm::vec3 rotAxis, float angle)
+glm::vec4 getRotQuat(glm::vec3 rotAxis, float angleRad)
 {
-	float cosOp = cos(angle / 2);
-	float sinOp = sin(angle / 2);
+	float cosOp = cos(angleRad / 2.f);
+	float sinOp = sin(angleRad / 2.f);
 	return glm::vec4(cosOp, sinOp * rotAxis.x, sinOp * rotAxis.y, sinOp * rotAxis.z);
+}
+
+glm::quat getRotQuatGLM(glm::vec3 rotAxis, float angleRad)
+{
+	return glm::angleAxis(angleRad, rotAxis);
 }
 
 glm::vec3 rotatePoint(const glm::vec4& rotQuat, const glm::vec3& point)
@@ -979,6 +984,11 @@ glm::vec3 rotatePoint(const glm::vec4& rotQuat, const glm::vec3& point)
 	return glm::vec3(pointQuat.y, pointQuat.z, pointQuat.w);
 }
 
+glm::vec3 rotatePointGLM(const glm::quat& rotQuat, const glm::vec3& point)
+{
+	return rotQuat * point;
+}
+
 glm::vec4 productQuat(const glm::vec4& q1, const glm::vec4& q2)
 {
 	return glm::vec4(	// q1 * q2
@@ -987,6 +997,11 @@ glm::vec4 productQuat(const glm::vec4& q1, const glm::vec4& q2)
 		q1[0] * q2[2] + q1[1] * q2[3] + q1[2] * q2[0] - q1[3] * q2[1],
 		q1[0] * q2[3] - q1[1] * q2[2] + q1[2] * q2[1] + q1[3] * q2[0]
 	);
+}
+
+glm::quat productQuat(const glm::quat& q1, const glm::quat& q2)
+{
+	return q2 * q1;
 }
 
 glm::vec4 productQuat(const glm::vec4& q1, const glm::vec4& q2, const glm::vec4& q3)
@@ -1055,4 +1070,27 @@ glm::mat4 getRotationMatrix(glm::vec4 quat)
 		0,
 
 		0, 0, 0, 1);
+}
+
+glm::mat4 getRotationMatrix(glm::quat quat)
+{
+	return glm::mat4_cast(quat);
+}
+
+glm::mat4 get3DTransformationMatrix(glm::vec3 translation, glm::vec3 scale, glm::vec3 rotationAxis, float angleRadians)
+{
+	glm::mat4 matrix = glm::mat4(1.0f);
+	matrix = glm::translate(matrix, translation);
+	matrix = glm::rotate(matrix, angleRadians, rotationAxis);
+	matrix = glm::scale(matrix, scale);
+	return matrix;
+}
+
+glm::mat4 get3DTransformationMatrix(glm::vec3 translation, glm::quat orientation, glm::vec3 scale)
+{
+	glm::mat4 t = glm::translate(glm::mat4(1.0f), translation);
+	glm::mat4 r = glm::mat4_cast(orientation); // Convert quaternion to mat4
+	glm::mat4 s = glm::scale(glm::mat4(1.0f), scale);
+
+	return t * r * s;
 }

@@ -212,6 +212,7 @@ public:
 
 	int memAllocObjects;							//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount). Incremented each vkAllocateMemory call; decremented each vkFreeMemory call. Increments when creating an image or buffer; decrements when destroyed.
 
+	glm::uvec2 getWindowResolution(); // Not used
 	void queueWaitIdle(VkQueue queue, std::mutex* waitMutex);
 	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device);
 	void destroy();

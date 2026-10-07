@@ -14,6 +14,7 @@
   - Vertex sets
   - Maths
   - Rotations
+  - Transformation matrix
   - Timer
   - Algorithms
   - Data structures
@@ -288,7 +289,7 @@ float getSlope(const glm::vec3& groundNormal, const glm::vec3& upNormal);
 extern glm::vec4 noRotQuat;   //!< Quaternion representing no rotation
 
 /// Get rotation quaternion. Quaternions are a 4 dimensional extension of complex numbers. Useful for rotations, and more efficient than Rotation matrices (Euler angles) (https://danceswithcode.net/engineeringnotes/quaternions/quaternions.html).
-glm::vec4 getRotQuat(glm::vec3 rotAxis, float angle);
+glm::vec4 getRotQuat(glm::vec3 rotAxis, float angleRad);
 
 /// Get the Hamilton product of 2 or 3 quaternions (q1 rotation first, then q2, then q3). The product of two rotation quaternions (A * B) will be equivalent to rotation B followed by rotation A (around the rotation axes the object has at the beginning).
 glm::vec4 productQuat(const glm::vec4& q1, const glm::vec4& q2, const glm::vec4& q3);
@@ -297,10 +298,23 @@ glm::vec4 productQuat(const glm::vec4& q1, const glm::vec4& q2);
 /// Use a rotation quaternion for rotating a 3D point. Active rotation (point rotated with respect to coordinate system). 
 glm::vec3 rotatePoint(const glm::vec4& rotQuat, const glm::vec3& point);
 
+
 /// Get rotation matrix. Use it to rotate a point (rotMatrix * point = point_rotated) (http://answers.google.com/answers/threadview/id/361441.html) (https://www.mathworks.com/help/nav/ref/quaternion.rotmat.html).
 glm::mat3 getRotationMatrix(glm::vec3 rotAxis, float angle);
 glm::mat4 getRotationMatrix(glm::vec4 quat);
 
+// Using glm::quat
+glm::quat getRotQuatGLM(glm::vec3 rotAxis, float angleRad);
+glm::quat productQuat(const glm::quat& q1, const glm::quat& q2);
+glm::vec3 rotatePointGLM(const glm::quat& rotQuat, const glm::vec3& point);
+glm::mat4 getRotationMatrix(glm::quat quat);
+
+
+// Transformation matrix -----------------------------------------------------------------
+
+/// Transform 3D coordinates from one coordinate system to another.
+glm::mat4 get3DTransformationMatrix(glm::vec3 translation, glm::vec3 scale, glm::vec3 rotationAxis, float angleRadians);
+glm::mat4 get3DTransformationMatrix(glm::vec3 translation, glm::quat orientation, glm::vec3 scale);
 
 // Timer -----------------------------------------------------------------
 

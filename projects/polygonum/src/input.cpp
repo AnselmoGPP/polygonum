@@ -27,7 +27,7 @@ void IOmanager::initWindow(int width, int height)
 	window = glfwCreateWindow((int)width, (int)height, "Grapho", nullptr, nullptr);
 	//glfwSetWindowUserPointer(window, this);								// Input class has been set as windowUserPointer
 	//glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);	// This callback has been set in Input
-
+	
 	glfwSetInputMode(window, GLFW_STICKY_KEYS, GLFW_TRUE);
 }
 
