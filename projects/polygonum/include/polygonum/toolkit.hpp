@@ -14,7 +14,6 @@
   - Vertex sets
   - Maths
   - Rotations
-  - Transformation matrix
   - Timer
   - Algorithms
   - Data structures
@@ -98,15 +97,27 @@ glm::mat4 getModelMat();
 
 /// Get a user-defined Model Matrix
 glm::mat4 getModelMat(const glm::vec3& scale, const glm::vec4& rotQuat, const glm::vec3& translation);
+glm::mat4 getModelMat(const glm::vec3& scale, const glm::quat& orientation, const glm::vec3& translation);
+glm::mat4 getModelMat(const glm::vec3& scale, const glm::vec3& rotationAxis, float angleRadians, const glm::vec3& translation);
 
 /// Model matrix for Normals (it's really a mat3, but a mat4 is returned because it is easier to pass to shader since mat4 is aligned with 16 bytes). Normals are passed to fragment shader in world coordinates, so they have to be multiplied by the model matrix (MM) first (this MM should not include the translation part, so we just take the upper-left 3x3 part). However, non-uniform scaling can distort normals, so we have to create a specific MM especially tailored for normal vectors: mat3(transpose(inverse(model))) * vec3(normal).
 glm::mat4 getNormalMat(const glm::mat4& modelMatrix);
 
-// View matrix
+/// View matrix
 glm::mat4 getViewMat(glm::vec3& camPos, glm::vec3& front, glm::vec3& camUp);
 
-// Projection matrix
+/// Projection matrix
 glm::mat4 getProjMat(float fovy, float aspectRatio, float nearViewPlane, float farViewPlane);
+
+/// Model matrix for 2D rendering.
+glm::mat4 getModel2D(glm::vec2 translate);
+glm::mat4 getModel2D(glm::vec3 translate);
+
+/// View matrix for 2D rendering.
+glm::mat4 getView2D(glm::vec2 camPos);
+
+/// Projection matrix for 2D rendering.
+glm::mat4 getProjection2D(float fovy, float aspectRatio);
 
 
 // Bounding ops -----------------------------------------------------------------
@@ -197,6 +208,7 @@ size_t getLongAxis(std::vector<float>& vertexDestination, std::vector<uint16_t>&
 size_t getGrid(std::vector<float>& vertexDestination, std::vector<uint16_t>& indicesDestination, int stepSize, size_t stepsPerSide, float height, glm::vec3 color);
 
 /// Get vertex data (NDC space vertices & UVs coordinates) and indices of a screen quad. Used for draws that doesn't use MVP matrix (example: reticule or postprocessing effects).
+void getQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float width, float height, float z);
 void getScreenQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float zValue = 0.f, float radius = 1.f);
 void getScreenQuadWithUV(std::vector<float>& vertices, std::vector<uint16_t>& indices, float zValue = 0.f, float radius = 1.f);
 
@@ -308,13 +320,6 @@ glm::quat getRotQuatGLM(glm::vec3 rotAxis, float angleRad);
 glm::quat productQuat(const glm::quat& q1, const glm::quat& q2);
 glm::vec3 rotatePointGLM(const glm::quat& rotQuat, const glm::vec3& point);
 glm::mat4 getRotationMatrix(glm::quat quat);
-
-
-// Transformation matrix -----------------------------------------------------------------
-
-/// Transform 3D coordinates from one coordinate system to another.
-glm::mat4 get3DTransformationMatrix(glm::vec3 translation, glm::vec3 scale, glm::vec3 rotationAxis, float angleRadians);
-glm::mat4 get3DTransformationMatrix(glm::vec3 translation, glm::quat orientation, glm::vec3 scale);
 
 // Timer -----------------------------------------------------------------
 

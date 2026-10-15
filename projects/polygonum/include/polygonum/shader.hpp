@@ -144,7 +144,7 @@ enum SC_configs {
 class ShaderCreator
 {
 public:
-	ShaderCreator(const BindingSet& bindings); // For 2D rendering (forward pass)
+	ShaderCreator(const BindingSet& bindings); // Fill screen with texture (forward pass)
 	ShaderCreator(RPtype rendPass, const VertexType& vertexType, const BindingSet& bindings, unsigned numLights); // For 3D rendering
 
 	struct ShaderCode
@@ -165,13 +165,13 @@ public:
 		std::vector <std::string> others;
 	} vs, fs;
 
-	std::string getShader(ShaderType shaderType);
+	std::string getShader(ShaderType shaderType, bool lineNumbers = false);
 
 	void setVertexHelper(std::string helper);
 	void setFragmentHelper(std::string helper);
 
-	void printShader(ShaderType shaderType);
-	void printAllShaders();
+	void printShader(ShaderType shaderType, bool lineNumbers);
+	void printAllShaders(bool lineNumbers);
 
 	ShaderCreator& replaceMainBegin(ShaderType shaderType, std::string& text, const std::string& substring, const std::string& replacement);   //!< Replace an entire line in main_begin with your own if it contains certain substring.
 	ShaderCreator& replaceMainEnd(ShaderType shaderType, std::string& text, const std::string& substring, const std::string& replacement);   //!< Replace an entire line in main_end with your own if it contains certain substring.
@@ -194,7 +194,7 @@ private:
 
 	unsigned firstBindingNumber(ShaderType shaderType);
 	BindingBufferType getDescType(const BindingBuffer* bindBuffer);
-	std::string getBuffer(const BindingBuffer& buffer, unsigned bindingName, unsigned nameName, bool isGlobal);
+	std::string getBuffer(const BindingBuffer& buffer, unsigned bindingName, unsigned nameName, bool isGlobal, const std::function<std::string()>& lineNumber);
 	std::unordered_map<VertAttrib, unsigned> usedAttribTypes(const VertexType& vertexType);
 
 	bool replaceAllIfContains(std::string& text, const std::string& substring, const std::string& replacement);

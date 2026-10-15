@@ -76,6 +76,7 @@ public:
     void printInfo();
 
     uint32_t addEntity(Entity* entity);   //!< Add new entity by defining its components.
+    std::vector<uint32_t> addEntities(std::vector<Entity*> entities);   //!< Add new entities by defining their components.
     template<typename T, typename... Args> void addSystem(Args&&... args);   //!< Add new system
 
     template<typename T> std::vector<uint32_t> getEntities();               //!< Get set of entities containing component of type X.

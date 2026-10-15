@@ -336,7 +336,7 @@ ModelData* Renderer::getModel(key64 key)
 		return nullptr;
 }
 
-void Renderer::setInstances(key64 key, size_t numberOfRenders)
+void Renderer::setInstances(key64 key, size_t numInstances)
 {
 #ifdef DEBUG_RENDERER
 	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -345,11 +345,11 @@ void Renderer::setInstances(key64 key, size_t numberOfRenders)
 	const std::lock_guard<std::mutex> lock(worker.mutModels);
 
 	if (models.data.find(key) != models.data.end())
-		if (models.data[key].setNumInstances(numberOfRenders))
+		if (models.data[key].setNumInstances(numInstances))
 			commander.updateCommandBuffer = true;		// We flag commandBuffer for update assuming that our model is in list "model"
 }
 
-void Renderer::setInstances(std::vector<key64>& keys, size_t numberOfRenders)
+void Renderer::setInstances(std::vector<key64>& keys, size_t numInstances)
 {
 #ifdef DEBUG_RENDERER
 	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
@@ -359,7 +359,7 @@ void Renderer::setInstances(std::vector<key64>& keys, size_t numberOfRenders)
 
 	for (key64 key : keys)
 		if (models.data.find(key) != models.data.end())
-			if (models.data[key].setNumInstances(numberOfRenders))
+			if (models.data[key].setNumInstances(numInstances))
 				commander.updateCommandBuffer = true;		// We flag commandBuffer for update assuming that our model is in list "model"
 }
 

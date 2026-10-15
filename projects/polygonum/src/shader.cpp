@@ -295,7 +295,7 @@ BindingBufferType ShaderCreator::getDescType(const BindingBuffer* bindBuffer)
 	}
 }
 
-std::string ShaderCreator::getBuffer(const BindingBuffer& buffer, unsigned bindingNumber, unsigned nameNumber, bool isGlobal)
+std::string ShaderCreator::getBuffer(const BindingBuffer& buffer, unsigned bindingNumber, unsigned nameNumber, bool isGlobal, const std::function<std::string()>& lineNumber)
 {
 	std::string str;
 	BindingBufferType descType = getDescType(&buffer);
@@ -308,10 +308,10 @@ std::string ShaderCreator::getBuffer(const BindingBuffer& buffer, unsigned bindi
 	}
 	if (buffer.numDescriptors > 1) objName += "[" + std::to_string(buffer.numDescriptors) + "]";
 
-	str += "layout(set = 0, binding = " + std::to_string(bindingNumber) + ") " + bufferType + " " + structName + " {\n";
+	str += lineNumber() + "layout(set = 0, binding = " + std::to_string(bindingNumber) + ") " + bufferType + " " + structName + " {\n";
 	for (const auto& descAttrib : buffer.glslLines)
-		str += "\t" + descAttrib + ";\n";
-	str += "} " + objName + ";\n\n";
+		str += lineNumber() + "\t" + descAttrib + ";\n";
+	str += lineNumber() + "} " + objName + ";\n" + lineNumber() + "\n";
 
 	return str;
 }
@@ -380,9 +380,11 @@ ShaderCreator::ShaderCreator(const BindingSet& bindings)
 	setBasics();
 	setBindings(bindings);
 
+	// Fill window with texture
 	vs.input.push_back("in vec3 inPos;");
 	vs.output.push_back("out vec3 outPos;");
-	vs.main_end.push_back("outPos = inPos;");
+	vs.main_begin.push_back("vec3 pos = inPos;");
+	vs.main_end.push_back("outPos = pos;");
 	vs.main_end.push_back("gl_Position = vec4(inPos, 1.0);");
 
 	fs.input.push_back("in vec3 inPos;");
@@ -753,41 +755,47 @@ ShaderCreator& ShaderCreator::setVerticalNormals()
 	return *this;
 }
 
-std::string ShaderCreator::getShader(ShaderType shaderType)
+std::string ShaderCreator::getShader(ShaderType shaderType, bool lineNumbers)
 {
+	unsigned count = 0;
+	auto number = [lineNumbers, &count]()->std::string {
+		if (lineNumbers) return std::to_string(++count) + "   ";
+		else return std::string("");
+	};
+
 	ShaderCode& code = getShaderCode(shaderType);
 
 	std::ostringstream shader;
 
-	shader << getShaderInfo(shaderType) << "\n";
+	shader << number() << getShaderInfo(shaderType) << "\n";
 
 	// Header
 
 	for (auto& line : code.header)
-		shader << line << "\n";
+		shader << number() << line << "\n";
 
-	if (code.header.size()) shader << "\n";
+	if (code.header.size()) shader << number() << "\n";
 
 	// Includes
 
 	for (auto& line : code.includes)
-		shader << line << "\n";
+		shader << number() << line << "\n";
 
-	if (code.includes.size()) shader << "\n";
+	if (code.includes.size()) shader << number() << "\n";
 
 	// Flags
 
 	for (auto& line : code.flags)
-		shader << line << "\n";
+		shader << number() << line << "\n";
 
-	if (code.flags.size()) shader << "\n";
+	if (code.flags.size()) shader << number() << "\n";
 
 	// Structs
 
 	for (auto& line : code.structs)
-		shader << line << "\n";
+		shader << number() << line << "\n";
 
-	if (code.structs.size()) shader << "\n";
+	if (code.structs.size()) shader << number() << "\n";
 
 	// Bindings
 
@@ -796,67 +804,67 @@ std::string ShaderCreator::getShader(ShaderType shaderType)
 	//   - Global buffers
 
 	for (unsigned i = 0; i < code.bind_globalBuffers.size(); i++)
-		shader << getBuffer(code.bind_globalBuffers[i], bindingNumber++, i, true);
+		shader << getBuffer(code.bind_globalBuffers[i], bindingNumber++, i, true, number);
 
 	//   - Local buffers
 
 	for (unsigned i = 0; i < code.bind_localBuffers.size(); i++)
-		shader << getBuffer(code.bind_localBuffers[i], bindingNumber++, i, false);
+		shader << getBuffer(code.bind_localBuffers[i], bindingNumber++, i, false, number);
 
 	//   - Textures
 
 	for (unsigned i = 0; i < code.bind_textures.size(); i++)
 	{
-		shader << "layout(set = 0, binding = " << std::to_string(bindingNumber++) << ") ";
+		shader << number() << "layout(set = 0, binding = " << std::to_string(bindingNumber++) << ") ";
 		shader << "uniform sampler2D " << code.bind_textures[i].first;
 		if (i) shader << std::to_string(i);
-		shader << "[" << std::to_string(code.bind_textures[i].second) << "];\n\n";
+		shader << "[" << std::to_string(code.bind_textures[i].second) << "];\n" << number() << "\n";
 	}
 
 	// Input
 
 	for (unsigned i = 0; i < code.input.size(); i++)
-		shader << "layout(location = " << std::to_string(i) << ") " << code.input[i] << "\n";
+		shader << number() << "layout(location = " << std::to_string(i) << ") " << code.input[i] << "\n";
 
-	if (code.input.size()) shader << "\n";
+	if (code.input.size()) shader << number() << "\n";
 
 	// Output
 
 	for (unsigned i = 0; i < code.output.size(); i++)
-		shader << "layout(location = " << std::to_string(i) << ") " << code.output[i] << "\n";
+		shader << number() << "layout(location = " << std::to_string(i) << ") " << code.output[i] << "\n";
 
-	if (code.output.size()) shader << "\n";
+	if (code.output.size()) shader << number() << "\n";
 
 	// Globals
 
 	for (const auto& line : code.globals)
-		shader << line << "\n";
+		shader << number() << line << "\n";
 
-	if (code.globals.size()) shader << "\n";
+	if (code.globals.size()) shader << number() << "\n";
 
 	// main
 
-	shader << "void main()\n{\n";
+	shader << number() << "void main()\n" << number() << "{\n";
 
 	for (const auto& line : code.main_begin)
-		shader << "\t" << line << "\n";
+		shader << number() << "\t" << line << "\n";
 
-	if (code.main_begin.size()) shader << "\n";
+	if (code.main_begin.size()) shader << number() << "\n";
 	// if(shaderType) shader << "\talbedo = vec4(1.f, 0.1f, 0.1f, 1.f);\n";
 
 	for (const auto& line : code.main_processing)
-		shader << "\t" << line << "\n";
-	if (code.main_processing.size()) shader << "\n";
+		shader << number() << "\t" << line << "\n";
+	if (code.main_processing.size()) shader << number() << "\n";
 
 	for (const auto& line : code.main_end)
-		shader << "\t" << line << "\n";
+		shader << number() << "\t" << line << "\n";
 
-	shader << "}\n\n";
+	shader << number() << "}\n" << number() << "\n";
 
 	// Others
 
 	for (const auto& line : code.others)
-		shader << line << "\n\n";
+		shader << number() << line << "\n" << number() << "\n";
 
 	return shader.str();
 }
@@ -871,14 +879,17 @@ void ShaderCreator::setFragmentHelper(std::string helper)
 	fragmentHelper = helper;
 }
 
-void ShaderCreator::printShader(ShaderType shaderType) { std::cout << getShader(shaderType) << std::endl; }
+void ShaderCreator::printShader(ShaderType shaderType, bool lineNumbers)
+{
+	std::cout << getShader(shaderType, lineNumbers) << std::endl;
+}
 
-void ShaderCreator::printAllShaders()
+void ShaderCreator::printAllShaders(bool lineNumbers)
 {
 	std::cout << "----------\n";
-	std::cout << getShader(vert) << "\n";
+	std::cout << getShader(vert, lineNumbers) << "\n";
 	std::cout << "----------\n";
-	std::cout << getShader(frag) << "\n";
+	std::cout << getShader(frag, lineNumbers) << "\n";
 }
 
 std::string ShaderCreator::getShaderInfo(ShaderType shaderType)

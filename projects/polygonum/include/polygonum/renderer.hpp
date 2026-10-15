@@ -126,8 +126,8 @@ public:
 	ModelData* getModel(key64 key);
 	IOmanager& getIO();			//!< Get access to the IO manager
 
-	void setInstances(key64 key, size_t numberOfRenders);
-	void setInstances(std::vector<key64>& keys, size_t numberOfRenders);
+	void setInstances(key64 key, size_t numInstances);
+	void setInstances(std::vector<key64>& keys, size_t numInstances);
 
 	void setMaxFPS(int maxFPS);
 

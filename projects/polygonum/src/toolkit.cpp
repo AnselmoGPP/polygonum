@@ -103,7 +103,44 @@ glm::mat4 getViewMat(glm::vec3& camPos, glm::vec3& front, glm::vec3& camUp)
 glm::mat4 getProjMat(float fovy, float aspectRatio, float nearViewPlane, float farViewPlane)
 {
 	glm::mat4 proj = glm::perspective(fovy, aspectRatio, nearViewPlane, farViewPlane);
-	proj[1][1] *= -1;       // GLM returns the Y clip coordinate inverted.
+	proj[1][1] *= -1;       // GLM returns the Y clip coordinate inverted. This Y-flip changes the front-face: from CCW to CW.
+	return proj;
+}
+
+glm::mat4 getModel2D(glm::vec2 translate)
+{
+	return getModelMat(
+		glm::vec3(1.f),
+		glm::vec3(0.f, 0.f, 1.f), 0.f,
+		glm::vec3(translate.x, translate.y, 0.f));
+}
+
+glm::mat4 getModel2D(glm::vec3 translate)
+{
+	return getModelMat(
+		glm::vec3(1.f),
+		glm::vec3(0.f, 0.f, 1.f), 0.f,
+		glm::vec3(translate.x, translate.y, translate.z));
+}
+
+glm::mat4 getView2D(glm::vec2 camPos)
+{
+	return glm::translate(glm::mat4(1.0f), glm::vec3(-camPos, 0.f));
+	//return glm::lookAt(camPos, target, up);
+}
+
+glm::mat4 getProjection2D(float fovy, float aspectRatio)
+{
+	float halfHeight = fovy / 2.f;
+	float halfWidth = fovy * aspectRatio / 2.f;
+
+	glm::mat4 proj = glm::ortho(
+		-halfWidth, halfWidth,   // left, right
+		-halfHeight, halfHeight, // bottom, top
+		-1.0f, 1.0f              // near, far
+	);
+
+	proj[1][1] *= -1;       // GLM returns the Y clip coordinate inverted. This Y-flip changes the front-face: from CCW to CW.
 	return proj;
 }
 
@@ -422,6 +459,17 @@ size_t getGrid(std::vector<float>& vertexDestination, std::vector<uint16_t>& ind
 	return numVertex;
 }
 
+void getQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float width, float height, float z)
+{
+	vertices = {
+		0,     0,      z, 0, 1,
+		0,     height, z, 0, 0,
+		width, height, z, 1, 0,
+		width, 0,      z, 1, 1 };
+
+	indices = std::vector<uint16_t>{ 0,3,1, 1,3,2 }; // CCW (CW in world → CCW on screen after the Y-flip)
+}
+
 void getScreenQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float zValue, float radius)
 {
 	vertices = {
@@ -430,7 +478,7 @@ void getScreenQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices,
 		 radius, radius, zValue,
 		 radius,-radius, zValue };
 
-	indices = std::vector<uint16_t>{ 0,1,3, 1,2,3 };
+	indices = std::vector<uint16_t>{ 0,1,3, 1,2,3 }; // CW
 }
 
 void getScreenQuadWithUV(std::vector<float>& vertices, std::vector<uint16_t>& indices, float zValue, float radius)
@@ -441,7 +489,7 @@ void getScreenQuadWithUV(std::vector<float>& vertices, std::vector<uint16_t>& in
 		 radius, radius, zValue,  1, 1,
 		 radius,-radius, zValue,  1, 0 };
 
-	indices = std::vector<uint16_t>{ 0,1,3, 1,2,3 };
+	indices = std::vector<uint16_t>{ 0,1,3, 1,2,3 }; // CW
 }
 
 std::vector<float> v_YZquad = {
@@ -1077,7 +1125,7 @@ glm::mat4 getRotationMatrix(glm::quat quat)
 	return glm::mat4_cast(quat);
 }
 
-glm::mat4 get3DTransformationMatrix(glm::vec3 translation, glm::vec3 scale, glm::vec3 rotationAxis, float angleRadians)
+glm::mat4 getModelMat(const glm::vec3& scale, const glm::vec3& rotationAxis, float angleRadians, const glm::vec3& translation)
 {
 	glm::mat4 matrix = glm::mat4(1.0f);
 	matrix = glm::translate(matrix, translation);
@@ -1086,7 +1134,7 @@ glm::mat4 get3DTransformationMatrix(glm::vec3 translation, glm::vec3 scale, glm:
 	return matrix;
 }
 
-glm::mat4 get3DTransformationMatrix(glm::vec3 translation, glm::quat orientation, glm::vec3 scale)
+glm::mat4 getModelMat(const glm::vec3& scale, const glm::quat& orientation, const glm::vec3& translation)
 {
 	glm::mat4 t = glm::translate(glm::mat4(1.0f), translation);
 	glm::mat4 r = glm::mat4_cast(orientation); // Convert quaternion to mat4
