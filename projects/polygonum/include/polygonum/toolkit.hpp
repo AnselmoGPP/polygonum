@@ -208,7 +208,7 @@ size_t getLongAxis(std::vector<float>& vertexDestination, std::vector<uint16_t>&
 size_t getGrid(std::vector<float>& vertexDestination, std::vector<uint16_t>& indicesDestination, int stepSize, size_t stepsPerSide, float height, glm::vec3 color);
 
 /// Get vertex data (NDC space vertices & UVs coordinates) and indices of a screen quad. Used for draws that doesn't use MVP matrix (example: reticule or postprocessing effects).
-void getQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float width, float height, float z);
+void getQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float width, float height, float z, glm::vec3 translation = {0, 0, 0});
 void getScreenQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float zValue = 0.f, float radius = 1.f);
 void getScreenQuadWithUV(std::vector<float>& vertices, std::vector<uint16_t>& indices, float zValue = 0.f, float radius = 1.f);
 

@@ -459,13 +459,13 @@ size_t getGrid(std::vector<float>& vertexDestination, std::vector<uint16_t>& ind
 	return numVertex;
 }
 
-void getQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float width, float height, float z)
+void getQuad(std::vector<float>& vertices, std::vector<uint16_t>& indices, float width, float height, float z, glm::vec3 translation)
 {
 	vertices = {
-		0,     0,      z, 0, 1,
-		0,     height, z, 0, 0,
-		width, height, z, 1, 0,
-		width, 0,      z, 1, 1 };
+		0     + translation.x, 0      + translation.y, z + translation.z, 0, 1,
+		0     + translation.x, height + translation.y, z + translation.z, 0, 0,
+		width + translation.x, height + translation.y, z + translation.z, 1, 0,
+		width + translation.x, 0      + translation.y, z + translation.z, 1, 1 };
 
 	indices = std::vector<uint16_t>{ 0,3,1, 1,3,2 }; // CCW (CW in world → CCW on screen after the Y-flip)
 }
