@@ -43,6 +43,14 @@ ADD_LIBRARY(${PROJECT_NAME} STATIC
 	src/ecs.cpp
 	src/shader.cpp
 	src/texture.cpp
+	
+	../../extern/imgui/imgui.cpp
+    ../../extern/imgui/imgui_draw.cpp
+    ../../extern/imgui/imgui_widgets.cpp
+    ../../extern/imgui/imgui_tables.cpp
+    ../../extern/imgui/imgui_demo.cpp
+    ../../extern/imgui/backends/imgui_impl_glfw.cpp
+    ../../extern/imgui/backends/imgui_impl_vulkan.cpp
 
 	include/polygonum/environment.hpp
 	include/polygonum/renderer.hpp
@@ -67,6 +75,8 @@ TARGET_INCLUDE_DIRECTORIES( ${PROJECT_NAME} PUBLIC
 	../../extern/stb
 	../../extern/assimp/include
 	../../_BUILD/extern/assimp/include/
+	../../extern/imgui
+	../../extern/imgui/backends
 )
 
 
