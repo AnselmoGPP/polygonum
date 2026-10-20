@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <iostream>
+#include <queue>
 
 #include "polygonum/commons.hpp"
 
@@ -620,6 +621,29 @@ public:
 
 	PointersManager<K, E>* pointersManager;
 	K key;
+};
+
+/**
+  When managing multiple vulkan structures, we need a way to handle their destruction. We could keep adding more
+  things into the cleanup() function, but that would not scale and would be annoying to keep synced correctly.
+
+  A deletion queue is a common approach by lots of engines. We add the objects we want to delete into a queue,
+  and then run the queue to delete all the objects in the correct orders. We keep it simple here: it stores
+  std::function callbacks in a deque. We use that deque as a First In Last Out queue, so that when we flush the
+  deletion queue, it first destroys the objects that were added into it last.
+
+  std::function stores a lambda, and we can use it to store a callback with some data. Doing callbacks like this
+  is inneficient at scale, because we are storing whole std::functions for every object we are deleting, which is
+  not optimal. If you need to delete thousands of objects and want them deleted faster, a better implementation
+  would be to store arrays of vulkan handles of various types such as VkImage, VkBuffer, and so on. And then
+  delete those from a loop.
+*/
+struct DeletionQueue
+{
+	std::deque<std::function<void()>> deletors;
+
+	void push_function(std::function<void()>&& function);
+	void flush();
 };
 
 #endif

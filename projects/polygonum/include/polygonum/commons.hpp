@@ -26,12 +26,18 @@
 
 #include "shaderc/shaderc.hpp"   // Compile shaders (GLSL code to SPIR-V)
 
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_vulkan.h"
+
 //#include "btBulletDynamicsCommon.h"
 
 #include <unordered_set>
 #include <optional>
 
 // Debugging macros ----------
+
+#define RENDER_IMGUI
 
 #define DEBUG_ENV_INFO   // Basic info
 //#define DEBUG_ENV_CORE   // Standards: NDEBUG, _DEBUG

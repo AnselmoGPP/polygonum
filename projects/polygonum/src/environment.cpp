@@ -137,7 +137,7 @@ void DeviceData::fillWithDeviceData(VkPhysicalDevice physicalDevice)
 {
 	vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
 	vkGetPhysicalDeviceFeatures(physicalDevice, &deviceFeatures);
-	
+
 	deviceType = deviceProperties.deviceType;
 	apiVersion = deviceProperties.apiVersion;
 	driverVersion = deviceProperties.driverVersion;
@@ -254,7 +254,7 @@ void Commander::createSynchronizers(size_t numSwapchainImages, size_t numFrames)
 			throw std::runtime_error("Failed to create synchronization objects for a frame!");
 }
 
-void Commander::updateCommandBuffers(ModelsManager& models, std::shared_ptr<RenderPipeline> renderPipeline, size_t swapChainImagesCount, size_t frameIndex)
+void Commander::updateCommandBuffers(ModelsManager& models, std::shared_ptr<RenderPipeline> renderPipeline, size_t frameIndex, ImGuiManager& guiManager, uint32_t presentedImageIndex)
 {
 #if defined(DEBUG_RENDERER) || defined(DEBUG_COMMANDBUFFERS)
 	std::cout << typeid(*this).name() << "::" << __func__ << "(" << frameIndex << ") BEGIN" << std::endl;
@@ -263,16 +263,18 @@ void Commander::updateCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 	commandsCount = 0;
 	VkDeviceSize offsets[] = { 0 };
 	ModelData* model;
-	std::vector<VkCommandBuffer>& CBs = commandBuffers[frameIndex];   // Take command buffers of this frame (one per swapchain).
+	std::vector<VkCommandBuffer>& commandBufferSet = commandBuffers[frameIndex];   // Take command buffers of this frame (one per swapchain image).
 
 	// Start command buffer recording
-	for (size_t i = 0; i < CBs.size(); i++)		// for each SWAPCHAIN IMAGE
+	for (size_t i = 0; i < commandBufferSet.size(); i++)		// for each SWAPCHAIN IMAGE (one CB per swapchain image)
 	{
 #ifdef DEBUG_COMMANDBUFFERS
 	std::cout << "  Command buffer " << i << std::endl;
 #endif
 
-		if(vkResetCommandBuffer(CBs[i], 0) != VK_SUCCESS)
+		VkCommandBuffer commandBuffer = commandBufferSet[i];
+
+		if(vkResetCommandBuffer(commandBuffer, 0) != VK_SUCCESS)
 			throw std::runtime_error("Failed to reset command buffer!");
 
 		// Start command buffer recording
@@ -281,7 +283,7 @@ void Commander::updateCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 		beginInfo.flags = 0;			// [Optional] VK_COMMAND_BUFFER_USAGE_ ... ONE_TIME_SUBMIT_BIT (the command buffer will be rerecorded right after executing it once), RENDER_PASS_CONTINUE_BIT (secondary command buffer that will be entirely within a single render pass), SIMULTANEOUS_USE_BIT (the command buffer can be resubmitted while it is also already pending execution).
 		beginInfo.pInheritanceInfo = nullptr;		// [Optional] Only relevant for secondary command buffers. It specifies which state to inherit from the calling primary command buffers.
 
-		if (vkBeginCommandBuffer(CBs[i], &beginInfo) != VK_SUCCESS)		// If a command buffer was already recorded once, this call resets it. It's not possible to append commands to a buffer at a later time.
+		if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS)		// If a command buffer was already recorded once, this call resets it. It's not possible to append commands to a buffer at a later time.
 			throw std::runtime_error("Failed to begin recording command buffer!");
 
 		for (size_t rp = 0; rp < models.keys.size(); rp++)		// for each RENDER PASS (color pass, post-processing...)
@@ -290,13 +292,13 @@ void Commander::updateCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 	std::cout << "    Render pass " << rp << std::endl;
 #endif
 
-			vkCmdBeginRenderPass(CBs[i], &renderPipeline->renderPasses[rp].renderPassInfos[i], VK_SUBPASS_CONTENTS_INLINE);	// Start RENDER PASS. VK_SUBPASS_CONTENTS_INLINE (the render pass commands will be embedded in the primary command buffer itself and no secondary command buffers will be executed), VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS (the render pass commands will be executed from secondary command buffers).
-			//vkCmdNextSubpass(CBs[i], VK_SUBPASS_CONTENTS_INLINE);						// Start SUBPASS
+			vkCmdBeginRenderPass(commandBuffer, &renderPipeline->renderPasses[rp].renderPassInfos[i], VK_SUBPASS_CONTENTS_INLINE);	// Start RENDER PASS. VK_SUBPASS_CONTENTS_INLINE (the render pass commands will be embedded in the primary command buffer itself and no secondary command buffers will be executed), VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS (the render pass commands will be executed from secondary command buffers).
+			//vkCmdNextSubpass(commandBuffer, VK_SUBPASS_CONTENTS_INLINE);						// Start SUBPASS
 
 			for (size_t sp = 0; sp < models.keys[rp].size(); sp++)		// for each SUB-PASS
 			{
-				if (sp > 0) vkCmdNextSubpass(CBs[i], VK_SUBPASS_CONTENTS_INLINE);   // Start SUBPASS
-				//clearDepthBuffer(CBs[i]);		// Already done in createRenderPass() (loadOp). Previously used for implementing layers (Painter's algorithm).
+				if (sp > 0) vkCmdNextSubpass(commandBuffer, VK_SUBPASS_CONTENTS_INLINE);   // Start SUBPASS
+				//clearDepthBuffer(commandBuffer);		// Already done in createRenderPass() (loadOp). Previously used for implementing layers (Painter's algorithm).
 
 				for (key64 key : models.keys[rp][sp])		// for each MODEL
 				{
@@ -307,28 +309,30 @@ void Commander::updateCommandBuffers(ModelsManager& models, std::shared_ptr<Rend
 					model = &models.data[key];
 					if (model->getNumInstances() == 0) continue;
 
-					vkCmdBindPipeline(CBs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->graphicsPipeline);	// Second parameter: Specifies if the pipeline object is a graphics or compute pipeline.
-					vkCmdBindVertexBuffers(CBs[i], 0, 1, &model->vert.vertexBuffer, offsets);
+					vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, model->graphicsPipeline);	// Second parameter: Specifies if the pipeline object is a graphics or compute pipeline.
+					vkCmdBindVertexBuffers(commandBuffer, 0, 1, &model->vert.vertexBuffer, offsets);
 
 					if (model->vert.indexCount)		// has indices (it doesn't if data represents points)
-						vkCmdBindIndexBuffer(CBs[i], model->vert.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+						vkCmdBindIndexBuffer(commandBuffer, model->vert.indexBuffer, 0, VK_INDEX_TYPE_UINT16);
 
 					if (model->descriptorSets.size())	// has descriptor set (UBOs, SSBOs, textures, input attachments)
-						vkCmdBindDescriptorSets(CBs[i], VK_PIPELINE_BIND_POINT_GRAPHICS, model->pipelineLayout, 0, model->descriptorSets[i].size(), model->descriptorSets[i].data(), 0, 0);
+						vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, model->pipelineLayout, 0, model->descriptorSets[i].size(), model->descriptorSets[i].data(), 0, 0);
 
 					if (model->vert.indexCount)		// has indices
-						vkCmdDrawIndexed(CBs[i], static_cast<uint32_t>(model->vert.indexCount), model->getNumInstances(), 0, 0, 0);
+						vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(model->vert.indexCount), model->getNumInstances(), 0, 0, 0);
 					else
-						vkCmdDraw(CBs[i], model->vert.vertexCount, model->getNumInstances(), 0, 0);
+						vkCmdDraw(commandBuffer, model->vert.vertexCount, model->getNumInstances(), 0, 0);
 
 					commandsCount++;
 				}
 			}
 
-			vkCmdEndRenderPass(CBs[i]);
+			vkCmdEndRenderPass(commandBuffer);
 		}
 
-		if (vkEndCommandBuffer(CBs[i]) != VK_SUCCESS)
+		if(i == presentedImageIndex) guiManager.draw(frameIndex, i); // Called once per frame, for the image being presented
+
+		if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS)
 			throw std::runtime_error("Failed to record command buffer!");
 	}
 
@@ -909,6 +913,14 @@ void VulkanCore::createLogicalDevice()
 	deviceFeatures.sampleRateShading = (add_SS ? VK_TRUE : VK_FALSE);						// Enable sample shading feature for the device
 	deviceFeatures.wideLines = (deviceData.wideLines ? VK_TRUE : VK_FALSE);					// Enable line width configuration (in VkPipeline)
 
+
+#ifdef RENDER_IMGUI
+	VkPhysicalDeviceDynamicRenderingFeatures dynRenderingFeatures{};
+	dynRenderingFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES;
+	dynRenderingFeatures.pNext = nullptr;
+	dynRenderingFeatures.dynamicRendering = VK_TRUE;
+#endif;
+
 	// Describe queue parameters
 	VkDeviceCreateInfo createInfo{};
 	createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -918,6 +930,9 @@ void VulkanCore::createLogicalDevice()
 	auto extensions = ext.getRequiredExtensions_device();
 	createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
 	createInfo.ppEnabledExtensionNames = extensions.data();
+#ifdef RENDER_IMGUI
+	createInfo.pNext = &dynRenderingFeatures;
+#endif;
 
 	if (enableValidationLayers)
 	{
@@ -1043,8 +1058,7 @@ VkExtent2D SwapChain::chooseSwapExtent(IOmanager& io, const VkSurfaceCapabilitie
 	// Set width and height (useful when you're using a high DPI display)
 	else
 	{
-		int width, height;
-		io.getFramebufferSize(&width, &height);
+		auto [width, height] = io.getFramebufferSize();
 
 		VkExtent2D actualExtent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
 
@@ -2541,4 +2555,300 @@ void Commander::clearDepthBuffer(VkCommandBuffer commandBuffer, const SwapChain&
 	rectangleToClear.layerCount = 1;
 
 	vkCmdClearAttachments(commandBuffer, 1, &attachmentToClear, 1, &rectangleToClear);
+}
+
+ImGuiManager::ImGuiManager(VulkanCore& core, SwapChain& swapchain, Commander& commander)
+	: core(core) 
+	, swapchain(swapchain)
+	, commander(commander)
+{
+	init_commands();
+	init_sync_structures();
+	init_imgui();
+}
+
+ImGuiManager::~ImGuiManager()
+{
+	cleanup();
+}
+
+void ImGuiManager::immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function)
+{
+	if (vkResetFences(core.device, 1, &_immFence) != VK_SUCCESS)
+		throw std::runtime_error("GUI error: Failed to reset fences!");
+
+	if (vkResetCommandBuffer(_immCommandBuffer, 0) != VK_SUCCESS)
+		throw std::runtime_error("GUI error: Failed to reset command buffer!");
+
+	VkCommandBuffer cmd = _immCommandBuffer;
+
+	VkCommandBufferBeginInfo cmdBeginInfo = {};
+	cmdBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	cmdBeginInfo.pNext = nullptr;
+	cmdBeginInfo.pInheritanceInfo = nullptr;
+	cmdBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	if (vkBeginCommandBuffer(cmd, &cmdBeginInfo) != VK_SUCCESS)
+		throw std::runtime_error("GUI error: Failed to begin recording command buffer!");
+
+	function(cmd);
+
+	if (vkEndCommandBuffer(cmd) != VK_SUCCESS)
+		throw std::runtime_error("GUI error: Failed to record command buffer!");
+
+	VkCommandBufferSubmitInfo cmdinfo{};
+	cmdinfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO;
+	cmdinfo.pNext = nullptr;
+	cmdinfo.commandBuffer = cmd;
+	cmdinfo.deviceMask = 0;
+
+	VkSubmitInfo submit{};
+	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit.pNext = nullptr;
+	submit.waitSemaphoreCount = 0;
+	submit.pWaitSemaphores = nullptr;
+	submit.pWaitDstStageMask = nullptr;
+	submit.commandBufferCount = 1;
+	submit.pCommandBuffers = &cmd;
+	submit.signalSemaphoreCount = 0;
+	submit.pSignalSemaphores = nullptr;
+
+	// submit command buffer to the queue and execute it.
+	//  _renderFence will now block until the graphic commands finish execution
+	if (vkQueueSubmit(core.graphicsQueue, 1, &submit, _immFence) != VK_SUCCESS)
+		throw std::runtime_error("GUI error: Failed submit command buffer!");
+
+	if (vkWaitForFences(core.device, 1, &_immFence, true, 9999999999) != VK_SUCCESS);
+	throw std::runtime_error("GUI error: Failed wait for fences!");
+}
+
+void ImGuiManager::cleanup()
+{
+	_mainDeletionQueue.flush();
+}
+
+bool ImGuiManager::isAnyWindowHovered()
+{
+	return ImGui::IsWindowHovered(ImGuiHoveredFlags_AnyWindow);
+}
+
+void ImGuiManager::compute()
+{
+	// Start new ImGui frames
+	ImGui_ImplVulkan_NewFrame();
+	ImGui_ImplGlfw_NewFrame();
+	ImGui::NewFrame();
+
+	ImGui::ShowDemoWindow();   // Test UI window
+
+	ImGui::Render();   // Render ImGui internal structures
+}
+
+void ImGuiManager::draw(size_t frameIndex, size_t swapchainImageIndex)
+{
+	VkCommandBuffer commandBuffer = commander.commandBuffers[frameIndex][swapchainImageIndex];
+	VkImageView view = swapchain.views[swapchainImageIndex];
+	VkImage image = swapchain.images[swapchainImageIndex];
+
+	transition_image(commandBuffer, image, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+
+	VkRenderingAttachmentInfo colorAttachment{};
+	colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+	colorAttachment.pNext = nullptr;
+	colorAttachment.imageView = view;
+	colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+	colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+	colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+
+	VkRenderingInfo renderInfo{};
+	renderInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+	renderInfo.pNext = nullptr;
+	renderInfo.flags = 0;
+	renderInfo.viewMask = 0;
+	renderInfo.renderArea = VkRect2D{ VkOffset2D { 0, 0 }, swapchain.extent };
+	renderInfo.layerCount = 1;
+	renderInfo.colorAttachmentCount = 1;
+	renderInfo.pColorAttachments = &colorAttachment;
+	renderInfo.pDepthAttachment = nullptr;
+	renderInfo.pStencilAttachment = nullptr;
+
+	vkCmdBeginRendering(commandBuffer, &renderInfo);
+
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+
+	vkCmdEndRendering(commandBuffer);
+
+	transition_image(commandBuffer, image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
+}
+
+void ImGuiManager::init_imgui()
+{
+	// 1. Create descriptor pool for imgui (pool size is very oversize, but it's copied from imgui demo itself)
+	VkDescriptorPoolSize pool_sizes[] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000 },
+		{ VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000 },
+		{ VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000 },
+		{ VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000 } };
+
+	VkDescriptorPoolCreateInfo pool_info = {};
+	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+	pool_info.maxSets = 1000;
+	pool_info.poolSizeCount = (uint32_t)std::size(pool_sizes);
+	pool_info.pPoolSizes = pool_sizes;
+
+	VkDescriptorPool imguiPool;
+	if (vkCreateDescriptorPool(core.device, &pool_info, nullptr, &imguiPool) != VK_SUCCESS)
+		throw std::runtime_error("GUI error: Failed to create descriptor pool!");
+
+	// 2. Initialize imgui library
+
+	// Initialize the core structures of imgui
+	ImGui::CreateContext();
+
+	// Initialize imgui for GLFW
+	ImGui_ImplGlfw_InitForVulkan(core.io.window, true);
+
+	// Initialize imgui for Vulkan
+	ImGui_ImplVulkan_InitInfo init_info = {};
+	init_info.Instance = core.instance;
+	init_info.PhysicalDevice = core.physicalDevice;
+	init_info.Device = core.device;
+	init_info.Queue = core.graphicsQueue;
+	init_info.DescriptorPool = imguiPool;
+	init_info.MinImageCount = swapchain.numImages();
+	init_info.ImageCount = swapchain.numImages();
+	init_info.UseDynamicRendering = true;
+
+	// Dynamic rendering parameters for imgui to use
+	init_info.PipelineInfoMain.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+	init_info.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+	init_info.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &swapchain.imageFormat;
+
+	init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+
+	ImGui_ImplVulkan_Init(&init_info);
+	//ImGui_ImplVulkan_CreateFontsTexture();  // Not needed anymore
+
+	// Mark the imgui created structures for destruction
+	_mainDeletionQueue.push_function([=]() {
+		ImGui_ImplVulkan_Shutdown();
+		vkDestroyDescriptorPool(core.device, imguiPool, nullptr);
+		ImGui_ImplGlfw_Shutdown();
+		ImGui::DestroyContext();
+		});
+}
+
+void ImGuiManager::init_commands()
+{
+	VkCommandPoolCreateInfo commandPoolInfo = {};
+	commandPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+	commandPoolInfo.pNext = nullptr;
+	commandPoolInfo.queueFamilyIndex = core.findQueueFamilies(core.physicalDevice).graphicsFamily.value();
+	commandPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+	if (vkCreateCommandPool(core.device, &commandPoolInfo, nullptr, &_immCommandPool) != VK_SUCCESS)
+		throw std::runtime_error("GUI error: Failed to create command pool!");
+
+	// allocate the command buffer for immediate submits
+	VkCommandBufferAllocateInfo cmdAllocInfo = {};
+	cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+	cmdAllocInfo.pNext = nullptr;
+	cmdAllocInfo.commandPool = _immCommandPool;
+	cmdAllocInfo.commandBufferCount = 1;
+	cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+	if (vkAllocateCommandBuffers(core.device, &cmdAllocInfo, &_immCommandBuffer) != VK_SUCCESS)
+		throw std::runtime_error("GUI error: Failed to allocate command buffers!");
+
+	_mainDeletionQueue.push_function([=]() {
+		vkDestroyCommandPool(core.device, _immCommandPool, nullptr);
+		});
+}
+
+void ImGuiManager::init_sync_structures()
+{
+	VkFenceCreateInfo fenceCreateInfo = {};
+	fenceCreateInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+	fenceCreateInfo.pNext = nullptr;
+	fenceCreateInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+
+	if (vkCreateFence(core.device, &fenceCreateInfo, nullptr, &_immFence) != VK_SUCCESS)
+		throw std::runtime_error("GUI error: Failed to create fence!");
+
+	_mainDeletionQueue.push_function([=]() { vkDestroyFence(core.device, _immFence, nullptr); });
+}
+
+void ImGuiManager::copy_image_to_image(VkCommandBuffer cmd, VkImage source, VkImage destination, VkExtent2D srcSize, VkExtent2D dstSize)
+{
+	VkImageBlit2 blitRegion;
+	blitRegion.sType = VK_STRUCTURE_TYPE_IMAGE_BLIT_2;
+	blitRegion.pNext = nullptr;
+
+	blitRegion.srcOffsets[1].x = srcSize.width;
+	blitRegion.srcOffsets[1].y = srcSize.height;
+	blitRegion.srcOffsets[1].z = 1;
+
+	blitRegion.dstOffsets[1].x = dstSize.width;
+	blitRegion.dstOffsets[1].y = dstSize.height;
+	blitRegion.dstOffsets[1].z = 1;
+
+	blitRegion.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	blitRegion.srcSubresource.baseArrayLayer = 0;
+	blitRegion.srcSubresource.layerCount = 1;
+	blitRegion.srcSubresource.mipLevel = 0;
+
+	blitRegion.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	blitRegion.dstSubresource.baseArrayLayer = 0;
+	blitRegion.dstSubresource.layerCount = 1;
+	blitRegion.dstSubresource.mipLevel = 0;
+
+	VkBlitImageInfo2 blitInfo;
+	blitInfo.sType = VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2;
+	blitInfo.pNext = nullptr;
+	blitInfo.dstImage = destination;
+	blitInfo.dstImageLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+	blitInfo.srcImage = source;
+	blitInfo.srcImageLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	blitInfo.filter = VK_FILTER_LINEAR;
+	blitInfo.regionCount = 1;
+	blitInfo.pRegions = &blitRegion;
+
+	vkCmdBlitImage2(cmd, &blitInfo);
+}
+
+void ImGuiManager::transition_image(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLayout, VkImageLayout newLayout)
+{
+	VkImageSubresourceRange subImage{};
+	subImage.aspectMask = (newLayout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL) ? VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_COLOR_BIT;
+	subImage.baseMipLevel = 0;
+	subImage.levelCount = VK_REMAINING_MIP_LEVELS;
+	subImage.baseArrayLayer = 0;
+	subImage.layerCount = VK_REMAINING_ARRAY_LAYERS;
+
+	VkImageMemoryBarrier imageBarrier{};
+	imageBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+	imageBarrier.pNext = nullptr;
+	imageBarrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+	imageBarrier.dstAccessMask = VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_MEMORY_READ_BIT;
+	imageBarrier.oldLayout = currentLayout;
+	imageBarrier.newLayout = newLayout;
+	imageBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imageBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+	imageBarrier.image = image;
+	imageBarrier.subresourceRange = subImage;
+
+	vkCmdPipelineBarrier(cmd,
+		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,   // srcStageMask
+		VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,   // dstStageMask
+		0,                                    // dependencyFlags
+		0, nullptr,                           // memory barriers
+		0, nullptr,                           // buffer barriers
+		1, &imageBarrier);                    // image barriers
 }

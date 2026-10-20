@@ -188,6 +188,45 @@ public:
 	bool checkExtensionSupport(const char* const* requiredExtensions, uint32_t reqExtCount);   // Check if extensions (for GLFW and Validation layers) are supported. For creating Vulkan instance. 
 };
 
+/// Render ImGui. Reference: https://vkguide.dev/docs/new_chapter_2/vulkan_imgui_setup/
+class ImGuiManager
+{
+public:
+	ImGuiManager(VulkanCore& core, SwapChain& swapchain, Commander& commander);
+	~ImGuiManager();
+
+	void compute();
+	void draw(size_t frameIndex, size_t swapchainImageIndex);
+	/// Used for running some commands outside of the normal draw loop. It uses a fence and a different command buffer from the one we use on draws to send some commands to the GPU without syncronizing with swapchain or with rendering logic.
+    /// Instant operations outside the render loop (like data uploads). The submit is not syncronized with the swapchain. Possible optimization: run it on a different queue than the graphics queue, so we could overlap the execution from this with the main render loop.
+	void immediate_submit(std::function<void(VkCommandBuffer cmd)>&& function);
+	void cleanup();
+	bool isAnyWindowHovered();
+
+private:
+	void init_imgui();   /// Initialize ImGui: Create descriptor pool and initialize imgui
+
+	void copy_image_to_image(VkCommandBuffer cmd, VkImage source, VkImage destination, VkExtent2D srcSize, VkExtent2D dstSize);
+	void transition_image(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLayout, VkImageLayout newLayout);
+
+	// General members
+
+	VulkanCore& core;
+	SwapChain& swapchain;
+	Commander& commander;
+
+	DeletionQueue _mainDeletionQueue;
+
+	// Members for immediate_submit
+
+	void init_commands();   /// Create command pool and command buffer
+	void init_sync_structures();   /// Create fence
+
+	VkCommandPool _immCommandPool;   // CommandBuffer's pool
+	VkCommandBuffer _immCommandBuffer;
+	VkFence _immFence;
+};
+
 /// Builds and keeps core elements: Instance, Surface, Physical device, Logical device, Queues.
 class VulkanCore
 {
@@ -199,16 +238,16 @@ public:
 
 	IOmanager io;
 
-	VkInstance					instance;			//!< Opaque handle to an instance object. There is no global state in Vulkan and all per-application state is stored here.
-	VkSurfaceKHR				surface;			//!< Opaque handle to a surface object (abstract type of surface to present rendered images to)
+	VkInstance				instance;			//!< Opaque handle to an instance object. There is no global state in Vulkan and all per-application state is stored here.
+	VkSurfaceKHR			surface;			//!< Opaque handle to a surface object (abstract type of surface to present rendered images to)
 
-	VkPhysicalDevice			physicalDevice;		//!< Opaque handle to a physical device object.
-	VkDevice					device;				//!< Opaque handle to a logical device object.
-	DeviceData					deviceData;			//!< Physical device properties and features.
-	VkSampleCountFlagBits		msaaSamples;		//!< Number of samples used for MSAA (MultiSampling AntiAliasing)
+	VkPhysicalDevice		physicalDevice;		//!< Opaque handle to a physical device object.
+	VkDevice				device;				//!< Opaque handle to a logical device object.
+	DeviceData				deviceData;			//!< Physical device properties and features.
+	VkSampleCountFlagBits	msaaSamples;		//!< Number of samples used for MSAA (MultiSampling AntiAliasing)
 
-	VkQueue						graphicsQueue;		//!< Opaque handle to a queue object (computer graphics).
-	VkQueue						presentQueue;		//!< Opaque handle to a queue object (presentation to window surface).
+	VkQueue					graphicsQueue;		//!< Opaque handle to a queue object (computer graphics).
+	VkQueue					presentQueue;		//!< Opaque handle to a queue object (presentation to window surface).
 
 	int memAllocObjects;							//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount). Incremented each vkAllocateMemory call; decremented each vkFreeMemory call. Increments when creating an image or buffer; decrements when destroyed.
 
@@ -310,7 +349,7 @@ public:
 			<li>https://www.reddit.com/r/vulkan/comments/hhoktq/rendering_multiple_objects/ </li>
 		</ul>
 	*/
-	void updateCommandBuffers(ModelsManager& models, std::shared_ptr<RenderPipeline> renderPipeline, size_t swapChainImagesCount, size_t frameIndex);
+	void updateCommandBuffers(ModelsManager& models, std::shared_ptr<RenderPipeline> renderPipeline, size_t frameIndex, ImGuiManager& guiManager, uint32_t presentedImageIndex);
 	void createCommandPool(size_t numFrames);   //!< Commands in Vulkan (drawing, memory transfers, etc.) are not executed directly using function calls, you have to record all of the operations you want to perform in command buffer objects. After setting up the drawing commands, just tell Vulkan to execute them in the main loop.
 	void createCommandBuffers(size_t numSwapChainImages, size_t numFrames);
 	uint32_t getNextFrame();   //!< Increment currentFrame by one, but loop around when reaching "maxFramesInFlight".

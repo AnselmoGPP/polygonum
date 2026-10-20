@@ -1142,3 +1142,18 @@ glm::mat4 getModelMat(const glm::vec3& scale, const glm::quat& orientation, cons
 
 	return t * r * s;
 }
+
+void DeletionQueue::push_function(std::function<void()>&& function)
+{
+	deletors.push_back(function);
+}
+
+void DeletionQueue::flush()
+{
+	// reverse iterate the deletion queue to execute all the functions
+	for (auto it = deletors.rbegin(); it != deletors.rend(); it++) {
+		(*it)(); //call functors
+	}
+
+	deletors.clear();
+}

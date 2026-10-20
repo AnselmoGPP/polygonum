@@ -10,13 +10,13 @@ void Renderer::recreateSwapChain()
 #endif
 	
 	// 1. Get window size.
-	int width = 0, height = 0;
+	std::array<int, 2> resolution; // width, height
 	do {
 		c.io.waitEvents(); // Wait for an event (resize, focus change, etc.)
-		c.io.getFramebufferSize(&width, &height);
-	} while (width == 0 || height == 0);
+		resolution = c.io.getFramebufferSize();
+	} while (resolution[0] == 0 || resolution[1] == 0);
 
-	std::cout << "New window size: " << width << ", " << height << std::endl;
+	std::cout << "New window size: " << resolution[0] << ", " << resolution[1] << std::endl;
 
 	// 2. Wait for device, graphics queue, and worker to be idle (so we don't touch resources that are in use).
 	vkDeviceWaitIdle(c.device);
@@ -36,7 +36,7 @@ void Renderer::recreateSwapChain()
 
 	models.create_pipelines_and_descriptors(&worker.mutModels);
 	
-	uint32_t frameIndex = commander.getNextFrame();
+	//uint32_t frameIndex = commander.getNextFrame();
 	commander.createCommandBuffers(swapChain.numImages(), commander.numFrames());   // Command buffers directly depend on the swap chain images.
 	commander.imagesInFlight.resize(swapChain.numImages(), { VK_NULL_HANDLE, 0 });
 }
@@ -138,6 +138,7 @@ void Renderer::drawFrame()
 
 	// 4.2. User updates
 	userUpdate(*((Renderer*)this));   // Update model matrices and other things (user defined)
+	guiManager.compute();
 
 #if defined(DEBUG_REND_PROFILER)
 	PRINT("  userUpdate: ", profiler.updateTime() * 1000.f);
@@ -154,7 +155,7 @@ void Renderer::drawFrame()
 	if (true)//if (updateCommandBuffer)
 	{
 		vkResetFences(c.device, 1, &commander.framesInFlight[frameIndex]);	// Reset the fence to the unsignaled state.
-		commander.updateCommandBuffers(models, rp, swapChain.numImages(), frameIndex);
+		commander.updateCommandBuffers(models, rp, frameIndex, guiManager, imageIndex);
 	}
 
 #if defined(DEBUG_REND_PROFILER)
@@ -233,7 +234,7 @@ void Renderer::renderLoop()
 		std::cout << typeid(*this).name() << "::" << __func__ << " begin" << std::endl;
 	#endif
 
-	commander.updateCommandBuffers(models, rp, swapChain.numImages(), commander.getNextFrame());
+	//commander.updateCommandBuffers(models, rp, swapChain.numImages(), commander.getNextFrame(), &guiManager);
 	worker.start();
 
 	timer.startTimer();
@@ -246,10 +247,15 @@ void Renderer::renderLoop()
 		#endif
 
 		c.io.pollEvents();	// Check for events (processes only those events that have already been received and then returns immediately)
+		if (c.io.isWindowMinimized())   // Don't render while minimized (saves resources and prevents errors)
+		{
+			std::this_thread::sleep_for(std::chrono::milliseconds(100));
+			continue;
+		}
+
 		drawFrame();
 
-		if (c.io.isKeyPressed(GLFW_KEY_ESCAPE))
-			c.io.setWindowShouldClose(true);
+		if (c.io.isKeyPressed(GLFW_KEY_ESCAPE)) c.io.setWindowShouldClose(true);
 
 		#ifdef DEBUG_RENDERLOOP
 				std::cout << "Render loop 2/2 ----------" << std::endl;
@@ -289,6 +295,8 @@ void Renderer::cleanup()
 	rp->destroyRenderPipeline();
 
 	swapChain.destroy();
+
+	guiManager.cleanup();
 
 	c.destroy();
 
@@ -443,6 +451,11 @@ IOmanager& Renderer::getIO() { return c.io; }
 int Renderer::getMaxMemoryAllocationCount() { return c.deviceData.maxMemoryAllocationCount; }
 
 int Renderer::getMemAllocObjects() { return c.memAllocObjects; }
+
+bool Renderer::isGuiHovered()
+{
+	return guiManager.isAnyWindowHovered();
+}
 
 LoadingWorker::LoadingWorker(Renderer* renderer)
 	: r(*renderer), stopThread(false) { }

@@ -44,18 +44,27 @@ void IOmanager::createWindowSurface(VkInstance instance, VkAllocationCallbacks* 
 		throw std::runtime_error("Failed to create window surface!");
 }
 
-void IOmanager::getFramebufferSize(int* width, int* height) { glfwGetFramebufferSize(window, width, height); }
+std::array<int, 2> IOmanager::getFramebufferSize()
+{
+	std::array<int, 2> resolution; // width, height
+	glfwGetFramebufferSize(window, &resolution[0], &resolution[1]);
+	return resolution;
+}
 
 float IOmanager::getAspectRatio()
 {
-	int width, height;
-	getFramebufferSize(&width, &height);
-	return (float)width / height;
+	auto [width, height] = getFramebufferSize();
+	return static_cast<float>(width) / height;
 }
 
 void IOmanager::setWindowShouldClose(bool b) { return glfwSetWindowShouldClose(window, b); }
 
 bool IOmanager::getWindowShouldClose() { return glfwWindowShouldClose(window); }
+
+bool IOmanager::isWindowMinimized()
+{
+	return glfwGetWindowAttrib(window, GLFW_ICONIFIED);
+}
 
 void IOmanager::destroy()
 {

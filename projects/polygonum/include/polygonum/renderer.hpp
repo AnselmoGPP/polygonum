@@ -80,6 +80,7 @@ protected:
 	PointersManager<std::string, Texture> textures;
 	PointersManager<std::string, Shader> shaders;
 	LoadingWorker worker;
+	ImGuiManager guiManager;
 
 	size_t renderedFramesCount; //!< Number of frames rendered
 	int maxFPS; //!< Maximum FPS (= 30 by default).
@@ -141,6 +142,8 @@ public:
 
 	int getMaxMemoryAllocationCount();			//!< Max. number of valid memory objects
 	int getMemAllocObjects();					//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount)
+
+	bool isGuiHovered();
 };
 
 
@@ -154,7 +157,8 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height) :
 	userUpdate(graphicsUpdate),
 	renderedFramesCount(0),
 	maxFPS(30),
-	worker(this)
+	worker(this),
+	guiManager(c, swapChain, commander)
 {
 #ifdef DEBUG_RENDERER
 	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;

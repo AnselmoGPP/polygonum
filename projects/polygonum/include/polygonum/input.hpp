@@ -3,6 +3,7 @@
 
 #include "polygonum/commons.hpp"
 
+#include <array>
 
 /**
 	@brief Input/Output manager for input (controls) and output (window) operations. 
@@ -24,10 +25,11 @@ public:
 
 	// Output (window)
 	void createWindowSurface(VkInstance instance, VkAllocationCallbacks* allocator, VkSurfaceKHR* surface);
-	void getFramebufferSize(int* width, int* height); // Window resolution
+	std::array<int, 2> getFramebufferSize(); // Window resolution (pixels)
 	float getAspectRatio();
 	void setWindowShouldClose(bool b);
 	bool getWindowShouldClose();
+	bool isWindowMinimized();
 	void destroy();
 
 	// Input (keys, mouse)
