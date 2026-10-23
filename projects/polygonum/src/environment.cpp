@@ -1058,7 +1058,7 @@ VkExtent2D SwapChain::chooseSwapExtent(IOmanager& io, const VkSurfaceCapabilitie
 	// Set width and height (useful when you're using a high DPI display)
 	else
 	{
-		auto [width, height] = io.getFramebufferSize();
+		auto [width, height] = io.getResolution();
 
 		VkExtent2D actualExtent = { static_cast<uint32_t>(width), static_cast<uint32_t>(height) };
 
@@ -2557,14 +2557,14 @@ void Commander::clearDepthBuffer(VkCommandBuffer commandBuffer, const SwapChain&
 	vkCmdClearAttachments(commandBuffer, 1, &attachmentToClear, 1, &rectangleToClear);
 }
 
-ImGuiManager::ImGuiManager(VulkanCore& core, SwapChain& swapchain, Commander& commander)
+ImGuiManager::ImGuiManager(VulkanCore& core, SwapChain& swapchain, Commander& commander, const std::string& fontPath, float fontSize)
 	: core(core) 
 	, swapchain(swapchain)
 	, commander(commander)
 {
 	init_commands();
 	init_sync_structures();
-	init_imgui();
+	init_imgui(fontPath, fontSize);
 }
 
 ImGuiManager::~ImGuiManager()
@@ -2639,7 +2639,9 @@ void ImGuiManager::compute()
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 
-	ImGui::ShowDemoWindow();   // Test UI window
+	ImGui::ShowDemoWindow();
+	for (auto& window : gui)
+		window();
 
 	ImGui::Render();   // Render ImGui internal structures
 }
@@ -2681,7 +2683,7 @@ void ImGuiManager::draw(size_t frameIndex, size_t swapchainImageIndex)
 	transition_image(commandBuffer, image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR);
 }
 
-void ImGuiManager::init_imgui()
+void ImGuiManager::init_imgui(const std::string& fontPath, float fontSize)
 {
 	// 1. Create descriptor pool for imgui (pool size is very oversize, but it's copied from imgui demo itself)
 	VkDescriptorPoolSize pool_sizes[] = { { VK_DESCRIPTOR_TYPE_SAMPLER, 1000 },
@@ -2734,6 +2736,13 @@ void ImGuiManager::init_imgui()
 	init_info.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 
 	ImGui_ImplVulkan_Init(&init_info);
+	
+	if (fontPath != "")
+	{
+		ImGuiIO& io = ImGui::GetIO();
+		io.Fonts->AddFontFromFileTTF(fontPath.c_str(), fontSize);
+		//io.FontGlobalScale = 1.5f; // Scales all text up by 150%
+	}
 	//ImGui_ImplVulkan_CreateFontsTexture();  // Not needed anymore
 
 	// Mark the imgui created structures for destruction

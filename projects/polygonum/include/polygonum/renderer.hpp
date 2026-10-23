@@ -112,7 +112,7 @@ protected:
 public:
 	/// Constructor. Requires a callback for user updates (update model matrix, add models, delete models...).
 	template <typename RP = RP_DDFP>
-	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height);
+	Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, const std::string& fontPath = "", float fontSize = 12);
 	~Renderer();
 
 	std::vector<BindingBuffer> globalBuffers;   //!< Shared between models.
@@ -144,11 +144,12 @@ public:
 	int getMemAllocObjects();					//!< Number of memory allocated objects (must be <= maxMemoryAllocationCount)
 
 	bool isGuiHovered();
+	std::vector<std::function<void()>>& Renderer::getGui();
 };
 
 
 template <typename RP>
-Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height) :
+Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height, const std::string& fontPath, float fontSize) :
 	c(width, height),
 	swapChain(c, ADDITIONAL_SWAPCHAIN_IMAGES),
 	commander(c, swapChain.images.size(), MAX_FRAMES_IN_FLIGHT),
@@ -158,13 +159,15 @@ Renderer::Renderer(void(*graphicsUpdate)(Renderer&), int width, int height) :
 	renderedFramesCount(0),
 	maxFPS(30),
 	worker(this),
-	guiManager(c, swapChain, commander)
+	guiManager(c, swapChain, commander, fontPath, fontSize)
 {
 #ifdef DEBUG_RENDERER
 	std::cout << typeid(*this).name() << "::" << __func__ << std::endl;
 	std::cout << "Main thread ID: " << std::this_thread::get_id() << std::endl;
 	std::cout << "   Hardware concurrency: " << (unsigned)std::thread::hardware_concurrency << std::endl;
 #endif
+
+	std::cout << "Current directory: " << std::filesystem::current_path() << std::endl;
 
 	//if (c.msaaSamples > 1) rw = std::make_shared<RW_MSAA_PP>(*this);
 	//else rw = std::make_shared<RW_PP>(*this);

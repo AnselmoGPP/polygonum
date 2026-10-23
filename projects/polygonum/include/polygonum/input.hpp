@@ -15,7 +15,17 @@ class IOmanager
 {
 	void initWindow(int width, int height);
 	void setCallbacks();
-	float YscrollOffset = 0;     //!< Set in a callback (windowUserPointer)
+
+	// - Variables set in a callback (via windowUserPointer)
+
+	bool framebufferResized = false;   //!< Many drivers/platforms trigger VK_ERROR_OUT_OF_DATE_KHR after window resize, but it's not guaranteed. This variable handles resizes explicitly.
+
+	std::unordered_set<int> MBPressed, MBJustPressed, MBJustReleased;
+	std::unordered_set<int> keyPressed, keyJustPressed, keyJustReleased;
+	float YscrollOffset = 0;
+	std::array<double, 2> cursorPos = { 0.f, 0.f };   //!< Pixel coordinates. Origin: top-left.
+	std::array<double, 2> cursorDelta = { 0.f, 0.f };
+	bool cursorEnteredWindow = false;   //!< True (cursor crossed in), False (cursor crossed out)
 
 public:
 	IOmanager(int width, int height);
@@ -23,30 +33,48 @@ public:
 
 	GLFWwindow* window;				//!< Opaque window object.
 
-	// Output (window)
+	// - Output (window)
+
 	void createWindowSurface(VkInstance instance, VkAllocationCallbacks* allocator, VkSurfaceKHR* surface);
-	std::array<int, 2> getFramebufferSize(); // Window resolution (pixels)
-	float getAspectRatio();
 	void setWindowShouldClose(bool b);
 	bool getWindowShouldClose();
 	bool isWindowMinimized();
+	void pollEvents();   //!< Check for events (processes only those events that have already been received and then returns immediately)
+	void waitEvents();
 	void destroy();
 
-	// Input (keys, mouse)
-	bool isKeyPressed(int key);
-	bool isKeyReleased(int key);
-	bool isMouseButtonPressed(int button);
-	bool isMouseButtonReleased(int button);
-	void getCursorPos(double* xpos, double* ypos);
-	void setInputMode(int mode, int value);
-	void pollEvents();							//!< Check for events (processes only those events that have already been received and then returns immediately)
-	void waitEvents();
+	bool wasFramebufferJustResized(); //!< Resets state <- FOR RENDERER USE ONLY
 
-	// Callbacks
-	float getYscrollOffset();			//!< Get YscrollOffset value and reset it (set to 0).
-	static void mouseScroll_callback(GLFWwindow* window, double xoffset, double yoffset);	//!< Callback for mouse scroll (called when mouse is scrolled).
-	static void framebufferResizeCallback(GLFWwindow* window, int width, int height);		//!< Callback for window resizing (called when window is resized).
-	bool framebufferResized = false;	//!< Many drivers/platforms trigger VK_ERROR_OUT_OF_DATE_KHR after window resize, but it's not guaranteed. This variable handles resizes explicitly.
+	void setInputMode(int mode, int value);
+	std::array<double, 2> getCursorPos() const; // Get pixel coordinates (origin: top-left)
+	std::array<double, 2> getCursorDelta(); // Resets state
+	bool cursorEntersWindow() const;
+
+	std::array<int, 2> getResolution(); // Window resolution (pixels)
+	float getAspectRatio();
+
+	// - Input (keys, mouse)
+
+	bool isKeyPressed(int key) const;
+	bool isKeyReleased(int key) const;
+	bool wasKeyJustPressed(int button);   // Resets state
+	bool wasKeyJustReleased(int button);   // Resets state
+
+	bool isMouseButtonPressed(int button) const;
+	bool isMouseButtonReleased(int button) const;
+	bool wasMouseButtonJustPressed(int button);   // Resets state
+	bool wasMouseButtonJustReleased(int button);   // Resets state
+
+	float getYscrollOffset();   //!< Get YscrollOffset value and reset it (set to 0).
+
+	// - Callbacks. Called during polling, once per event occurred. Accesses IOmanager from the callbacks via a windowUserPointer.
+
+	static void framebufferResize_callback(GLFWwindow* window, int width, int height);   //!< Callback for window resizing (called when window is resized).
+	static void mouseScroll_callback(GLFWwindow* window, double xoffset, double yoffset);   //!< Callback for mouse scroll (called when mouse is scrolled).
+	static void mouse_callback(GLFWwindow* window, int button, int action, int mods);   // For mouse buttons
+	static void key_callback(GLFWwindow* window, int key, int scancode, int action, int mods);   //!< For keys
+	static void cursorPos_callback(GLFWwindow* window, double xpos, double ypos);   //!< For cursor position
+	static void cursorEnter_callback(GLFWwindow* window, int entered);   //!< Check if cursor enters the window
 };
 
 #endif

@@ -6,6 +6,7 @@
 #include <queue>
 #include <cstdint>
 #include <thread>
+#include <functional>
 //#include <cstdlib>			// EXIT_SUCCESS, EXIT_FAILURE
 //#include <cstdint>			// UINT32_MAX
 //#include <algorithm>			// std::min / std::max
@@ -192,8 +193,10 @@ public:
 class ImGuiManager
 {
 public:
-	ImGuiManager(VulkanCore& core, SwapChain& swapchain, Commander& commander);
+	ImGuiManager(VulkanCore& core, SwapChain& swapchain, Commander& commander, const std::string& fontPath, float fontSize);
 	~ImGuiManager();
+
+	std::vector<std::function<void()>> gui;
 
 	void compute();
 	void draw(size_t frameIndex, size_t swapchainImageIndex);
@@ -204,7 +207,7 @@ public:
 	bool isAnyWindowHovered();
 
 private:
-	void init_imgui();   /// Initialize ImGui: Create descriptor pool and initialize imgui
+	void init_imgui(const std::string& fontPath, float fontSize);   /// Initialize ImGui: Create descriptor pool and initialize imgui
 
 	void copy_image_to_image(VkCommandBuffer cmd, VkImage source, VkImage destination, VkExtent2D srcSize, VkExtent2D dstSize);
 	void transition_image(VkCommandBuffer cmd, VkImage image, VkImageLayout currentLayout, VkImageLayout newLayout);

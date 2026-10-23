@@ -13,7 +13,7 @@ void Renderer::recreateSwapChain()
 	std::array<int, 2> resolution; // width, height
 	do {
 		c.io.waitEvents(); // Wait for an event (resize, focus change, etc.)
-		resolution = c.io.getFramebufferSize();
+		resolution = c.io.getResolution();
 	} while (resolution[0] == 0 || resolution[1] == 0);
 
 	std::cout << "New window size: " << resolution[0] << ", " << resolution[1] << std::endl;
@@ -212,10 +212,9 @@ void Renderer::drawFrame()
 		renderedFramesCount++;
 	}
 
-	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || c.io.framebufferResized)
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || c.io.wasFramebufferJustResized())
 	{
 		std::cout << "Out-of-date/Suboptimal KHR or window resized" << std::endl;
-		c.io.framebufferResized = false;
 		recreateSwapChain();
 	}
 	else if (result != VK_SUCCESS)
@@ -455,6 +454,11 @@ int Renderer::getMemAllocObjects() { return c.memAllocObjects; }
 bool Renderer::isGuiHovered()
 {
 	return guiManager.isAnyWindowHovered();
+}
+
+std::vector<std::function<void()>>& Renderer::getGui()
+{
+	return guiManager.gui;
 }
 
 LoadingWorker::LoadingWorker(Renderer* renderer)
