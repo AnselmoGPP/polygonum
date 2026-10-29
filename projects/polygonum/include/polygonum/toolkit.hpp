@@ -495,7 +495,11 @@ template<typename T>
 class QuadNode
 {
 public:
-	QuadNode(const T& element, shr<QuadNode> parent = nullptr, shr<QuadNode> a = nullptr, shr<QuadNode> b = nullptr, shr<QuadNode> c = nullptr, shr<QuadNode> d = nullptr) : element(element), a(a), b(b), c(c), d(d) { };
+	QuadNode(const T& element, shr<QuadNode> a = nullptr, shr<QuadNode> b = nullptr, shr<QuadNode> c = nullptr, shr<QuadNode> d = nullptr, shr<QuadNode> parent = nullptr)
+		: element(element)
+		, parent(parent)
+		, a(a), b(b), c(c), d(d) 
+	{ };
 	~QuadNode() { };
 
 	void setElement(const T& newElement) { element = newElement; }
